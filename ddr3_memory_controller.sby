@@ -1,0 +1,33 @@
+[tasks]
+proof
+cover
+
+[options]
+proof: mode prove
+proof: depth 10
+
+cover: mode cover
+cover: depth 400
+cover: append 6
+
+[engines]
+smtbmc yices
+# smtbmc boolector
+# abc pdr
+# aiger avy
+# aiger suprove
+
+[script]
+read_verilog -formal -sv cells_sim.v
+read_verilog -formal -sv ddr3_memory_controller.v
+prep -top ddr3_memory_controller
+
+# tribuf -logic
+# synth -top ddr3_memory_controller
+# iopadmap -bits -inpad IBUF O:PAD -outpad OBUF I:PAD -tinoutpad IOBUF ENA:O:I:PAD ddr3_memory_controller
+
+[files]
+ddr3_memory_controller.v
+cells_sim.v
+cells_ff.vh
+cells_io.vh
