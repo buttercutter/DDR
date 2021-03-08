@@ -3,9 +3,10 @@ A simple DDR3 memory controller for [Micron DDR3 RAM](https://www.micron.com/pro
 
 TODO:
 1. Debug the low-speed waveform when the DDR3 FPGA board arrives.
-2. Implement [Type-III digital PLL described in Floyd Gardner book: Phaselock Techniques, 3rd Edition](https://www.reddit.com/r/AskElectronics/comments/9i7g9j/loop_stability_of_type_3_digital_pll/) for high-speed application and `DQS` phase-shift purpose
-3. Investigate high-speed DDR PHY IO as described in reference \[1\], [2], [3], [4], [5]
-4. Design my own DDR3 FPGA board
+2. Implement more functionalities since the current verilog code does not yet support DLL on mode, Additive Latency (AL), write-leveling mode, self-refresh mode, issuing of multiple consecutive `ACT` commands, standalone precharge (non-`AP`) command
+3. Implement [Type-III digital PLL described in Floyd Gardner book: Phaselock Techniques, 3rd Edition](https://www.reddit.com/r/AskElectronics/comments/9i7g9j/loop_stability_of_type_3_digital_pll/) for high-speed application and `DQS` phase-shift purpose
+4. Investigate high-speed DDR PHY IO as described in reference \[1\], [2], [3], [4], [5]
+5. Design my own DDR3 FPGA board
 
 Credit: [@Morin](https://github.com/MartinGeisse) and [@Greg](https://github.com/gregdavill/) for their helpful technical help and explanation
 
