@@ -19,6 +19,10 @@
 // for lattice ECP5 FPGA
 //`define LATTICE 1
 
+// for Xilinx Spartan-6 FPGA
+`define XILINX 1
+
+
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
 #(
@@ -460,6 +464,45 @@ wire clk90_slow_posedge = (~clk_slow && counter_reset);
 
 	endgenerate
 
+	`endif
+	
+	`ifdef XILINX
+	
+	// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=126
+	
+	IOBUF IO_dqs (
+		.IO(dqs),
+		.I(dqs_w),
+		.T(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dqs_r)
+	);
+
+	IOBUF IO_dqs_n (
+		.IO(dqs_n),
+		.I(dqs_n_w),
+		.T(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dqs_n_r)
+	);
+
+	generate
+	genvar dq_index;  // to indicate the bit position of DQ signal
+
+	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
+	begin : dq_tristate_io
+
+		IOBUF IO_dq (
+			.IO(dq[dq_index]),
+			.I(dq_w[dq_index]),
+			.T(((wait_count >= TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+					  (main_state == STATE_WRITE_DATA)),
+			.O(dq_r[dq_index])
+		);
+	end
+
+	endgenerate
+			
 	`endif
 
 `endif
