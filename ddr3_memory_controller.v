@@ -508,6 +508,8 @@ wire clk90_slow_posedge = (~clk_slow && counter_reset);
 `endif
 
 
+localparam INTEGER_BITWIDTH = 32;  // just to avoid https://github.com/YosysHQ/yosys/issues/2718
+
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 localparam MAX_TIMING = 999999;  // just for initial development stage, will refine the value later
 reg [$clog2(MAX_TIMING)-1:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
@@ -528,28 +530,28 @@ localparam TIME_TRFC = 2;
 
 `else
 
-localparam TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-localparam TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+localparam [INTEGER_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+localparam [INTEGER_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
 localparam TIME_WL = 6;  // Since DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
 localparam TIME_CWL = 6;  // Since DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
 localparam TIME_TBURST = 8;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8
-localparam TIME_TXPR = $ceil(120/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+localparam [INTEGER_BITWIDTH-1:0] TIME_TXPR = $ceil(120/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
 localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
-localparam TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+localparam [INTEGER_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
 
 `endif
 
-localparam TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-localparam TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+localparam [INTEGER_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+localparam [INTEGER_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
 
 localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
 localparam TIME_TRPST = 1;  // this is for read post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
 localparam TIME_TWPRE = 1;  // this is for write pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
 localparam TIME_TWPST = 1;  // this is for write post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
-localparam TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-localparam TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+localparam [INTEGER_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+localparam [INTEGER_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
 
 localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
 localparam ADDRESS_FOR_MODE_REGISTER_1 = 1;
