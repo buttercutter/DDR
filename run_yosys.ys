@@ -1,0 +1,3 @@
+read_verilog ddr3_memory_controller.v
+synth_xilinx -top ddr3_memory_controller -family xc6s -ise
+write_edif -pvector bra ddr3_memory_controller.edif
