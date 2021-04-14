@@ -1,8 +1,9 @@
-// `define USE_x16 1
+`define USE_x16 1
 // `define HIGH_SPEED 1
 // `define TDQS 1
 
-`define RAM_SIZE_1GB
+//`define RAM_SIZE_1GB
+`define RAM_SIZE_2GB
 //`define RAM_SIZE_4GB
 
 
@@ -11,12 +12,16 @@ module test_ddr3_memory_controller
 	parameter CLK_PERIOD = 20,  // host clock period in ns
 	
 	`ifdef RAM_SIZE_1GB
-		parameter ADDRESS_BITWIDTH = 13,
-	`else
+		parameter ADDRESS_BITWIDTH = 14,
+		
+	`elsif RAM_SIZE_2GB
 		parameter ADDRESS_BITWIDTH = 15,
+		
+	`elsif RAM_SIZE_4GB
+		parameter ADDRESS_BITWIDTH = 16,
 	`endif
 	
-	parameter BANK_ADDRESS_BITWIDTH = 4,  // 4'b1000 (8 or eight) banks
+	parameter BANK_ADDRESS_BITWIDTH = 3,  //  8 banks, and $clog2(8) = 3
 	
 	`ifdef USE_x16
 		parameter DQ_BITWIDTH = 16  // bitwidth for each piece of data
@@ -72,7 +77,7 @@ wire [DQ_BITWIDTH-1:0] o_user_data;  // the requested data from DDR RAM after re
 
 reg write_enable, read_enable;
 
-assign done = (o_user_data == {DQ_BITWIDTH{1'b1}});
+assign done = ~(o_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity
 
 always @(posedge clk)
 begin

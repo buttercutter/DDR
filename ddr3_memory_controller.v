@@ -9,11 +9,12 @@
 // Once this code supports DLL on mode, formal verification will proceed with using Micron simulation model
 
 
-// `define USE_x16 1
+`define USE_x16 1
 // `define HIGH_SPEED 1
 // `define TDQS 1
 
-`define RAM_SIZE_1GB
+//`define RAM_SIZE_1GB
+`define RAM_SIZE_2GB
 //`define RAM_SIZE_4GB
 
 // for lattice ECP5 FPGA
@@ -29,12 +30,16 @@ module ddr3_memory_controller
 	parameter CLK_PERIOD = 20,  // host clock period in ns
 	
 	`ifdef RAM_SIZE_1GB
-		parameter ADDRESS_BITWIDTH = 13,
-	`else
+		parameter ADDRESS_BITWIDTH = 14,
+		
+	`elsif RAM_SIZE_2GB
 		parameter ADDRESS_BITWIDTH = 15,
+		
+	`elsif RAM_SIZE_4GB
+		parameter ADDRESS_BITWIDTH = 16,
 	`endif
 	
-	parameter BANK_ADDRESS_BITWIDTH = 4,  // 4'b1000 (8 or eight) banks
+	parameter BANK_ADDRESS_BITWIDTH = 3,  //  8 banks, and $clog2(8) = 3
 	
 	`ifdef USE_x16
 		parameter DQ_BITWIDTH = 16  // bitwidth for each piece of data
