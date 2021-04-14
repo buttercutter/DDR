@@ -1,4 +1,4 @@
 read_verilog test_ddr3_memory_controller.v
 read_verilog ddr3_memory_controller.v
-synth_xilinx -top test_ddr3_memory_controller -family xc6s -ise
+synth_xilinx -top test_ddr3_memory_controller -flatten -family xc6s -ise
 write_edif -pvector bra ddr3_memory_controller.edif

@@ -1,6 +1,9 @@
 ddr3_memory_controller.bld
 ddr3_memory_controller.edif
 ddr3_memory_controller.ngo
+ddr3_memory_controller.map
+ddr3_memory_controller.mrp
+ddr3_memory_controller.ngd
 ddr3_memory_controller_ngdbuild.xrpt
 netlist.lst
 xlnx_auto_0_xdb/
