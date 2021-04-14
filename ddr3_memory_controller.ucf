@@ -3,5 +3,5 @@ CONFIG VCCAUX = "3.3" ;
 
 NET "clk"                   LOC = D9      | IOSTANDARD = LVCMOS33 | PERIOD = 50MHz ;
 
-NET "start"                 LOC = P15     | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW ;
+NET "reset"                 LOC = P15     | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW ;
 NET "done"                  LOC = P16     | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW ;
