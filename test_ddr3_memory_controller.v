@@ -49,7 +49,8 @@ module test_ddr3_memory_controller
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
 `ifdef USE_x16
-	output udm, // input data mask, to be asserted HIGH during data write activities into RAM
+	output ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
+	output udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
 	inout ldqs, // lower byte data strobe
 	inout ldqs_n,
 	inout udqs, // upper byte data strobe
@@ -124,7 +125,8 @@ ddr3_memory_controller ddr3
 	
 	.dq(dq), // Data input/output
 `ifdef USE_x16
-	.udm(udm), // input data mask, to be asserted HIGH during data write activities into RAM
+	.ldm(ldm), // lower-byte data mask, to be asserted HIGH during data write activities into RAM
+	.udm(udm), // upper-byte data mask, to be asserted HIGH during data write activities into RAM
 	.ldqs(ldqs), // lower byte data strobe
 	.ldqs_n(ldqs_n),
 	.udqs(udqs), // upper byte data strobe

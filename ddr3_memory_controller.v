@@ -72,7 +72,8 @@ module ddr3_memory_controller
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
 `ifdef USE_x16
-	output udm, // input data mask, to be asserted HIGH during data write activities into RAM
+	output ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
+	output udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
 	inout ldqs, // lower byte data strobe
 	inout ldqs_n,
 	inout udqs, // upper byte data strobe
@@ -101,8 +102,10 @@ module ddr3_memory_controller
 // DM is just here to have byte granularity on the write accesses 
 // (ie you only want to update some bytes of the DRAM word)
 
-`ifndef TDQS
-assign tdqs = 0;  // acts as DM
+`ifndef USE_x16
+	`ifndef TDQS
+	assign tdqs = 0;  // acts as DM
+	`endif
 `endif
 
 /*
