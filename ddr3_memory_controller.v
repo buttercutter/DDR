@@ -379,10 +379,22 @@ wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counte
 
 	// For WRITE, we have to phase-shift DQS by 90 degrees and output the phase-shifted DQS to RAM
 
-	assign dqs = (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+	`ifdef USE_x16
+		assign udqs = ldqs;  // DQS strobes, this statement just uses all available x16 bandwidth
+		assign ldqs
+	`else
+		assign dqs 
+	`endif
+				= (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)) ? clk90_slow_is_at_high : 1'bz;
 								 
-	assign dqs_n = (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+	`ifdef USE_x16
+		assign udqs_n = ldqs_n;  // DQS strobes, this statement just uses all available x16 bandwidth
+		assign ldqs_n
+	`else
+		assign dqs_n
+	`endif
+				= (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 					(main_state == STATE_WRITE_DATA)) ? clk90_slow_is_at_low : 1'bz;
 
 	// dq needs to transition to new value on both posedge and negedge clk90_slow
@@ -395,8 +407,13 @@ wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counte
 	// the reason is to sample at the middle of incoming `dq` signal
 	reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
 
-	wire dqs_rising_edge = (dqs & ~dqs_n);
-	wire dqs_falling_edge = (~dqs & dqs_n);
+	`ifdef USE_x16
+		wire dqs_rising_edge = (ldqs & ~ldqs_n) || (udqs & ~udqs_n);
+		wire dqs_falling_edge = (~ldqs & ldqs_n) || (udqs & ~udqs_n);
+	`else
+		wire dqs_rising_edge = (dqs & ~dqs_n);
+		wire dqs_falling_edge = (~dqs & dqs_n);
+	`endif
 
 	always @(posedge clk)
 	begin
@@ -567,9 +584,7 @@ localparam ADDRESS_FOR_MODE_REGISTER_2 = 2;
 localparam ADDRESS_FOR_MODE_REGISTER_3 = 3;
 
 localparam A10 = 10;  // address bit for auto-precharge option
-`ifdef RAM_SIZE_4GB
 localparam A12 = 12;  // address bit for burst-chop option
-`endif
 
 // for STATE_IDLE transition into STATE_REFRESH
 localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
@@ -581,6 +596,11 @@ wire high_Priority_Refresh_Request = (refresh_Queue <= LOW_REFRESH_QUEUE_THRESHO
 // to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
 reg write_is_enabled;
 reg read_is_enabled;
+
+`ifdef USE_x16
+	 assign ldm = (main_state == STATE_WRITE_DATA);
+	 assign udm = (main_state == STATE_WRITE_DATA);
+`endif
 
 
 always @(posedge clk)  // will switch to using always @(posedge clk90) in later stage of the project
@@ -881,9 +901,7 @@ begin
 				
 				address <= 	// column address
 						   	{
-						   		`ifdef RAM_SIZE_4GB
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		`endif
 						   		
 						   		1'b1,  // A12 : no burst-chop
 								i_user_data_address[A10+1], 
@@ -934,9 +952,7 @@ begin
 				
 				address <= 	// column address
 						   	{
-						   		`ifdef RAM_SIZE_4GB
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		`endif
 						   		
 						   		1'b1,  // A12 : no burst-chop
 								i_user_data_address[A10+1], 
@@ -956,7 +972,7 @@ begin
 			end
 			
 			STATE_WRITE_DATA :
-			begin				
+			begin							
 				if(wait_count >= (TIME_TBURST + TIME_TWPST)-1)
 				begin
 					main_state <= STATE_IDLE;
@@ -983,9 +999,7 @@ begin
 				
 				address <= 	// column address
 						   	{
-						   		`ifdef RAM_SIZE_4GB
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		`endif
 						   		
 						   		1'b1,  // A12 : no burst-chop
 								i_user_data_address[A10+1], 
