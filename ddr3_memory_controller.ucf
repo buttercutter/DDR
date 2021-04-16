@@ -1,4 +1,4 @@
-NET "clk" LOC = D9;
+NET "clk" LOC = M9;
 NET "reset" LOC = P15;
 NET "done" LOC = T9;
 NET "address[12]" LOC = F3;
