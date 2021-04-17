@@ -48,6 +48,8 @@ NET "udqs" LOC = N3;
 NET "udqs_n" LOC = N1;
 NET "cs_n" LOC = A4;
 NET "udm" LOC = K3;
+NET "ldm" LOC = J4;
+NET "led_test" LOC = R9;
 NET "address[14]" IOSTANDARD = LVCMOS25;
 NET "address[14]" DRIVE = 12;
 NET "address[14]" SLEW = SLOW;
@@ -155,6 +157,9 @@ NET "reset" IOSTANDARD = LVCMOS33;
 NET "done" IOSTANDARD = LVCMOS33;
 NET "done" DRIVE = 8;
 NET "done" SLEW = SLOW;
+NET "led_test" IOSTANDARD = LVCMOS33;
+NET "led_test" DRIVE = 12;
+NET "led_test" SLEW = SLOW;
 NET "ck" IOSTANDARD = LVCMOS25;
 NET "ck" DRIVE = 12;
 NET "ck" SLEW = SLOW;
@@ -197,7 +202,3 @@ NET "udqs" SLEW = SLOW;
 NET "udqs_n" IOSTANDARD = LVCMOS25;
 NET "udqs_n" DRIVE = 12;
 NET "udqs_n" SLEW = SLOW;
-
-# PlanAhead Generated physical constraints 
-
-NET "ldm" LOC = J4;

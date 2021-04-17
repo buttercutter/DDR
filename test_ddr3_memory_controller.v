@@ -33,6 +33,7 @@ module test_ddr3_memory_controller
 	input clk,
 	input reset,
 	output done,
+	output led_test,  // just to test whether bitstream works or not
 	
 	// these are to be fed into external DDR3 memory
 	output [ADDRESS_BITWIDTH-1:0] address,
@@ -71,6 +72,7 @@ module test_ddr3_memory_controller
 `endif
 );
 
+assign led_test = 1;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 reg [DQ_BITWIDTH-1:0] i_user_data;  // data for which the user wants to write/read to/from DDR

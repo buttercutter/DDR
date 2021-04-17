@@ -30,3 +30,5 @@ ddr3_memory_controller_ngdbuild.xrpt
 netlist.lst
 xlnx_auto_0_xdb/
 _xmsgs/
+*.cfg
+openocd
