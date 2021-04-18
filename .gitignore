@@ -31,4 +31,5 @@ netlist.lst
 xlnx_auto_0_xdb/
 _xmsgs/
 *.cfg
+*.bit
 openocd
