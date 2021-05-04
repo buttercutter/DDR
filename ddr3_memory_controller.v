@@ -17,6 +17,9 @@
 `define RAM_SIZE_2GB
 //`define RAM_SIZE_4GB
 
+// for internal logic analyzer
+`define USE_ILA 1
+
 // for lattice ECP5 FPGA
 //`define LATTICE 1
 

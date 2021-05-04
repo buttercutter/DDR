@@ -6,6 +6,15 @@
 `define RAM_SIZE_2GB
 //`define RAM_SIZE_4GB
 
+// for internal logic analyzer
+`define USE_ILA 1
+
+// for lattice ECP5 FPGA
+//`define LATTICE 1
+
+// for Xilinx Spartan-6 FPGA
+`define XILINX 1
+
 
 module test_ddr3_memory_controller
 #(
@@ -71,6 +80,27 @@ module test_ddr3_memory_controller
 	inout tdqs_n
 `endif
 );
+
+
+`ifdef USE_ILA
+	`ifdef XILINX
+	
+		icon icon_inst (
+			.CONTROL0(CONTROL0) // INOUT BUS [35:0]
+		);
+
+		ila ila_dq (
+			.CONTROL(CONTROL0), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(dq) // IN BUS [15:0]
+		);
+	
+	`else
+	
+		// https://github.com/promach/internal_logic_analyzer
+	
+	`endif
+`endif
 
 assign led_test = 1;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 
