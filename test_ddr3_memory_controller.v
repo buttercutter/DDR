@@ -85,6 +85,9 @@ module test_ddr3_memory_controller
 `ifdef USE_ILA
 	`ifdef XILINX
 	
+		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
+		wire [35:0] CONTROL0;
+	
 		icon icon_inst (
 			.CONTROL0(CONTROL0) // INOUT BUS [35:0]
 		);
