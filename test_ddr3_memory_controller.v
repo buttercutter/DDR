@@ -86,6 +86,9 @@ module test_ddr3_memory_controller
 `ifdef USE_ILA
 	`ifdef XILINX
 	
+		wire [DQ_BITWIDTH-1:0] dq_r;  // port O of IOBUF primitive
+		wire [DQ_BITWIDTH-1:0] dq_w;  // port I of IOBUF primitive
+	
 		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
 		wire [35:0] CONTROL0;
 	
@@ -96,7 +99,7 @@ module test_ddr3_memory_controller
 		ila ila_dq (
 			.CONTROL(CONTROL0), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0(dq) // IN BUS [15:0]
+			.TRIG0(dq_w) // IN BUS [15:0]
 		);
 	
 	`else
@@ -107,7 +110,7 @@ module test_ddr3_memory_controller
 `endif
 
 assign led_test = 1;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
-assign reset = ~resetn;  // just for convenience of verilog syntax
+wire reset = ~resetn;  // just for convenience of verilog syntax
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 reg [DQ_BITWIDTH-1:0] i_user_data;  // data for which the user wants to write/read to/from DDR
@@ -161,6 +164,12 @@ ddr3_memory_controller ddr3
 	.reset_n(reset_n),
 	
 	.dq(dq), // Data input/output
+	
+`ifdef USE_ILA
+	.dq_w(dq_w),
+	.dq_r(dq_r),	
+`endif
+
 `ifdef USE_x16
 	.ldm(ldm), // lower-byte data mask, to be asserted HIGH during data write activities into RAM
 	.udm(udm), // upper-byte data mask, to be asserted HIGH during data write activities into RAM

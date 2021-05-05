@@ -74,6 +74,13 @@ module ddr3_memory_controller
 	output reg reset_n,
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
+	
+// Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
+`ifdef USE_ILA
+	output [DQ_BITWIDTH-1:0] dq_w,  // port I
+	input [DQ_BITWIDTH-1:0] dq_r,  // port O
+`endif
+
 `ifdef USE_x16
 	output ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
 	output udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
@@ -246,6 +253,17 @@ wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counte
 wire clk90_slow_posedge = (~clk_slow && counter_reset);
 // wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
 
+
+// outgoing signals to RAM
+wire dqs_w;
+wire dqs_n_w;
+//wire [DQ_BITWIDTH-1:0] dq_w;  // the output data stream is NOT serialized
+
+// incoming signals from RAM
+wire dqs_r;
+wire dqs_n_r;
+//wire [DQ_BITWIDTH-1:0] dq_r;  // the input data stream is NOT serialized
+
 	`ifdef FORMAL
 
 	initial assume(reset);
@@ -264,15 +282,6 @@ wire clk90_slow_posedge = (~clk_slow && counter_reset);
 		if(($past(reset) == 1) && (reset_extended) && (!$past(reset_extended))) assume(reset);
 	end
 */
-	// outgoing signals to RAM
-	wire dqs_w;
-	wire dqs_n_w;
-	wire [DQ_BITWIDTH-1:0] dq_w;  // the output data stream is NOT serialized
-
-	// incoming signals from RAM
-	wire dqs_r;
-	wire dqs_n_r;
-	wire [DQ_BITWIDTH-1:0] dq_r;  // the input data stream is NOT serialized
 
 	// phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
 	assign dqs_w = clk90_slow_is_at_high;
@@ -414,11 +423,6 @@ wire clk90_slow_posedge = (~clk_slow && counter_reset);
 	`endif
 				= (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 					(main_state == STATE_WRITE_DATA)) ? clk90_slow_is_at_low : 1'bz;
-
-	// dq needs to transition to new value on both posedge and negedge clk90_slow
-	// so, need to do assume($stable(i_user_data signal))
-	assign dq = (((wait_count >= TIME_WL) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? i_user_data : {DQ_BITWIDTH{1'bz}};
 			  
 
 	// phase-shift the incoming dqs and dqs_n signals by 90 degree with reference to clk_slow
