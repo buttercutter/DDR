@@ -91,17 +91,33 @@ module test_ddr3_memory_controller
 	
 		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
 		wire [35:0] CONTROL0;
+		wire [35:0] CONTROL1;
+		wire [35:0] CONTROL2;
 	
 		icon icon_inst (
-			.CONTROL0(CONTROL0) // INOUT BUS [35:0]
+			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
+			.CONTROL1(CONTROL1), // INOUT BUS [35:0]
+			.CONTROL2(CONTROL2)  // INOUT BUS [35:0]
 		);
 
-		ila ila_dq (
+		ila ila_dq_w (
 			.CONTROL(CONTROL0), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0(dq_w) // IN BUS [15:0]
 		);
-	
+
+		ila_1 ila_clk (
+			.CONTROL(CONTROL1), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(clk) // IN BUS [15:0]
+		);
+
+		ila_1 ila_reset (
+			.CONTROL(CONTROL2), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(resetn) // IN BUS [15:0]
+		);
+		
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
