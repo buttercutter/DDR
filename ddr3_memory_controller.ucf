@@ -1,5 +1,4 @@
 NET "clk" LOC = M9;
-NET "reset" LOC = P15;
 NET "done" LOC = T9;
 NET "address[12]" LOC = F3;
 NET "ras_n" LOC = J6;
@@ -153,7 +152,7 @@ NET "dq[0]" IOSTANDARD = LVCMOS25;
 NET "dq[0]" DRIVE = 12;
 NET "dq[0]" SLEW = SLOW;
 NET "clk" IOSTANDARD = LVCMOS33;
-NET "reset" IOSTANDARD = LVCMOS33;
+NET "resetn" IOSTANDARD = LVCMOS33;
 NET "done" IOSTANDARD = LVCMOS33;
 NET "done" DRIVE = 8;
 NET "done" SLEW = SLOW;
@@ -202,3 +201,7 @@ NET "udqs" SLEW = SLOW;
 NET "udqs_n" IOSTANDARD = LVCMOS25;
 NET "udqs_n" DRIVE = 12;
 NET "udqs_n" SLEW = SLOW;
+
+# PlanAhead Generated physical constraints 
+
+NET "resetn" LOC = T8;

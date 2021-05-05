@@ -39,8 +39,9 @@ module test_ddr3_memory_controller
 	`endif
 )
 (
+	// these are FPGA internal signals
 	input clk,
-	input reset,
+	input resetn,  // negation polarity due to pull-down tact switch
 	output done,
 	output led_test,  // just to test whether bitstream works or not
 	
@@ -106,6 +107,7 @@ module test_ddr3_memory_controller
 `endif
 
 assign led_test = 1;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
+assign reset = ~resetn;  // just for convenience of verilog syntax
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 reg [DQ_BITWIDTH-1:0] i_user_data;  // data for which the user wants to write/read to/from DDR
