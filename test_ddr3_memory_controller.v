@@ -125,7 +125,7 @@ module test_ddr3_memory_controller
 	`endif
 `endif
 
-assign led_test = 1;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
+assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 wire reset = ~resetn;  // just for convenience of verilog syntax
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
