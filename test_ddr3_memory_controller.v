@@ -122,24 +122,72 @@ end
 		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
 		wire [35:0] CONTROL0;
 		wire [35:0] CONTROL1;
-	
+		wire [35:0] CONTROL2;
+		wire [35:0] CONTROL3;
+		wire [35:0] CONTROL4;
+		wire [35:0] CONTROL5;
+		wire [35:0] CONTROL6;
+		wire [35:0] CONTROL7;
+							
 		icon icon_inst (
 			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
-			.CONTROL1(CONTROL1)  // INOUT BUS [35:0]
+			.CONTROL1(CONTROL1), // INOUT BUS [35:0]
+			.CONTROL2(CONTROL2), // INOUT BUS [35:0]
+			.CONTROL3(CONTROL3), // INOUT BUS [35:0]
+			.CONTROL4(CONTROL4), // INOUT BUS [35:0]
+			.CONTROL5(CONTROL5), // INOUT BUS [35:0]
+			.CONTROL6(CONTROL6), // INOUT BUS [35:0]
+			.CONTROL7(CONTROL7)  // INOUT BUS [35:0]			
 		);
 
-		ila ila_dq_w (
+		ila_16_bits ila_dq_w (
 			.CONTROL(CONTROL0), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0(dq_w) // IN BUS [15:0]
 		);
 
-		ila_1 ila_write_enable (
+		ila_1_bit ila_write_enable (
 			.CONTROL(CONTROL1), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0(write_enable) // IN BUS [15:0]
 		);
+
+		ila_1_bit ila_ck_n (
+			.CONTROL(CONTROL2), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(ck_n) // IN BUS [15:0]
+		);
+
+		ila_1_bit ila_ck_en (
+			.CONTROL(CONTROL3), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(ck_en) // IN BUS [15:0]
+		);
 		
+		ila_1_bit ila_cs_n (
+			.CONTROL(CONTROL4), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(cs_n) // IN BUS [15:0]
+		);
+		
+		ila_1_bit ila_ras_n (
+			.CONTROL(CONTROL5), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(ras_n) // IN BUS [15:0]
+		);
+		
+		ila_1_bit ila_cas_n (
+			.CONTROL(CONTROL6), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(cas_n) // IN BUS [15:0]
+		);
+		
+		ila_1_bit ila_we_n (
+			.CONTROL(CONTROL7), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(we_n) // IN BUS [15:0]
+		);
+			
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
