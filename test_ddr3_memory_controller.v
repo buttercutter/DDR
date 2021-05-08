@@ -135,37 +135,37 @@ end
 			.CONTROL3(CONTROL3), // INOUT BUS [35:0]
 			.CONTROL4(CONTROL4)  // INOUT BUS [35:0]		
 		);
-
-		ila_16_bits ila_dq_w (
-			.CONTROL(CONTROL0), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(dq_w) // IN BUS [15:0]
-		);
-
-		ila_16_bits ila_states_and_commands (
-			.CONTROL(CONTROL1), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0({{6{1'b0}}, main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
-		);
 		
 		ila_1_bit ila_write_enable (
-			.CONTROL(CONTROL2), // INOUT BUS [35:0]
+			.CONTROL(CONTROL0), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0(write_enable) // IN BUS [15:0]
 		);
 
 		ila_1_bit ila_done (
-			.CONTROL(CONTROL3), // INOUT BUS [35:0]
+			.CONTROL(CONTROL1), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0(done) // IN BUS [15:0]
 		);
 		
 		ila_1_bit ila_ck_n (
-			.CONTROL(CONTROL4), // INOUT BUS [35:0]
+			.CONTROL(CONTROL2), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0(ck_n) // IN BUS [15:0]
 		);
-			
+
+		ila_16_bits ila_dq_w (
+			.CONTROL(CONTROL3), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(dq_w) // IN BUS [15:0]
+		);
+
+		ila_16_bits ila_states_and_commands (
+			.CONTROL(CONTROL4), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0({{6{1'b0}}, main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
+		);
+					
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
