@@ -79,6 +79,12 @@ module ddr3_memory_controller
 `ifdef USE_ILA
 	output [DQ_BITWIDTH-1:0] dq_w,  // port I
 	input [DQ_BITWIDTH-1:0] dq_r,  // port O
+	
+	`ifndef XILINX
+	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
+	`else
+	output reg [4:0] main_state,
+	`endif
 `endif
 
 `ifdef USE_x16
@@ -163,10 +169,12 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 
 localparam NUM_OF_DDR_STATES = 20;
 
-`ifndef XILINX
-reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-`else
-reg [4:0] main_state;
+`ifndef USE_ILA
+	`ifndef XILINX
+	reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+	`else
+	reg [4:0] main_state;
+	`endif
 `endif
 
 localparam STATE_RESET = 0;
