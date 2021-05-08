@@ -83,48 +83,6 @@ module test_ddr3_memory_controller
 );
 
 
-`ifdef USE_ILA
-	`ifdef XILINX
-	
-		wire [DQ_BITWIDTH-1:0] dq_r;  // port O of IOBUF primitive
-		wire [DQ_BITWIDTH-1:0] dq_w;  // port I of IOBUF primitive
-	
-		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
-		wire [35:0] CONTROL0;
-		wire [35:0] CONTROL1;
-		wire [35:0] CONTROL2;
-	
-		icon icon_inst (
-			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
-			.CONTROL1(CONTROL1), // INOUT BUS [35:0]
-			.CONTROL2(CONTROL2)  // INOUT BUS [35:0]
-		);
-
-		ila ila_dq_w (
-			.CONTROL(CONTROL0), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(dq_w) // IN BUS [15:0]
-		);
-
-		ila_1 ila_clk (
-			.CONTROL(CONTROL1), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(clk) // IN BUS [15:0]
-		);
-
-		ila_1 ila_reset (
-			.CONTROL(CONTROL2), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(resetn) // IN BUS [15:0]
-		);
-		
-	`else
-	
-		// https://github.com/promach/internal_logic_analyzer
-	
-	`endif
-`endif
-
 assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 wire reset = ~resetn;  // just for convenience of verilog syntax
 
@@ -153,6 +111,41 @@ begin
 		read_enable <= 1;
 	end
 end
+
+
+`ifdef USE_ILA
+	`ifdef XILINX
+	
+		wire [DQ_BITWIDTH-1:0] dq_r;  // port O of IOBUF primitive
+		wire [DQ_BITWIDTH-1:0] dq_w;  // port I of IOBUF primitive
+	
+		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
+		wire [35:0] CONTROL0;
+		wire [35:0] CONTROL1;
+	
+		icon icon_inst (
+			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
+			.CONTROL1(CONTROL1)  // INOUT BUS [35:0]
+		);
+
+		ila ila_dq_w (
+			.CONTROL(CONTROL0), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(dq_w) // IN BUS [15:0]
+		);
+
+		ila_1 ila_write_enable (
+			.CONTROL(CONTROL1), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0(write_enable) // IN BUS [15:0]
+		);
+		
+	`else
+	
+		// https://github.com/promach/internal_logic_analyzer
+	
+	`endif
+`endif
 
 
 ddr3_memory_controller ddr3
