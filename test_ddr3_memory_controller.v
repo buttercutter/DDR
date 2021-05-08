@@ -127,13 +127,15 @@ end
 		wire [35:0] CONTROL2;
 		wire [35:0] CONTROL3;
 		wire [35:0] CONTROL4;
-							
+		wire [35:0] CONTROL5;
+									
 		icon icon_inst (
 			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
 			.CONTROL1(CONTROL1), // INOUT BUS [35:0]
 			.CONTROL2(CONTROL2), // INOUT BUS [35:0]
 			.CONTROL3(CONTROL3), // INOUT BUS [35:0]
-			.CONTROL4(CONTROL4)  // INOUT BUS [35:0]		
+			.CONTROL4(CONTROL4), // INOUT BUS [35:0]
+			.CONTROL5(CONTROL5)  // INOUT BUS [35:0]		
 		);
 		
 		ila_1_bit ila_write_enable (
@@ -165,7 +167,12 @@ end
 			.CLK(clk), // IN
 			.TRIG0({{6{1'b0}}, main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
 		);
-					
+
+		ila_32_bits ila_states_and_wait_count (
+			.CONTROL(CONTROL5), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0({{12{1'b0}}, main_state, wait_count}) // IN BUS [15:0]
+		);					
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer

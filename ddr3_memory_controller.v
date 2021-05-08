@@ -27,6 +27,13 @@
 `define XILINX 1
 
 
+localparam NUM_OF_DDR_STATES = 20;
+
+// https://www.systemverilog.io/understanding-ddr4-timing-parameters
+// TIME_INITIAL_CK_INACTIVE = 24999;
+localparam MAX_TIMING = 24999;  // just for initial development stage, will refine the value later
+
+
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
 #(
@@ -82,8 +89,10 @@ module ddr3_memory_controller
 	
 	`ifndef XILINX
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
+	output reg [$clog2(MAX_TIMING)-1:0] wait_count,
 	`else
 	output reg [4:0] main_state,
+	output reg [14:0] wait_count,
 	`endif
 `endif
 
@@ -167,8 +176,6 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 */
 
 
-localparam NUM_OF_DDR_STATES = 20;
-
 `ifndef USE_ILA
 	`ifndef XILINX
 	reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
@@ -176,6 +183,17 @@ localparam NUM_OF_DDR_STATES = 20;
 	reg [4:0] main_state;
 	`endif
 `endif
+
+
+`ifndef USE_ILA
+	`ifndef XILINX
+	reg [$clog2(MAX_TIMING)-1:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
+	`else
+	// $clog2(24999) = 15
+	reg [14:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
+	`endif
+`endif
+
 
 localparam STATE_RESET = 0;
 localparam STATE_RESET_FINISH = 1;
@@ -297,17 +315,17 @@ wire dqs_n_r;
 	assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT serialized
 
 
-	assign dqs = (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+	assign dqs = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)) ? dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
-	assign dqs_n = (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+	assign dqs_n = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)) ? dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
-	assign dq = (((wait_count >= TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+	assign dq = (((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)) ? dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
@@ -371,7 +389,7 @@ wire dqs_n_r;
 
 	always @(posedge clk)
 	begin
-		if(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		if(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA))
 		begin
 			assert(dqs == dqs_w);
@@ -382,7 +400,7 @@ wire dqs_n_r;
 
 	always @(posedge clk)
 	begin
-		if(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		if(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA))
 		begin
 			assert(dqs_n == dqs_n_w);
@@ -393,7 +411,7 @@ wire dqs_n_r;
 
 	always @(posedge clk)
 	begin
-		if(((wait_count >= TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+		if(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA))
 		begin
 			assert(dq == dq_w);
@@ -420,7 +438,7 @@ wire dqs_n_r;
 	`else
 		assign dqs 
 	`endif
-				= (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				= (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)) ? clk90_slow_is_at_high : 1'bz;
 								 
 	`ifdef USE_x16
@@ -429,7 +447,7 @@ wire dqs_n_r;
 	`else
 		assign dqs_n
 	`endif
-				= (((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				= (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 					(main_state == STATE_WRITE_DATA)) ? clk90_slow_is_at_low : 1'bz;
 			  
 
@@ -494,7 +512,7 @@ wire dqs_n_r;
 	TRELLIS_IO BB_dqs (
 		.B(dqs),
 		.I(dqs_w),
-		.T(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)),
 		.O(dqs_r)
 	);
@@ -502,7 +520,7 @@ wire dqs_n_r;
 	TRELLIS_IO BB_dqs_n (
 		.B(dqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)),
 		.O(dqs_n_r)
 	);
@@ -516,7 +534,7 @@ wire dqs_n_r;
 		TRELLIS_IO BB_dq (
 			.B(dq[dq_index]),
 			.I(dq_w[dq_index]),
-			.T(((wait_count >= TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+			.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
 					  (main_state == STATE_WRITE_DATA)),
 			.O(dq_r[dq_index])
 		);
@@ -533,7 +551,7 @@ wire dqs_n_r;
 	IOBUF IO_dqs (
 		.IO(dqs),
 		.I(dqs_w),
-		.T(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)),
 		.O(dqs_r)
 	);
@@ -541,7 +559,7 @@ wire dqs_n_r;
 	IOBUF IO_dqs_n (
 		.IO(dqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count >= TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)),
 		.O(dqs_n_r)
 	);
@@ -555,7 +573,7 @@ wire dqs_n_r;
 		IOBUF IO_dq (
 			.IO(dq[dq_index]),
 			.I(dq_w[dq_index]),
-			.T(((wait_count >= TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+			.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
 					  (main_state == STATE_WRITE_DATA)),
 			.O(dq_r[dq_index])
 		);
@@ -568,16 +586,13 @@ wire dqs_n_r;
 `endif
 
 
-localparam INTEGER_BITWIDTH = 32;  // just to avoid https://github.com/YosysHQ/yosys/issues/2718
-
-// https://www.systemverilog.io/understanding-ddr4-timing-parameters
-localparam MAX_TIMING = 999999;  // just for initial development stage, will refine the value later
-
+// just to avoid https://github.com/YosysHQ/yosys/issues/2718
 `ifndef XILINX
-reg [$clog2(MAX_TIMING)-1:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
+	localparam FIXED_POINT_BITWIDTH = $clog2(MAX_TIMING);
 `else
-reg [31:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
+	localparam FIXED_POINT_BITWIDTH = 15;
 `endif
+
 
 `ifdef FORMAL
 
@@ -596,15 +611,15 @@ localparam TIME_TRFC = 2;
 `else
 
 `ifndef XILINX
-localparam [INTEGER_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-localparam [INTEGER_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
-localparam [INTEGER_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-localparam [INTEGER_BITWIDTH-1:0] TIME_TXPR = $ceil(120/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil(120/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 `else
-localparam [INTEGER_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-localparam [INTEGER_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
-localparam [INTEGER_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-localparam [INTEGER_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 `endif
 
 localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
@@ -617,15 +632,15 @@ localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS comma
 `endif
 
 `ifndef XILINX
-localparam [INTEGER_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-localparam [INTEGER_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-localparam [INTEGER_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-localparam [INTEGER_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
 `else
-localparam [INTEGER_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-localparam [INTEGER_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-localparam [INTEGER_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-localparam [INTEGER_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
 `endif
 
 localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
@@ -688,7 +703,7 @@ begin
 			begin
 				ck_en <= 0;
 			
-				if(wait_count >= TIME_INITIAL_RESET_ACTIVE-1)
+				if(wait_count > TIME_INITIAL_RESET_ACTIVE-1)
 				begin
 					reset_n <= 1;  // reset inactive
 					main_state <= STATE_RESET_FINISH;
@@ -706,7 +721,7 @@ begin
 				// The clock must be present and valid for at least 10ns (and a minimum of five clocks) 
 				// and ODT must be driven LOW at least tIS prior to CKE being registered HIGH.
 				
-				if(wait_count >= TIME_INITIAL_CK_INACTIVE-1)
+				if(wait_count > TIME_INITIAL_CK_INACTIVE-1)
 				begin
 					ck_en <= 1;  // CK active
 					main_state <= STATE_INIT_CLOCK_ENABLE;
@@ -723,7 +738,7 @@ begin
 			begin
 				ck_en <= 1;  // CK active
 			
-				if(wait_count >= TIME_TXPR-1)
+				if(wait_count > TIME_TXPR-1)
 				begin
 					main_state <= STATE_INIT_MRS_2;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
@@ -746,7 +761,7 @@ begin
 	            // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled
 	            address <= 0;
 	                        			
-				if(wait_count >= TIME_TMRD-1)
+				if(wait_count > TIME_TMRD-1)
 				begin
 					main_state <= STATE_INIT_MRS_3;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
@@ -770,7 +785,7 @@ begin
 				// MPR disabled
 				address <= 0;
 				
-				if(wait_count >= TIME_TMRD-1)
+				if(wait_count > TIME_TMRD-1)
 				begin
 					main_state <= STATE_INIT_MRS_1;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
@@ -801,7 +816,7 @@ begin
 	            //       https://application-notes.digchip.com/024/24-19971.pdf for more context on AL
 	            address <= 3;
 	                        			
-				if(wait_count >= TIME_TMRD-1)
+				if(wait_count > TIME_TMRD-1)
 				begin
 					main_state <= STATE_INIT_MRS_0;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
@@ -848,7 +863,7 @@ begin
 
 				address <= 'b0001100010000;
 				
-				if(wait_count >= TIME_TMOD-1)
+				if(wait_count > TIME_TMOD-1)
 				begin
 					main_state <= STATE_ZQ_CALIBRATION;
 					wait_count <= 0;
@@ -869,7 +884,7 @@ begin
 				we_n <= 0;	
 				address[10] <= 1;
 	
-				if(wait_count >= TIME_TZQINIT-1)
+				if(wait_count > TIME_TZQINIT-1)
 				begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
@@ -910,6 +925,8 @@ begin
 					we_n <= 0;
 					address[10] <= 0;
 	                main_state <= STATE_PRECHARGE;
+	                
+	                wait_count <= 0;
 	            end
 	            
 	            else if (write_enable | read_enable)
@@ -923,6 +940,8 @@ begin
 	                
 	                if(write_enable) write_is_enabled <= 1;
 	                if(read_enable) read_is_enabled <= 1;
+	                
+	                wait_count <= 0;
 	            end
 	            
 	            else if (low_Priority_Refresh_Request)
@@ -936,6 +955,8 @@ begin
 					we_n <= 0;
 					address[10] <= 0;
 	                main_state <= STATE_PRECHARGE;
+	                
+	                wait_count <= 0;
 				end
 				
 				else main_state <= STATE_IDLE;
@@ -973,21 +994,21 @@ begin
 				// auto-precharge (AP) is easier for now. In the end it will be manually precharging 
 				// (since many read/write commands may use the same row) but for now, simple is better	
 						
-				if(wait_count >= TIME_TRCD-1)
+				if(wait_count > TIME_TRCD-1)
 				begin
-					if(write_is_enabled)
+					if(write_is_enabled)  // write operation has higher priority
 					begin
 						write_is_enabled <= 0;
 						main_state <= STATE_WRITE_AP;
+						wait_count <= 0;
 					end
 						
-					if(read_is_enabled) 
+					else if(read_is_enabled) 
 					begin
 						read_is_enabled <= 0;
 						main_state <= STATE_READ_AP;
+						wait_count <= 0;
 					end
-					
-					wait_count <= 0;
 				end
 				
 				else begin
@@ -1021,7 +1042,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count >= TIME_CWL-1)
+				if(wait_count > TIME_CWL-1)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
@@ -1034,7 +1055,7 @@ begin
 			
 			STATE_WRITE_DATA :
 			begin							
-				if(wait_count >= (TIME_TBURST + TIME_TWPST)-1)
+				if(wait_count > (TIME_TBURST + TIME_TWPST)-1)
 				begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
@@ -1068,7 +1089,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count >= TIME_WL-1)
+				if(wait_count > TIME_WL-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
@@ -1085,7 +1106,7 @@ begin
 				// For read, we get the unshifted DQS from the RAM and have to phase-shift it ourselves before 
 				// using it as a clock strobe signal to sample (or capture) DQ signal
 			
-				if(wait_count >= (TIME_TBURST + TIME_TRPST)-1)
+				if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
 				begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
@@ -1107,7 +1128,7 @@ begin
 				we_n <= 0;
 				address[10] <= 0;
 				
-				if(wait_count >= TIME_TRP-1)
+				if(wait_count > TIME_TRP-1)
 				begin
 					main_state <= STATE_REFRESH;
 					wait_count <= 0;
@@ -1143,7 +1164,7 @@ begin
 				if(refresh_Queue > 0)
 					refresh_Queue <= refresh_Queue -1;
 				
-				if(wait_count >= TIME_TRFC-1)
+				if(wait_count > TIME_TRFC-1)
 				begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
