@@ -42,7 +42,7 @@ module test_ddr3_memory_controller
 	// these are FPGA internal signals
 	input clk,
 	input resetn,  // negation polarity due to pull-down tact switch
-	output done,
+	output reg done,  // finished DDR write and read operations in loopback mechaism
 	output led_test,  // just to test whether bitstream works or not
 	
 	// these are to be fed into external DDR3 memory
@@ -92,7 +92,8 @@ wire [DQ_BITWIDTH-1:0] o_user_data;  // the requested data from DDR RAM after re
 
 reg write_enable, read_enable;
 
-assign done = ~(o_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity
+wire done_writing = ~done;  // the negation operator is only for light LED polarity
+wire finished_writing = (write_enable && done_writing);
 
 always @(posedge clk)
 begin
@@ -102,13 +103,24 @@ begin
 		i_user_data <= 0;
 		write_enable <= 0;
 		read_enable <= 0;
+		done <= 1;  // Due to LED polarity, '1' will turn off LED, '0' will turn off LED
 	end
 	
-	else begin
+	else if(~finished_writing)  // write operation has higher priority in loopback mechanism
+	begin
 		i_user_data_address <= i_user_data_address + 1;
 		i_user_data <= i_user_data + 1;
 		write_enable <= 1;
+		read_enable <= 0;
+		done <= ~(o_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity
+	end
+	
+	else begin  // read operation
+		i_user_data_address <= i_user_data_address + 1;
+		i_user_data <= i_user_data + 1;
+		write_enable <= 0;
 		read_enable <= 1;
+		done <= ~(o_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity	
 	end
 end
 
@@ -128,6 +140,7 @@ end
 		wire [35:0] CONTROL3;
 		wire [35:0] CONTROL4;
 		wire [35:0] CONTROL5;
+		wire [35:0] CONTROL6;
 									
 		icon icon_inst (
 			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
@@ -135,7 +148,8 @@ end
 			.CONTROL2(CONTROL2), // INOUT BUS [35:0]
 			.CONTROL3(CONTROL3), // INOUT BUS [35:0]
 			.CONTROL4(CONTROL4), // INOUT BUS [35:0]
-			.CONTROL5(CONTROL5)  // INOUT BUS [35:0]		
+			.CONTROL5(CONTROL5), // INOUT BUS [35:0]
+			.CONTROL6(CONTROL6)  // INOUT BUS [35:0]		
 		);
 		
 		ila_1_bit ila_write_enable (
@@ -172,7 +186,13 @@ end
 			.CONTROL(CONTROL5), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0({{12{1'b0}}, main_state, wait_count}) // IN BUS [15:0]
-		);					
+		);
+		
+		ila_32_bits ila_user_data (
+			.CONTROL(CONTROL6), // INOUT BUS [35:0]
+			.CLK(clk), // IN
+			.TRIG0({i_user_data, o_user_data}) // IN BUS [15:0]
+		);								
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
@@ -191,7 +211,7 @@ ddr3_memory_controller ddr3
 	.write_enable(write_enable),  // write to DDR memory
 	.read_enable(read_enable),  // read from DDR memory
 	.i_user_data_address(i_user_data_address),  // the DDR memory address for which the user wants to write/read the data
-	.i_user_data(i_user_data),  // data for which the user wants to write/read to/from DDR
+	.i_user_data(i_user_data),  // data for which the user wants to write to DDR RAM
 	.o_user_data(o_user_data),  // the requested data from DDR RAM after read operation
 	
 	// these are to be fed into external DDR3 memory

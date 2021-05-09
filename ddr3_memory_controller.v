@@ -27,11 +27,13 @@
 `define XILINX 1
 
 
+`ifndef XILINX
 localparam NUM_OF_DDR_STATES = 20;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE = 24999;
 localparam MAX_TIMING = 24999;  // just for initial development stage, will refine the value later
+`endif
 
 
 // https://www.systemverilog.io/ddr4-basics
@@ -283,12 +285,23 @@ wire clk90_slow_posedge = (~clk_slow && counter_reset);
 // outgoing signals to RAM
 wire dqs_w;
 wire dqs_n_w;
-//wire [DQ_BITWIDTH-1:0] dq_w;  // the output data stream is NOT serialized
+`ifndef USE_ILA
+	wire [DQ_BITWIDTH-1:0] dq_w;  // the output data stream is NOT serialized
+`endif
 
 // incoming signals from RAM
 wire dqs_r;
 wire dqs_n_r;
-//wire [DQ_BITWIDTH-1:0] dq_r;  // the input data stream is NOT serialized
+`ifndef USE_ILA
+	wire [DQ_BITWIDTH-1:0] dq_r;  // the input data stream is NOT serialized
+`endif
+
+
+// phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
+assign dqs_w = clk90_slow_is_at_high;
+assign dqs_n_w = clk90_slow_is_at_low;
+assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT serialized
+
 
 	`ifdef FORMAL
 
@@ -308,12 +321,6 @@ wire dqs_n_r;
 		if(($past(reset) == 1) && (reset_extended) && (!$past(reset_extended))) assume(reset);
 	end
 */
-
-	// phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
-	assign dqs_w = clk90_slow_is_at_high;
-	assign dqs_n_w = clk90_slow_is_at_low;
-	assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT serialized
-
 
 	assign dqs = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
 				  (main_state == STATE_WRITE_DATA)) ? dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
