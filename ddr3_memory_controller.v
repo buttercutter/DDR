@@ -89,6 +89,9 @@ module ddr3_memory_controller
 	output [DQ_BITWIDTH-1:0] dq_w,  // port I
 	input [DQ_BITWIDTH-1:0] dq_r,  // port O
 
+	output low_Priority_Refresh_Request,
+	output high_Priority_Refresh_Request,
+
 	// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
 	output reg write_is_enabled,
 	output reg read_is_enabled,
@@ -677,8 +680,13 @@ reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
 reg [3:0] refresh_Queue;
 `endif
 
-wire low_Priority_Refresh_Request = (refresh_Queue != MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED);
-wire high_Priority_Refresh_Request = (refresh_Queue <= LOW_REFRESH_QUEUE_THRESHOLD);
+`ifdef USE_ILA
+	assign low_Priority_Refresh_Request = (refresh_Queue != MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED);
+	assign high_Priority_Refresh_Request = (refresh_Queue <= LOW_REFRESH_QUEUE_THRESHOLD);
+`else
+	wire low_Priority_Refresh_Request = (refresh_Queue != MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED);
+	wire high_Priority_Refresh_Request = (refresh_Queue <= LOW_REFRESH_QUEUE_THRESHOLD);
+`endif
 
 `ifndef USE_ILA
 	// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ

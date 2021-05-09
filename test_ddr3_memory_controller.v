@@ -117,7 +117,7 @@ begin
 	
 	else begin  // read operation
 		i_user_data_address <= i_user_data_address + 1;
-		i_user_data <= i_user_data + 1;
+		i_user_data <= 0;  // not related to DDR read operation, only for DDR write operation
 		write_enable <= 0;
 		read_enable <= 1;
 		done <= ~(o_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity	
@@ -129,6 +129,9 @@ end
 
 	wire [DQ_BITWIDTH-1:0] dq_r;  // port O of IOBUF primitive
 	wire [DQ_BITWIDTH-1:0] dq_w;  // port I of IOBUF primitive
+
+	wire low_Priority_Refresh_Request;
+	wire high_Priority_Refresh_Request;
 
 	// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
 	wire write_is_enabled;
@@ -183,8 +186,9 @@ end
 		ila_16_bits ila_states_and_commands (
 			.CONTROL(CONTROL4), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0({{2{1'b0}}, write_is_enabled, read_is_enabled, write_enable, read_enable, 
-							   main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
+			.TRIG0({low_Priority_Refresh_Request, high_Priority_Refresh_Request,
+					write_is_enabled, read_is_enabled, write_enable, read_enable, 
+				   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
 		);
 
 		ila_32_bits ila_states_and_wait_count (
@@ -237,6 +241,8 @@ ddr3_memory_controller ddr3
 `ifdef USE_ILA
 	.dq_w(dq_w),
 	.dq_r(dq_r),
+	.low_Priority_Refresh_Request(low_Priority_Refresh_Request),
+	.high_Priority_Refresh_Request(high_Priority_Refresh_Request),
 	.write_is_enabled(write_is_enabled),
 	.read_is_enabled(read_is_enabled),
 	.main_state(main_state),
