@@ -112,7 +112,7 @@ begin
 		i_user_data <= i_user_data + 1;
 		write_enable <= 1;
 		read_enable <= 0;
-		done <= ~(o_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity
+		done <= ~(i_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity
 	end
 	
 	else begin  // read operation
