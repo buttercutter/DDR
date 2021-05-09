@@ -129,7 +129,11 @@ end
 
 	wire [DQ_BITWIDTH-1:0] dq_r;  // port O of IOBUF primitive
 	wire [DQ_BITWIDTH-1:0] dq_w;  // port I of IOBUF primitive
-	
+
+	// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
+	wire write_is_enabled;
+	wire read_is_enabled;
+		
 	`ifdef XILINX
 		wire [4:0] main_state;
 	
@@ -179,7 +183,8 @@ end
 		ila_16_bits ila_states_and_commands (
 			.CONTROL(CONTROL4), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0({{6{1'b0}}, main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
+			.TRIG0({{2{1'b0}}, write_is_enabled, read_is_enabled, write_enable, read_enable, 
+							   main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
 		);
 
 		ila_32_bits ila_states_and_wait_count (
@@ -232,6 +237,8 @@ ddr3_memory_controller ddr3
 `ifdef USE_ILA
 	.dq_w(dq_w),
 	.dq_r(dq_r),
+	.write_is_enabled(write_is_enabled),
+	.read_is_enabled(read_is_enabled),
 	.main_state(main_state),
 `endif
 

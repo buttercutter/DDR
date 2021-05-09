@@ -88,6 +88,10 @@ module ddr3_memory_controller
 `ifdef USE_ILA
 	output [DQ_BITWIDTH-1:0] dq_w,  // port I
 	input [DQ_BITWIDTH-1:0] dq_r,  // port O
+
+	// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
+	output reg write_is_enabled,
+	output reg read_is_enabled,
 	
 	`ifndef XILINX
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
@@ -676,9 +680,11 @@ reg [3:0] refresh_Queue;
 wire low_Priority_Refresh_Request = (refresh_Queue != MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED);
 wire high_Priority_Refresh_Request = (refresh_Queue <= LOW_REFRESH_QUEUE_THRESHOLD);
 
-// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
-reg write_is_enabled;
-reg read_is_enabled;
+`ifndef USE_ILA
+	// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
+	reg write_is_enabled;
+	reg read_is_enabled;
+`endif
 
 `ifdef USE_x16
 	 assign ldm = (main_state == STATE_WRITE_DATA);
