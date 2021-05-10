@@ -672,7 +672,13 @@ localparam A12 = 12;  // address bit for burst-chop option
 
 // for STATE_IDLE transition into STATE_REFRESH
 localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
-localparam LOW_REFRESH_QUEUE_THRESHOLD = 3;
+
+`ifdef HIGH_SPEED
+	localparam LOW_REFRESH_QUEUE_THRESHOLD = 3;
+`else
+	// for low speed testing mode, setting a lower threshold will allow STATE_IDLE skips STATE_PRECHARGE a little more "easily"
+	localparam LOW_REFRESH_QUEUE_THRESHOLD = 1;
+`endif
 
 `ifndef XILINX
 reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
