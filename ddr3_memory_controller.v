@@ -718,6 +718,9 @@ begin
 	begin
 		wait_count <= wait_count + 1;
 
+		if(refresh_Queue > 0)
+			refresh_Queue <= refresh_Queue -1;  // a countdown trigger for precharge operation
+
 		// https://i.imgur.com/VUdYasX.png
 		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
 		case(main_state)
@@ -1187,9 +1190,6 @@ begin
 				ras_n <= 0;
 				cas_n <= 0;
 				we_n <= 1;
-				
-				if(refresh_Queue > 0)
-					refresh_Queue <= refresh_Queue -1;
 				
 				if(wait_count > TIME_TRFC-1)
 				begin
