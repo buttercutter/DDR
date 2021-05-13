@@ -35,6 +35,9 @@ localparam NUM_OF_DDR_STATES = 20;
 localparam MAX_TIMING = 24999;  // just for initial development stage, will refine the value later
 `endif
 
+// for STATE_IDLE transition into STATE_REFRESH
+localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
+
 
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
@@ -99,9 +102,11 @@ module ddr3_memory_controller
 	`ifndef XILINX
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
 	output reg [$clog2(MAX_TIMING)-1:0] wait_count,
+	output reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue,
 	`else
 	output reg [4:0] main_state,
 	output reg [14:0] wait_count,
+	output reg [3:0] refresh_Queue,
 	`endif
 `endif
 
@@ -670,8 +675,6 @@ localparam ADDRESS_FOR_MODE_REGISTER_3 = 3;
 localparam A10 = 10;  // address bit for auto-precharge option
 localparam A12 = 12;  // address bit for burst-chop option
 
-// for STATE_IDLE transition into STATE_REFRESH
-localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
 
 `ifdef HIGH_SPEED
 	localparam LOW_REFRESH_QUEUE_THRESHOLD = 3;
@@ -680,10 +683,12 @@ localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execut
 	localparam LOW_REFRESH_QUEUE_THRESHOLD = 1;
 `endif
 
-`ifndef XILINX
-reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
-`else
-reg [3:0] refresh_Queue;
+`ifndef USE_ILA
+	`ifndef XILINX
+	reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
+	`else
+	reg [3:0] refresh_Queue;
+	`endif
 `endif
 
 `ifdef USE_ILA

@@ -83,6 +83,18 @@ module test_ddr3_memory_controller
 );
 
 
+`ifndef XILINX
+localparam NUM_OF_DDR_STATES = 20;
+
+// https://www.systemverilog.io/understanding-ddr4-timing-parameters
+// TIME_INITIAL_CK_INACTIVE = 24999;
+localparam MAX_TIMING = 24999;  // just for initial development stage, will refine the value later
+`endif
+
+// for STATE_IDLE transition into STATE_REFRESH
+localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
+
+
 assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 wire reset = ~resetn;  // just for convenience of verilog syntax
 
@@ -139,6 +151,8 @@ end
 		
 	`ifdef XILINX
 		wire [4:0] main_state;
+		wire [14:0] wait_count;
+		wire [3:0] refresh_Queue;
 	
 		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
 		wire [35:0] CONTROL0;
@@ -162,19 +176,19 @@ end
 		ila_1_bit ila_write_enable (
 			.CONTROL(CONTROL0), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0(write_enable) // IN BUS [15:0]
+			.TRIG0(write_enable) // IN BUS [0:0]
 		);
 
 		ila_1_bit ila_done (
 			.CONTROL(CONTROL1), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0(done) // IN BUS [15:0]
+			.TRIG0(done) // IN BUS [0:0]
 		);
 		
 		ila_1_bit ila_ck_n (
 			.CONTROL(CONTROL2), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0(ck_n) // IN BUS [15:0]
+			.TRIG0(ck_n) // IN BUS [0:0]
 		);
 
 		ila_16_bits ila_dq_w (
@@ -194,20 +208,22 @@ end
 		ila_32_bits ila_states_and_wait_count (
 			.CONTROL(CONTROL5), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0({{12{1'b0}}, main_state, wait_count}) // IN BUS [15:0]
+			.TRIG0({{8{1'b0}}, main_state, wait_count, refresh_Queue}) // IN BUS [31:0]
 		);
 		
 		ila_32_bits ila_user_data (
 			.CONTROL(CONTROL6), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0({i_user_data, o_user_data}) // IN BUS [15:0]
+			.TRIG0({i_user_data, o_user_data}) // IN BUS [31:0]
 		);								
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
 		
 		wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-	
+		wire [$clog2(MAX_TIMING)-1:0] wait_count;
+		wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
+		
 	`endif
 `endif
 
@@ -246,6 +262,8 @@ ddr3_memory_controller ddr3
 	.write_is_enabled(write_is_enabled),
 	.read_is_enabled(read_is_enabled),
 	.main_state(main_state),
+	.wait_count(wait_count),
+	.refresh_Queue(refresh_Queue),
 `endif
 
 `ifdef USE_x16
