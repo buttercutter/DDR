@@ -98,6 +98,15 @@ localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execut
 assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 wire reset = ~resetn;  // just for convenience of verilog syntax
 
+`ifndef XILINX
+	wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles;  // for the purpose of postponing refresh commands
+`else
+	wire [3:0] user_desired_extra_read_or_write_cycles;  // for the purpose of postponing refresh commands
+`endif
+
+assign user_desired_extra_read_or_write_cycles = MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED;
+
+
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 reg [DQ_BITWIDTH-1:0] i_user_data;  // data for which the user wants to write/read to/from DDR
 wire [DQ_BITWIDTH-1:0] o_user_data;  // the requested data from DDR RAM after read operation
@@ -205,17 +214,18 @@ end
 				   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
 		);
 
+
 		ila_32_bits ila_states_and_wait_count (
 			.CONTROL(CONTROL5), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0({{8{1'b0}}, main_state, wait_count, refresh_Queue}) // IN BUS [31:0]
 		);
-		
+
 		ila_32_bits ila_user_data (
 			.CONTROL(CONTROL6), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0({i_user_data, o_user_data}) // IN BUS [31:0]
-		);								
+		);
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
@@ -238,6 +248,7 @@ ddr3_memory_controller ddr3
 	.i_user_data_address(i_user_data_address),  // the DDR memory address for which the user wants to write/read the data
 	.i_user_data(i_user_data),  // data for which the user wants to write to DDR RAM
 	.o_user_data(o_user_data),  // the requested data from DDR RAM after read operation
+	.user_desired_extra_read_or_write_cycles(user_desired_extra_read_or_write_cycles),  // for the purpose of postponing refresh commands
 	
 	// these are to be fed into external DDR3 memory
 	.address(address),

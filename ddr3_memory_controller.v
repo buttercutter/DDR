@@ -36,8 +36,13 @@ localparam MAX_TIMING = 24999;  // just for initial development stage, will refi
 `endif
 
 // for STATE_IDLE transition into STATE_REFRESH
+// tREFI = 65*tRFC calculated using info from Micron dataheet, so tREFI > 8 * tRFC
+// So it is entirely possible to do all 8 refresh commands inside one tREFI cycle 
+// since each refresh command will take tRFC cycle to finish
+// See also https://www.systemverilog.io/understanding-ddr4-timing-parameters#refresh
+/* verilator lint_off VARHIDDEN */
 localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
-
+/* verilator lint_on VARHIDDEN */
 
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
@@ -71,6 +76,11 @@ module ddr3_memory_controller
 	input [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address,  // the DDR memory address for which the user wants to write/read the data
 	input [DQ_BITWIDTH-1:0] i_user_data,  // data for which the user wants to write/read to/from DDR
 	output reg [DQ_BITWIDTH-1:0] o_user_data,  // the requested data from DDR RAM after read operation
+	`ifndef XILINX
+		input [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
+	`else
+		input [3:0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
+	`endif
 	
 	// these are to be fed into external DDR3 memory
 	output reg [ADDRESS_BITWIDTH-1:0] address,
@@ -626,6 +636,7 @@ localparam TIME_TXPR = 2;
 localparam TIME_TMRD = 2;
 localparam TIME_TMOD = 2;
 localparam TIME_TRFC = 2;
+localparam TIME_TREFI = 2;
 
 `else
 
@@ -634,11 +645,13 @@ localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/C
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil(120/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
 `else
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Maximum average periodic refresh
 `endif
 
 localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
@@ -677,10 +690,10 @@ localparam A12 = 12;  // address bit for burst-chop option
 
 
 `ifdef HIGH_SPEED
-	localparam LOW_REFRESH_QUEUE_THRESHOLD = 3;
+	localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 `else
-	// for low speed testing mode, setting a lower threshold will allow STATE_IDLE skips STATE_PRECHARGE a little more "easily"
-	localparam LOW_REFRESH_QUEUE_THRESHOLD = 1;
+	// for low speed testing mode, setting a higher threshold will allow STATE_IDLE skips STATE_PRECHARGE a little more "easily"
+	localparam HIGH_REFRESH_QUEUE_THRESHOLD = 7;
 `endif
 
 `ifndef USE_ILA
@@ -693,10 +706,10 @@ localparam A12 = 12;  // address bit for burst-chop option
 
 `ifdef USE_ILA
 	assign low_Priority_Refresh_Request = (refresh_Queue != MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED);
-	assign high_Priority_Refresh_Request = (refresh_Queue <= LOW_REFRESH_QUEUE_THRESHOLD);
+	assign high_Priority_Refresh_Request = (refresh_Queue >= HIGH_REFRESH_QUEUE_THRESHOLD);
 `else
 	wire low_Priority_Refresh_Request = (refresh_Queue != MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED);
-	wire high_Priority_Refresh_Request = (refresh_Queue <= LOW_REFRESH_QUEUE_THRESHOLD);
+	wire high_Priority_Refresh_Request = (refresh_Queue >= HIGH_REFRESH_QUEUE_THRESHOLD);
 `endif
 
 `ifndef USE_ILA
@@ -713,7 +726,12 @@ localparam A12 = 12;  // address bit for burst-chop option
 
 always @(posedge clk)  // will switch to using always @(posedge clk90) in later stage of the project
 begin
-	if(reset) main_state <= STATE_RESET;
+	if(reset) 
+	begin
+		main_state <= STATE_RESET;
+		wait_count <= 0;
+		refresh_Queue <= 0;
+	end
 
 `ifdef HIGH_SPEED
 	else if(clk90)  // no need for slower clk90_slow signal in high operating frequency mode
@@ -722,9 +740,6 @@ begin
 `endif
 	begin
 		wait_count <= wait_count + 1;
-
-		if(refresh_Queue > 0)
-			refresh_Queue <= refresh_Queue -1;  // a countdown trigger for precharge operation
 
 		// https://i.imgur.com/VUdYasX.png
 		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
@@ -936,10 +951,10 @@ begin
 				// will implement state transition to STATE_WRITE_LEVELLING and STATE_SELF_REFRESH later
 			
 				// Rationale behind the priority encoder logic coding below:
-				// We can queue up to 8 REFRESH commands inside the RAM. 
-				// If 8 are queued, no more are needed (both request signals are false). 
+				// We can queue (or postpone) up to maximum 8 REFRESH commands inside the RAM. 
+				// If 8 are queued, there's a high priority request. 
 				// If 4-7 are queued, there's a low-priority request.
-				// If 0-3 are queued there's a high priority request. 
+				// If 0-3 are queued, no more are needed (both request signals are false).
 				// So READ/WRITE normally go first and refreshes are done while no READ/WRITE are pending, 
 				// unless there is a danger that the queue underflows, 
 				// in which case it becomes a high-priority request and READ/WRITE have to wait.  
@@ -947,7 +962,11 @@ begin
 				// higher densities
 				
 				if(refresh_Queue == 0)
+					refresh_Queue <= user_desired_extra_read_or_write_cycles;
+					
+				else if(user_desired_extra_read_or_write_cycles >= MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED)
 					refresh_Queue <= MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED;
+					
 				
 	            if (high_Priority_Refresh_Request)
 	            begin
@@ -1195,6 +1214,9 @@ begin
 				ras_n <= 0;
 				cas_n <= 0;
 				we_n <= 1;
+
+				if(refresh_Queue > 0)
+					refresh_Queue <= refresh_Queue - 1;  // a countdown trigger for precharge/refresh operation
 				
 				if(wait_count > TIME_TRFC-1)
 				begin
