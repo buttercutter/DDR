@@ -704,6 +704,8 @@ localparam A12 = 12;  // address bit for burst-chop option
 	`endif
 `endif
 
+
+// It is not a must that all 8 postponed REF-commands have to be executed inside a single tREFI
 `ifdef USE_ILA
 	assign low_Priority_Refresh_Request = (refresh_Queue != MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED);
 	assign high_Priority_Refresh_Request = (refresh_Queue >= HIGH_REFRESH_QUEUE_THRESHOLD);
@@ -961,12 +963,11 @@ begin
 				// So, in summary, it is to overcome the performance penalty due to refresh lockout at the 
 				// higher densities
 				
-				if(refresh_Queue == 0)
+				if((refresh_Queue == 0) && 
+				   (user_desired_extra_read_or_write_cycles <= MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED))
+				begin
 					refresh_Queue <= user_desired_extra_read_or_write_cycles;
-					
-				else if(user_desired_extra_read_or_write_cycles >= MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED)
-					refresh_Queue <= MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED;
-					
+				end	
 				
 	            if (high_Priority_Refresh_Request)
 	            begin
