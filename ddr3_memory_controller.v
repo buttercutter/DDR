@@ -723,12 +723,17 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 `ifndef XILINX
 reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED*TIME_TREFI)-1:0] postponed_refresh_timing_count;
+reg [$clog2(TIME_TREFI)-1:0] refresh_timing_count;
 `else
 reg [11:0] postponed_refresh_timing_count;
+reg [8:0] refresh_timing_count;
 `endif
 
 wire extra_read_or_write_cycles_had_passed  // to allow burst read or write operations to proceed first
 		= (postponed_refresh_timing_count == user_desired_extra_read_or_write_cycles*TIME_TREFI);
+
+wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between REFRESH commands
+		= (refresh_timing_count == TIME_TREFI);
 
 always @(posedge clk)  // will switch to using always @(posedge clk90) in later stage of the project
 begin
@@ -738,6 +743,7 @@ begin
 		wait_count <= 0;
 		refresh_Queue <= 0;
 		postponed_refresh_timing_count <= 0;
+		refresh_timing_count <= 0;
 	end
 
 `ifdef HIGH_SPEED
@@ -751,7 +757,11 @@ begin
 		if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
 			
 		else postponed_refresh_timing_count <= postponed_refresh_timing_count + 1;
-		
+
+		if(it_is_time_to_do_refresh_now) refresh_timing_count <= 0;
+			
+		else refresh_timing_count <= refresh_timing_count + 1;
+				
 		// https://i.imgur.com/VUdYasX.png
 		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
 		case(main_state)
@@ -978,7 +988,8 @@ begin
 					refresh_Queue <= user_desired_extra_read_or_write_cycles;
 				end	
 				
-	            if (extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request)
+	            if ((extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request) ||
+	            	((user_desired_extra_read_or_write_cycles == 0) & it_is_time_to_do_refresh_now))
 	            begin
 					// need to do PRECHARGE before REFRESH, see tRP
 
