@@ -116,6 +116,8 @@ reg write_enable, read_enable;
 wire done_writing = ~done;  // the negation operator is only for light LED polarity
 wire finished_writing = (write_enable && done_writing);
 
+localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 4;  // only 4 pieces of data are used during data loopback integrity test
+
 always @(posedge clk)
 begin
 	if(reset) 
@@ -133,7 +135,7 @@ begin
 		i_user_data <= i_user_data + 1;
 		write_enable <= 1;
 		read_enable <= 0;
-		done <= ~(i_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity
+		done <= ~(i_user_data == NUM_OF_TEST_DATA);  // the negation operator is only for light LED polarity
 	end
 	
 	else begin  // read operation
@@ -141,7 +143,7 @@ begin
 		i_user_data <= 0;  // not related to DDR read operation, only for DDR write operation
 		write_enable <= 0;
 		read_enable <= 1;
-		done <= ~(o_user_data == {DQ_BITWIDTH{1'b1}});  // the negation operator is only for light LED polarity	
+		done <= ~(o_user_data == NUM_OF_TEST_DATA);  // the negation operator is only for light LED polarity	
 	end
 end
 

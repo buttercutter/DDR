@@ -74,7 +74,7 @@ module ddr3_memory_controller
 	input write_enable,  // write to DDR memory
 	input read_enable,  // read from DDR memory
 	input [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address,  // the DDR memory address for which the user wants to write/read the data
-	input [DQ_BITWIDTH-1:0] i_user_data,  // data for which the user wants to write/read to/from DDR
+	input [DQ_BITWIDTH-1:0] i_user_data,  // data for which the user wants to write to DDR
 	output reg [DQ_BITWIDTH-1:0] o_user_data,  // the requested data from DDR RAM after read operation
 	`ifndef XILINX
 		input [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
@@ -732,7 +732,7 @@ reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED*TIME_TREFI)-1:0] postponed_ref
 reg [11:0] postponed_refresh_timing_count;
 `endif
 
-wire extra_read_or_write_cycles_had_passed 
+wire extra_read_or_write_cycles_had_passed  // to allow burst read or write operations to proceed first
 		= (postponed_refresh_timing_count == user_desired_extra_read_or_write_cycles*TIME_TREFI);
 
 always @(posedge clk)  // will switch to using always @(posedge clk90) in later stage of the project
@@ -983,8 +983,7 @@ begin
 					refresh_Queue <= user_desired_extra_read_or_write_cycles;
 				end	
 				
-	            if (extra_read_or_write_cycles_had_passed & // to allow burst read or write operations to proceed first
-	            	high_Priority_Refresh_Request)
+	            if (extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request)
 	            begin
 					// need to do PRECHARGE before REFRESH, see tRP
 
