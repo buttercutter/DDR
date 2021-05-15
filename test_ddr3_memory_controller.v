@@ -42,7 +42,7 @@ module test_ddr3_memory_controller
 	// these are FPGA internal signals
 	input clk,
 	input resetn,  // negation polarity due to pull-down tact switch
-	output reg done,  // finished DDR write and read operations in loopback mechaism
+	output done,  // finished DDR write and read operations in loopback mechaism
 	output led_test,  // just to test whether bitstream works or not
 	
 	// these are to be fed into external DDR3 memory
@@ -112,9 +112,9 @@ reg [DQ_BITWIDTH-1:0] i_user_data;  // data for which the user wants to write/re
 wire [DQ_BITWIDTH-1:0] o_user_data;  // the requested data from DDR RAM after read operation
 
 reg write_enable, read_enable;
+reg done_writing, done_reading;
 
-wire done_writing = ~done;  // the negation operator is only for light LED polarity
-wire finished_writing = (write_enable && done_writing);
+assign done = (done_writing & done_reading);  // finish a data loopback transaction
 
 localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 4;  // only 4 pieces of data are used during data loopback integrity test
 
@@ -126,24 +126,34 @@ begin
 		i_user_data <= 0;
 		write_enable <= 0;
 		read_enable <= 0;
-		done <= 1;  // Due to LED polarity, '1' will turn off LED, '0' will turn off LED
+		done_writing <= 0;
+		done_reading <= 0;
 	end
 	
-	else if(~finished_writing)  // write operation has higher priority in loopback mechanism
+	else if(~done_writing)  // write operation has higher priority in loopback mechanism
 	begin
 		i_user_data_address <= i_user_data_address + 1;
 		i_user_data <= i_user_data + 1;
 		write_enable <= 1;
 		read_enable <= 0;
-		done <= ~(i_user_data == NUM_OF_TEST_DATA);  // the negation operator is only for light LED polarity
+		done_writing <= (i_user_data == NUM_OF_TEST_DATA);
+		done_reading <= 0;
 	end
 	
 	else begin  // read operation
-		i_user_data_address <= i_user_data_address + 1;
+		if(done_writing) i_user_data_address <= 0;  // read from the first piece of data written
+		
+		else i_user_data_address <= i_user_data_address + 1;
+		
 		i_user_data <= 0;  // not related to DDR read operation, only for DDR write operation
 		write_enable <= 0;
-		read_enable <= 1;
-		done <= ~(o_user_data == NUM_OF_TEST_DATA);  // the negation operator is only for light LED polarity	
+		
+		if(done) read_enable <= 0;  // already finished reading all data
+		
+		else read_enable <= 1;
+		
+		done_writing <= done_writing;
+		done_reading <= (o_user_data == NUM_OF_TEST_DATA);	
 	end
 end
 
