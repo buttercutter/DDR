@@ -726,6 +726,15 @@ localparam A12 = 12;  // address bit for burst-chop option
 `endif
 
 
+`ifndef XILINX
+reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED*TIME_TREFI)-1:0] postponed_refresh_timing_count;
+`else
+reg [11:0] postponed_refresh_timing_count;
+`endif
+
+wire extra_read_or_write_cycles_had_passed 
+		= (postponed_refresh_timing_count == user_desired_extra_read_or_write_cycles*TIME_TREFI);
+
 always @(posedge clk)  // will switch to using always @(posedge clk90) in later stage of the project
 begin
 	if(reset) 
@@ -733,6 +742,7 @@ begin
 		main_state <= STATE_RESET;
 		wait_count <= 0;
 		refresh_Queue <= 0;
+		postponed_refresh_timing_count <= 0;
 	end
 
 `ifdef HIGH_SPEED
@@ -743,6 +753,10 @@ begin
 	begin
 		wait_count <= wait_count + 1;
 
+		if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
+			
+		else postponed_refresh_timing_count <= postponed_refresh_timing_count + 1;
+		
 		// https://i.imgur.com/VUdYasX.png
 		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
 		case(main_state)
@@ -969,7 +983,8 @@ begin
 					refresh_Queue <= user_desired_extra_read_or_write_cycles;
 				end	
 				
-	            if (high_Priority_Refresh_Request)
+	            if (extra_read_or_write_cycles_had_passed & // to allow burst read or write operations to proceed first
+	            	high_Priority_Refresh_Request)
 	            begin
 					// need to do PRECHARGE before REFRESH, see tRP
 
