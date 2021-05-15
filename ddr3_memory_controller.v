@@ -689,12 +689,7 @@ localparam A10 = 10;  // address bit for auto-precharge option
 localparam A12 = 12;  // address bit for burst-chop option
 
 
-`ifdef HIGH_SPEED
-	localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
-`else
-	// for low speed testing mode, setting a higher threshold will allow STATE_IDLE skips STATE_PRECHARGE a little more "easily"
-	localparam HIGH_REFRESH_QUEUE_THRESHOLD = 7;
-`endif
+localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 `ifndef USE_ILA
 	`ifndef XILINX
