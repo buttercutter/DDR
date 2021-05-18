@@ -52,7 +52,7 @@ module test_ddr3_memory_controller
 	output ck_n, // CK#
 	output ck_en, // CKE
 	output cs_n, // chip select signal
-	// output reg odt, // on-die termination
+	output odt, // on-die termination
 	output ras_n, // RAS#
 	output cas_n, // CAS#
 	output we_n, // WE#
@@ -269,7 +269,7 @@ ddr3_memory_controller ddr3
 	.ck_n(ck_n), // CK#
 	.ck_en(ck_en), // CKE
 	.cs_n(cs_n), // chip select signal
-	// output reg odt, // on-die termination
+	.odt(odt), // on-die termination
 	.ras_n(ras_n), // RAS#
 	.cas_n(cas_n), // CAS#
 	.we_n(we_n), // WE#

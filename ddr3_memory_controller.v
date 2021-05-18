@@ -89,7 +89,7 @@ module ddr3_memory_controller
 	output ck_n, // CK#
 	output reg ck_en, // CKE
 	output reg cs_n, // chip select signal
-	// output reg odt, // on-die termination
+	output reg odt, // on-die termination
 	output reg ras_n, // RAS#
 	output reg cas_n, // CAS#
 	output reg we_n, // WE#
@@ -811,6 +811,13 @@ begin
 			begin
 				// The clock must be present and valid for at least 10ns (and a minimum of five clocks) 
 				// and ODT must be driven LOW at least tIS prior to CKE being registered HIGH.
+				// For tIS, see https://i.imgur.com/kiJI0pY.png or 
+				// the section "Command and Address Setup, Hold, and Derating" inside
+				// https://media-www.micron.com/-/media/client/global/documents/products/data-sheet/dram/ddr3/2gb_ddr3_sdram.pdf#page=99
+				// as well as the JESD79-3F DDR3 SDRAM Standard which adds further derating which means
+				// another 25 ps to account for the earlier reference point
+				
+				odt <= 0;  // tIs = 195ps (170ps+25ps) , this does not affect anything at low speed testing mode
 				
 				if(wait_count > TIME_INITIAL_CK_INACTIVE-1)
 				begin

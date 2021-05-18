@@ -172,6 +172,9 @@ NET "ck_en" SLEW = SLOW;
 NET "cs_n" IOSTANDARD = LVCMOS25;
 NET "cs_n" DRIVE = 12;
 NET "cs_n" SLEW = SLOW;
+NET "odt" IOSTANDARD = LVCMOS25;
+NET "odt" DRIVE = 12;
+NET "odt" SLEW = SLOW;
 NET "ras_n" IOSTANDARD = LVCMOS25;
 NET "ras_n" DRIVE = 12;
 NET "ras_n" SLEW = SLOW;
@@ -202,3 +205,7 @@ NET "udqs" SLEW = SLOW;
 NET "udqs_n" IOSTANDARD = LVCMOS25;
 NET "udqs_n" DRIVE = 12;
 NET "udqs_n" SLEW = SLOW;
+
+# PlanAhead Generated physical constraints 
+
+NET "odt" LOC = L5;
