@@ -301,6 +301,7 @@ assign ck_n = ~clk_slow;
 wire clk90_slow_is_at_high = (~clk_slow && counter_reset) || (clk_slow && ~counter_reset);
 wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counter_reset);
 wire clk90_slow_posedge = (~clk_slow && counter_reset);
+wire clk_slow_posedge = (clk_slow && ~counter_reset);
 // wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
 
 
@@ -755,7 +756,8 @@ wire extra_read_or_write_cycles_had_passed  // to allow burst read or write oper
 wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between REFRESH commands
 		= (refresh_timing_count == TIME_TREFI);
 
-always @(posedge clk)  // will switch to using always @(posedge clk90) in later stage of the project
+// will switch to using always @(posedge clk_slow) in later stage of project
+always @(posedge clk)
 begin
 	if(reset) 
 	begin
@@ -767,9 +769,9 @@ begin
 	end
 
 `ifdef HIGH_SPEED
-	else if(clk90)  // no need for slower clk90_slow signal in high operating frequency mode
+	else
 `else
-	else if(clk90_slow_posedge)
+	else if(clk_slow_posedge)  // use the slower clk_slow_posedge signal for low speed testing mode
 `endif
 	begin
 		wait_count <= wait_count + 1;
