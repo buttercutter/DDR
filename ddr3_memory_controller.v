@@ -756,7 +756,7 @@ wire extra_read_or_write_cycles_had_passed  // to allow burst read or write oper
 wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between REFRESH commands
 		= (refresh_timing_count == TIME_TREFI);
 
-// will switch to using always @(posedge clk_slow) in later stage of project
+// will switch to using always @(posedge clk90_slow) in later stage of project
 always @(posedge clk)
 begin
 	if(reset) 
@@ -771,7 +771,12 @@ begin
 `ifdef HIGH_SPEED
 	else
 `else
-	else if(clk_slow_posedge)  // use the slower clk_slow_posedge signal for low speed testing mode
+	// DDR signals are 90 degrees phase-shifted in advance
+	// with reference to outgoing 'ck' (clk_slow) signal to DDR RAM
+	// such that all outgoing DDR signals are sampled in the middle of during posedge(ck)
+	// For more info, see the initialization sequence : https://i.imgur.com/JClPQ6G.png
+	
+	else if(clk90_slow_posedge)  // use the slower clk90_slow_posedge signal for low speed testing mode
 `endif
 	begin
 		wait_count <= wait_count + 1;
@@ -811,8 +816,7 @@ begin
 			
 			STATE_RESET_FINISH :
 			begin
-				// The clock must be present and valid for at least 10ns (and a minimum of five clocks) 
-				// and ODT must be driven LOW at least tIS prior to CKE being registered HIGH.
+				// ODT must be driven LOW at least tIS prior to CKE being registered HIGH.
 				// For tIS, see https://i.imgur.com/kiJI0pY.png or 
 				// the section "Command and Address Setup, Hold, and Derating" inside
 				// https://media-www.micron.com/-/media/client/global/documents/products/data-sheet/dram/ddr3/2gb_ddr3_sdram.pdf#page=99
@@ -837,7 +841,8 @@ begin
 			STATE_INIT_CLOCK_ENABLE :
 			begin
 				ck_en <= 1;  // CK active
-			
+
+				// The clock must be present and valid for at least 10ns (and a minimum of five clocks)			
 				if(wait_count > TIME_TXPR-1)
 				begin
 					main_state <= STATE_INIT_MRS_2;
