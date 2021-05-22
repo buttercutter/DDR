@@ -169,11 +169,15 @@ end
 	// to propagate 'write_enable' and 'read_enable' signals during STATE_IDLE to STATE_WRITE and STATE_READ
 	wire write_is_enabled;
 	wire read_is_enabled;
+	
+	wire dqs_rising_edge;
+	wire dqs_falling_edge;
 		
 	`ifdef XILINX
 		wire [4:0] main_state;
 		wire [14:0] wait_count;
 		wire [3:0] refresh_Queue;
+		wire [1:0] dqs_counter;
 	
 		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
 		wire [35:0] CONTROL0;
@@ -230,7 +234,8 @@ end
 		ila_32_bits ila_states_and_wait_count (
 			.CONTROL(CONTROL5), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0({{8{1'b0}}, main_state, wait_count, refresh_Queue}) // IN BUS [31:0]
+			.TRIG0({{4{1'b0}}, dqs_counter, dqs_rising_edge, dqs_falling_edge, 
+								main_state, wait_count, refresh_Queue}) // IN BUS [31:0]
 		);
 
 		ila_32_bits ila_user_data (
@@ -241,10 +246,14 @@ end
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
+
+		localparam DIVIDE_RATIO = 4;
+		localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 		
 		wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 		wire [$clog2(MAX_TIMING)-1:0] wait_count;
 		wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
+		wire [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
 		
 	`endif
 `endif
@@ -287,6 +296,9 @@ ddr3_memory_controller ddr3
 	.main_state(main_state),
 	.wait_count(wait_count),
 	.refresh_Queue(refresh_Queue),
+	.dqs_counter(dqs_counter),
+	.dqs_rising_edge(dqs_rising_edge),
+	.dqs_falling_edge(dqs_falling_edge),
 `endif
 
 `ifdef USE_x16

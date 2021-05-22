@@ -113,11 +113,16 @@ module ddr3_memory_controller
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
 	output reg [$clog2(MAX_TIMING)-1:0] wait_count,
 	output reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue,
+	output reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter,
 	`else
 	output reg [4:0] main_state,
 	output reg [14:0] wait_count,
 	output reg [3:0] refresh_Queue,
+	output reg [1:0] dqs_counter,
 	`endif
+	
+	output dqs_rising_edge,
+	output dqs_falling_edge,
 `endif
 
 `ifdef USE_x16
@@ -483,20 +488,32 @@ assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT ser
 
 	// phase-shift the incoming dqs and dqs_n signals by 90 degree with reference to clk_slow
 	// the reason is to sample at the middle of incoming `dq` signal
-`ifndef XILINX
-	reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
-`else
-	reg [1:0] dqs_counter;
-`endif
-
-	`ifdef USE_x16
-		wire dqs_rising_edge = (ldqs & ~ldqs_n) || (udqs & ~udqs_n);
-		wire dqs_falling_edge = (~ldqs & ldqs_n) || (udqs & ~udqs_n);
-	`else
-		wire dqs_rising_edge = (dqs & ~dqs_n);
-		wire dqs_falling_edge = (~dqs & dqs_n);
+	`ifndef USE_ILA
+		`ifndef XILINX
+			reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
+		`else
+			reg [1:0] dqs_counter;
+		`endif
 	`endif
 
+	`ifndef USE_ILA
+		`ifdef USE_x16
+			wire dqs_rising_edge = (ldqs & ~ldqs_n) || (udqs & ~udqs_n);
+			wire dqs_falling_edge = (~ldqs & ldqs_n) || (udqs & ~udqs_n);
+		`else
+			wire dqs_rising_edge = (dqs & ~dqs_n);
+			wire dqs_falling_edge = (~dqs & dqs_n);
+		`endif
+	`else
+		`ifdef USE_x16
+			assign dqs_rising_edge = (ldqs & ~ldqs_n) || (udqs & ~udqs_n);
+			assign dqs_falling_edge = (~ldqs & ldqs_n) || (udqs & ~udqs_n);
+		`else
+			assign dqs_rising_edge = (dqs & ~dqs_n);
+			assign dqs_falling_edge = (~dqs & dqs_n);
+		`endif
+	`endif
+		
 	always @(posedge clk)
 	begin
 		if(reset) dqs_counter <= 0;
