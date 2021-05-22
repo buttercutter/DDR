@@ -100,7 +100,7 @@ module ddr3_memory_controller
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
 `ifdef USE_ILA
 	output [DQ_BITWIDTH-1:0] dq_w,  // port I
-	input [DQ_BITWIDTH-1:0] dq_r,  // port O
+	output [DQ_BITWIDTH-1:0] dq_r,  // port O
 
 	output low_Priority_Refresh_Request,
 	output high_Priority_Refresh_Request,
@@ -245,6 +245,126 @@ localparam STATE_INIT_MRS_1 = 18;
 localparam STATE_INIT_MRS_0 = 19;
 
 
+// just to avoid https://github.com/YosysHQ/yosys/issues/2718
+`ifndef XILINX
+	localparam FIXED_POINT_BITWIDTH = $clog2(MAX_TIMING);
+`else
+	localparam FIXED_POINT_BITWIDTH = 15;
+`endif
+
+
+`ifdef FORMAL
+
+// just to make the cover() spends lesser time to complete
+localparam TIME_INITIAL_RESET_ACTIVE = 2;
+localparam TIME_INITIAL_CK_INACTIVE = 2;
+localparam TIME_TZQINIT = 2;
+localparam TIME_WL = 2;
+localparam TIME_CWL = 2;
+localparam TIME_TBURST = 2;
+localparam TIME_TXPR = 2;
+localparam TIME_TMRD = 2;
+localparam TIME_TMOD = 2;
+localparam TIME_TRFC = 2;
+localparam TIME_TREFI = 2;
+
+`else
+
+`ifndef XILINX
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+
+`ifdef RAM_SIZE_1GB
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+
+`elsif RAM_SIZE_2GB
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CLK_PERIOD);
+
+`elsif RAM_SIZE_4GB
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CLK_PERIOD);
+`endif
+
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil(120/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
+`else
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+
+`ifdef RAM_SIZE_1GB
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+
+`elsif RAM_SIZE_2GB
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 8;
+
+`elsif RAM_SIZE_4GB
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 13;
+`endif
+
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Maximum average periodic refresh
+`endif
+
+localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
+localparam TIME_WL = 6;  // Since DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
+localparam TIME_CWL = 6;  // Since DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
+localparam TIME_TBURST = 8;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8
+localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
+localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
+
+`endif
+
+`ifndef XILINX
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+`else
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+`endif
+
+localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
+localparam TIME_TRPST = 1;  // this is for read post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
+localparam TIME_TWPRE = 1;  // this is for write pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
+localparam TIME_TWPST = 1;  // this is for write post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
+
+
+localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
+localparam ADDRESS_FOR_MODE_REGISTER_1 = 1;
+localparam ADDRESS_FOR_MODE_REGISTER_2 = 2;
+localparam ADDRESS_FOR_MODE_REGISTER_3 = 3;
+
+localparam A10 = 10;  // address bit for auto-precharge option
+localparam A12 = 12;  // address bit for burst-chop option
+
+localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
+
+
+// outgoing signals to RAM
+wire dqs_w;
+wire dqs_n_w;
+`ifndef USE_ILA
+	wire [DQ_BITWIDTH-1:0] dq_w;  // the output data stream is NOT serialized
+`endif
+
+`ifndef USE_ILA
+	wire [DQ_BITWIDTH-1:0] dq_r;  // the input data stream is NOT serialized
+`endif
+
+// incoming signals from RAM
+`ifdef USE_x16
+	wire ldqs_r;
+	wire ldqs_n_r;
+	wire udqs_r;
+	wire udqs_n_r;
+`else
+	wire dqs_r;
+	wire dqs_n_r;
+`endif
+
+
 `ifndef HIGH_SPEED
 
 // Purposes of Clock divider:
@@ -310,28 +430,241 @@ wire clk_slow_posedge = (clk_slow && ~counter_reset);
 // wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
 
 
-// outgoing signals to RAM
-wire dqs_w;
-wire dqs_n_w;
-`ifndef USE_ILA
-	wire [DQ_BITWIDTH-1:0] dq_w;  // the output data stream is NOT serialized
-`endif
-
-// incoming signals from RAM
-wire dqs_r;
-wire dqs_n_r;
-`ifndef USE_ILA
-	wire [DQ_BITWIDTH-1:0] dq_r;  // the input data stream is NOT serialized
-`endif
-
-
 // phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
 assign dqs_w = clk90_slow_is_at_high;
 assign dqs_n_w = clk90_slow_is_at_low;
+
+`endif
+
 assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT serialized
 
 
-	`ifdef FORMAL
+// See https://www.micron.com/-/media/client/global/documents/products/technical-note/dram/tn4605.pdf#page=7
+// for an overview on DQS Preamble and Postamble bits
+
+
+// For WRITE, we have to phase-shift DQS by 90 degrees and output the phase-shifted DQS to RAM		  
+
+// phase-shifts the incoming dqs and dqs_n signals by 90 degrees
+// with reference to outgoing 'ck' DDR signal
+// the reason is to sample at the middle of incoming `dq` signal
+`ifndef USE_ILA
+	`ifndef XILINX
+		reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
+	`else
+		reg [1:0] dqs_counter;
+	`endif
+`endif
+
+
+`ifndef USE_ILA
+	`ifdef USE_x16
+		wire dqs_rising_edge = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
+		wire dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (udqs_r & ~udqs_n_r);
+	`else
+		wire dqs_rising_edge = (dqs & ~dqs_n);
+		wire dqs_falling_edge = (~dqs & dqs_n);
+	`endif
+`else
+	`ifdef USE_x16
+		assign dqs_rising_edge = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
+		assign dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (udqs_r & ~udqs_n_r);
+	`else
+		assign dqs_rising_edge = (dqs & ~dqs_n);
+		assign dqs_falling_edge = (~dqs & dqs_n);
+	`endif
+`endif
+	
+always @(posedge clk)
+begin
+	if(reset) dqs_counter <= 0;
+	
+	else begin
+		if(dqs_rising_edge | dqs_falling_edge) dqs_counter <= 1;
+		
+		else if(dqs_counter > 0) 
+			dqs_counter <= dqs_counter + 1;
+	end
+end
+
+`ifndef XILINX
+wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO >> 1)]);
+`else
+wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: 2]);
+`endif
+wire dqs_n_phase_shifted = ~dqs_phase_shifted;
+
+always @(posedge clk)
+begin
+	if(reset) o_user_data <= 0;
+
+	else if(dqs_phase_shifted & ~dqs_n_phase_shifted)
+	begin
+		o_user_data <= dq_r;  // 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs)
+	end
+end
+
+
+`ifdef LATTICE
+
+// look for BB primitive in this lattice document :
+// http://www.latticesemi.com/-/media/LatticeSemi/Documents/UserManuals/EI/FPGALibrariesReferenceGuide33.ashx?document_id=50790
+
+// we cannot have tristate signal inside the logic of an ECP5. tristates only work at the I/O boundary.
+// So, need to split up the read/write signals and have logic to handle these as two separate paths 
+// that meet at the I/O boundary at the BB primitive.
+
+`ifndef USE_x16
+
+	TRELLIS_IO BB_dqs (
+		.B(dqs),
+		.I(dqs_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dqs_r)
+	);
+
+	TRELLIS_IO BB_dqs_n (
+		.B(dqs_n),
+		.I(dqs_n_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dqs_n_r)
+	);
+
+`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
+
+	TRELLIS_IO BB_ldqs (
+		.B(ldqs),
+		.I(dqs_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(ldqs_r)
+	);
+
+	TRELLIS_IO BB_ldqs_n (
+		.B(ldqs_n),
+		.I(dqs_n_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(ldqs_n_r)
+	);
+
+	TRELLIS_IO BB_udqs (
+		.B(udqs),
+		.I(dqs_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(udqs_r)
+	);
+
+	TRELLIS_IO BB_udqs_n (
+		.B(udqs_n),
+		.I(dqs_n_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(udqs_n_r)
+	);
+`endif
+
+generate
+genvar dq_index;  // to indicate the bit position of DQ signal
+
+for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
+begin : dq_tristate_io
+
+	TRELLIS_IO BB_dq (
+		.B(dq[dq_index]),
+		.I(dq_w[dq_index]),
+		.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dq_r[dq_index])
+	);
+end
+
+endgenerate
+
+`endif
+
+`ifdef XILINX
+
+// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=126
+
+`ifndef USE_x16
+
+	IOBUF IO_dqs (
+		.IO(dqs),
+		.I(dqs_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dqs_r)
+	);
+
+	IOBUF IO_dqs_n (
+		.IO(dqs_n),
+		.I(dqs_n_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dqs_n_r)
+	);
+
+`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
+
+	IOBUF IO_ldqs (
+		.IO(ldqs),
+		.I(dqs_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(ldqs_r)
+	);
+
+	IOBUF IO_ldqs_n (
+		.IO(ldqs_n),
+		.I(dqs_n_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(ldqs_n_r)
+	);
+
+	IOBUF IO_udqs (
+		.IO(udqs),
+		.I(dqs_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(udqs_r)
+	);
+
+	IOBUF IO_udqs_n (
+		.IO(udqs_n),
+		.I(dqs_n_w),
+		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(udqs_n_r)
+	);
+
+`endif
+
+generate
+genvar dq_index;  // to indicate the bit position of DQ signal
+
+for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
+begin : dq_tristate_io
+
+	IOBUF IO_dq (
+		.IO(dq[dq_index]),
+		.I(dq_w[dq_index]),
+		.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)),
+		.O(dq_r[dq_index])
+	);
+end
+
+endgenerate
+		
+`endif
+
+
+`ifdef FORMAL
 
 	initial assume(reset);
 /*	
@@ -366,7 +699,8 @@ assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT ser
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
 
 
-	// phase-shift the incoming dqs_r and dqs_n_r signals by 90 degree with reference to clk_slow
+	// phase-shifts the incoming dqs_r and dqs_n_r signals by 90 degrees 
+	// with reference to outgoing 'ck' DDR signal
 	// the reason is to sample at the middle of incoming `dq_r` signal
 	reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
 
@@ -454,280 +788,9 @@ assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT ser
 		
 		else assert(dq == dq_r);
 	end
-
-	`else
-
-	// See https://www.micron.com/-/media/client/global/documents/products/technical-note/dram/tn4605.pdf#page=7
-	// for an overview on Preamble and Postamble
-	// will use DQS preamble bit to emulate 'oe' input signal as described in the intel documentation
-	// See https://www.intel.com/content/www/us/en/programmable/support/support-resources/design-examples/design-software/verilog/ver_bidirec.html
-	// inout ports cannot be declared as reg, since they can be used as either input port (as wire) or 
-	// output port (as reg or wire)
-	// we cannot read and write inout port simultaneously, hence kept highZ for reading.
-
-	// For WRITE, we have to phase-shift DQS by 90 degrees and output the phase-shifted DQS to RAM
-
-	`ifdef USE_x16
-		assign udqs = ldqs;  // DQS strobes, this statement just uses all available x16 bandwidth
-		assign ldqs
-	`else
-		assign dqs 
-	`endif
-				= (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? clk90_slow_is_at_high : 1'bz;
-								 
-	`ifdef USE_x16
-		assign udqs_n = ldqs_n;  // DQS strobes, this statement just uses all available x16 bandwidth
-		assign ldqs_n
-	`else
-		assign dqs_n
-	`endif
-				= (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-					(main_state == STATE_WRITE_DATA)) ? clk90_slow_is_at_low : 1'bz;
-			  
-
-	// phase-shift the incoming dqs and dqs_n signals by 90 degree with reference to clk_slow
-	// the reason is to sample at the middle of incoming `dq` signal
-	`ifndef USE_ILA
-		`ifndef XILINX
-			reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
-		`else
-			reg [1:0] dqs_counter;
-		`endif
-	`endif
-
-	`ifndef USE_ILA
-		`ifdef USE_x16
-			wire dqs_rising_edge = (ldqs & ~ldqs_n) || (udqs & ~udqs_n);
-			wire dqs_falling_edge = (~ldqs & ldqs_n) || (udqs & ~udqs_n);
-		`else
-			wire dqs_rising_edge = (dqs & ~dqs_n);
-			wire dqs_falling_edge = (~dqs & dqs_n);
-		`endif
-	`else
-		`ifdef USE_x16
-			assign dqs_rising_edge = (ldqs & ~ldqs_n) || (udqs & ~udqs_n);
-			assign dqs_falling_edge = (~ldqs & ldqs_n) || (udqs & ~udqs_n);
-		`else
-			assign dqs_rising_edge = (dqs & ~dqs_n);
-			assign dqs_falling_edge = (~dqs & dqs_n);
-		`endif
-	`endif
-		
-	always @(posedge clk)
-	begin
-		if(reset) dqs_counter <= 0;
-		
-		else begin
-			if(dqs_rising_edge | dqs_falling_edge) dqs_counter <= 1;
-			
-			else if(dqs_counter > 0) 
-				dqs_counter <= dqs_counter + 1;
-		end
-	end
-
-`ifndef XILINX
-	wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO >> 1)]);
-`else
-	wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: 2]);
-`endif
-	wire dqs_n_phase_shifted = ~dqs_phase_shifted;
-
-	always @(posedge clk)
-	begin
-		if(reset) o_user_data <= 0;
-
-		else if(dqs_phase_shifted & ~dqs_n_phase_shifted)
-		begin
-			o_user_data <= dq;  // 'dq' is sampled at its middle (thanks to 90 degree phase shift on dqs)
-		end
-	end
-
-	`endif
-
-`else
-
-	`ifdef LATTICE
-
-	// look for BB primitive in this lattice document :
-	// http://www.latticesemi.com/-/media/LatticeSemi/Documents/UserManuals/EI/FPGALibrariesReferenceGuide33.ashx?document_id=50790
-
-	// we cannot have tristate signal inside the logic of an ECP5. tristates only work at the I/O boundary.
-	// So, need to split up the read/write signals and have logic to handle these as two separate paths 
-	// that meet at the I/O boundary at the BB primitive.
-
-	TRELLIS_IO BB_dqs (
-		.B(dqs),
-		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
-		.O(dqs_r)
-	);
-
-	TRELLIS_IO BB_dqs_n (
-		.B(dqs_n),
-		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
-		.O(dqs_n_r)
-	);
-
-	generate
-	genvar dq_index;  // to indicate the bit position of DQ signal
-
-	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
-	begin : dq_tristate_io
-
-		TRELLIS_IO BB_dq (
-			.B(dq[dq_index]),
-			.I(dq_w[dq_index]),
-			.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
-					  (main_state == STATE_WRITE_DATA)),
-			.O(dq_r[dq_index])
-		);
-	end
-
-	endgenerate
-
-	`endif
 	
-	`ifdef XILINX
-	
-	// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=126
-	
-	IOBUF IO_dqs (
-		.IO(dqs),
-		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
-		.O(dqs_r)
-	);
-
-	IOBUF IO_dqs_n (
-		.IO(dqs_n),
-		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
-		.O(dqs_n_r)
-	);
-
-	generate
-	genvar dq_index;  // to indicate the bit position of DQ signal
-
-	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
-	begin : dq_tristate_io
-
-		IOBUF IO_dq (
-			.IO(dq[dq_index]),
-			.I(dq_w[dq_index]),
-			.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
-					  (main_state == STATE_WRITE_DATA)),
-			.O(dq_r[dq_index])
-		);
-	end
-
-	endgenerate
-			
-	`endif
-
 `endif
 
-
-// just to avoid https://github.com/YosysHQ/yosys/issues/2718
-`ifndef XILINX
-	localparam FIXED_POINT_BITWIDTH = $clog2(MAX_TIMING);
-`else
-	localparam FIXED_POINT_BITWIDTH = 15;
-`endif
-
-
-`ifdef FORMAL
-
-// just to make the cover() spends lesser time to complete
-localparam TIME_INITIAL_RESET_ACTIVE = 2;
-localparam TIME_INITIAL_CK_INACTIVE = 2;
-localparam TIME_TZQINIT = 2;
-localparam TIME_WL = 2;
-localparam TIME_CWL = 2;
-localparam TIME_TBURST = 2;
-localparam TIME_TXPR = 2;
-localparam TIME_TMRD = 2;
-localparam TIME_TMOD = 2;
-localparam TIME_TRFC = 2;
-localparam TIME_TREFI = 2;
-
-`else
-
-`ifndef XILINX
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
-
-`ifdef RAM_SIZE_1GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-
-`elsif RAM_SIZE_2GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CLK_PERIOD);
-
-`elsif RAM_SIZE_4GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CLK_PERIOD);
-`endif
-
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil(120/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
-`else
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
-
-`ifdef RAM_SIZE_1GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-
-`elsif RAM_SIZE_2GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 8;
-
-`elsif RAM_SIZE_4GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 13;
-`endif
-
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Maximum average periodic refresh
-`endif
-
-localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
-localparam TIME_WL = 6;  // Since DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
-localparam TIME_CWL = 6;  // Since DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
-localparam TIME_TBURST = 8;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8
-localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
-localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
-
-`endif
-
-`ifndef XILINX
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-`else
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-`endif
-
-localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
-localparam TIME_TRPST = 1;  // this is for read post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
-localparam TIME_TWPRE = 1;  // this is for write pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
-localparam TIME_TWPST = 1;  // this is for write post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
-
-localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
-localparam ADDRESS_FOR_MODE_REGISTER_1 = 1;
-localparam ADDRESS_FOR_MODE_REGISTER_2 = 2;
-localparam ADDRESS_FOR_MODE_REGISTER_3 = 3;
-
-localparam A10 = 10;  // address bit for auto-precharge option
-localparam A12 = 12;  // address bit for burst-chop option
-
-
-localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 `ifndef USE_ILA
 	`ifndef XILINX
