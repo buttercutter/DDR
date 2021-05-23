@@ -427,6 +427,7 @@ wire clk90_slow_is_at_high = (~clk_slow && counter_reset) || (clk_slow && ~count
 wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counter_reset);
 wire clk90_slow_posedge = (~clk_slow && counter_reset);
 wire clk_slow_posedge = (clk_slow && ~counter_reset);
+wire clk_slow_negedge = (~clk_slow && ~counter_reset);
 // wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
 
 
@@ -458,34 +459,61 @@ assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT ser
 
 
 `ifndef USE_ILA
+	wire dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+	wire dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
+
 	`ifdef USE_x16
-		wire dqs_rising_edge = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
-		wire dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
+		wire dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
+		wire dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
 	`else
-		wire dqs_rising_edge = (dqs & ~dqs_n);
-		wire dqs_falling_edge = (~dqs & dqs_n);
+		wire dqs_is_at_high = (dqs & ~dqs_n);
+		wire dqs_is_at_low = (~dqs & dqs_n);
 	`endif
 `else
+	assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+	assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
+	
 	`ifdef USE_x16
-		assign dqs_rising_edge = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
-		assign dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
+		assign dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
+		assign dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
 	`else
-		assign dqs_rising_edge = (dqs & ~dqs_n);
-		assign dqs_falling_edge = (~dqs & dqs_n);
+		assign dqs_is_at_high = (dqs & ~dqs_n);
+		assign dqs_is_at_low = (~dqs & dqs_n);
 	`endif
 `endif
 	
+`ifndef HIGH_SPEED
+
+reg dqs_is_at_high_previously;
+reg dqs_is_at_low_previously;
+
+always @(posedge clk) dqs_is_at_high_previously <= dqs_is_at_high;
+always @(posedge clk) dqs_is_at_low_previously <= dqs_is_at_low;
+
 always @(posedge clk)
 begin
 	if(reset) dqs_counter <= 0;
 	
 	else begin
+		// Due to PCB trace layout and high-speed DDR signal transmission,
+		// there is no alignment to any generic clock signal that we can depend upon,
+		// especially when data is coming back from the SDRAM chip.
+		// Thus, we could only depend upon incoming `DQS` signal to sample 'DQ' signal
 		if(dqs_rising_edge | dqs_falling_edge) dqs_counter <= 1;
 		
 		else if(dqs_counter > 0) 
 			dqs_counter <= dqs_counter + 1;
 	end
 end
+
+`else
+
+always @(posedge dqs)
+begin
+
+end
+
+`endif
 
 `ifndef XILINX
 wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO >> 1)]);
@@ -494,7 +522,7 @@ wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: 2]);
 `endif
 wire dqs_n_phase_shifted = ~dqs_phase_shifted;
 
-always @(posedge clk)
+always @(*)
 begin
 	if(reset) o_user_data <= 0;
 
