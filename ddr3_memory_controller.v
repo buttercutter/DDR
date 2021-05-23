@@ -460,7 +460,7 @@ assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT ser
 `ifndef USE_ILA
 	`ifdef USE_x16
 		wire dqs_rising_edge = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
-		wire dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (udqs_r & ~udqs_n_r);
+		wire dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
 	`else
 		wire dqs_rising_edge = (dqs & ~dqs_n);
 		wire dqs_falling_edge = (~dqs & dqs_n);
@@ -468,7 +468,7 @@ assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT ser
 `else
 	`ifdef USE_x16
 		assign dqs_rising_edge = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
-		assign dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (udqs_r & ~udqs_n_r);
+		assign dqs_falling_edge = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
 	`else
 		assign dqs_rising_edge = (dqs & ~dqs_n);
 		assign dqs_falling_edge = (~dqs & dqs_n);
