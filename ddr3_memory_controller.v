@@ -547,16 +547,16 @@ end
 	TRELLIS_IO BB_dqs (
 		.B(dqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(dqs_r)
 	);
 
 	TRELLIS_IO BB_dqs_n (
 		.B(dqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(dqs_n_r)
 	);
 
@@ -565,32 +565,32 @@ end
 	TRELLIS_IO BB_ldqs (
 		.B(ldqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_r)
 	);
 
 	TRELLIS_IO BB_ldqs_n (
 		.B(ldqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_n_r)
 	);
 
 	TRELLIS_IO BB_udqs (
 		.B(udqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(udqs_r)
 	);
 
 	TRELLIS_IO BB_udqs_n (
 		.B(udqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(udqs_n_r)
 	);
 `endif
@@ -604,8 +604,8 @@ begin : dq_tristate_io
 	TRELLIS_IO BB_dq (
 		.B(dq[dq_index]),
 		.I(dq_w[dq_index]),
-		.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(dq_r[dq_index])
 	);
 end
@@ -623,16 +623,16 @@ endgenerate
 	IOBUF IO_dqs (
 		.IO(dqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(dqs_r)
 	);
 
 	IOBUF IO_dqs_n (
 		.IO(dqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(dqs_n_r)
 	);
 
@@ -641,32 +641,32 @@ endgenerate
 	IOBUF IO_ldqs (
 		.IO(ldqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_r)
 	);
 
 	IOBUF IO_ldqs_n (
 		.IO(ldqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_n_r)
 	);
 
 	IOBUF IO_udqs (
 		.IO(udqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(udqs_r)
 	);
 
 	IOBUF IO_udqs_n (
 		.IO(udqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(udqs_n_r)
 	);
 
@@ -681,8 +681,8 @@ begin : dq_tristate_io
 	IOBUF IO_dq (
 		.IO(dq[dq_index]),
 		.I(dq_w[dq_index]),
-		.T(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)),
+		.T(((wait_count > TIME_WL) && (main_state == STATE_READ_AP)) || 
+				  (main_state == STATE_READ_DATA)),
 		.O(dq_r[dq_index])
 	);
 end
