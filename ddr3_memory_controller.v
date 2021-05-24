@@ -30,11 +30,13 @@
 `endif
 
 `ifndef XILINX
+/* verilator lint_off VARHIDDEN */
 localparam NUM_OF_DDR_STATES = 20;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE = 24999;
 localparam MAX_TIMING = 24999;  // just for initial development stage, will refine the value later
+/* verilator lint_on VARHIDDEN */
 `endif
 
 // for STATE_IDLE transition into STATE_REFRESH
@@ -524,7 +526,7 @@ wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: 2]);
 `endif
 wire dqs_n_phase_shifted = ~dqs_phase_shifted;
 
-always @(*)
+always @(posedge clk)
 begin
 	if(reset) data_from_ram <= 0;
 
@@ -828,10 +830,19 @@ reg [8:0] refresh_timing_count;
 `endif
 
 wire extra_read_or_write_cycles_had_passed  // to allow burst read or write operations to proceed first
-		= (postponed_refresh_timing_count == user_desired_extra_read_or_write_cycles*TIME_TREFI);
+		= (postponed_refresh_timing_count == 
+`ifndef XILINX
+				user_desired_extra_read_or_write_cycles*TIME_TREFI[0 +: $clog2(TIME_TREFI)]);  // for verilator warning
+`else
+				user_desired_extra_read_or_write_cycles*TIME_TREFI[0 +: 9]);
+`endif
 
 wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between REFRESH commands
-		= (refresh_timing_count == TIME_TREFI);
+`ifndef XILINX
+		= (refresh_timing_count == TIME_TREFI[0 +: $clog2(TIME_TREFI)]);  // for verilator warning
+`else
+		= (refresh_timing_count == TIME_TREFI[0 +: 9]);
+`endif
 
 // will switch to using always @(posedge clk90_slow) in later stage of project
 always @(posedge clk)
