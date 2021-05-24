@@ -117,8 +117,8 @@ assign user_desired_extra_read_or_write_cycles = MAX_NUM_OF_REFRESH_COMMANDS_POS
 
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
-reg [DQ_BITWIDTH-1:0] i_user_data;  // data for which the user wants to write/read to/from DDR
-wire [DQ_BITWIDTH-1:0] o_user_data;  // the requested data from DDR RAM after read operation
+reg [DQ_BITWIDTH-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
+wire [DQ_BITWIDTH-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
 
 
 `ifdef LOOPBACK
@@ -135,7 +135,7 @@ begin
 	if(reset) 
 	begin
 		i_user_data_address <= 0;
-		i_user_data <= 0;
+		data_to_ram <= 0;
 		write_enable <= 1;  // writes data first
 		read_enable <= 0;
 		done_writing <= 0;
@@ -145,21 +145,21 @@ begin
 	else if((~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
 	begin
 		i_user_data_address <= i_user_data_address + 1;
-		i_user_data <= i_user_data + 1;
-		write_enable <= (i_user_data <= (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
-		read_enable <= (i_user_data > (NUM_OF_TEST_DATA-1));  // starts the readback operation
-		done_writing <= (i_user_data > (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
+		data_to_ram <= data_to_ram + 1;
+		write_enable <= (data_to_ram <= (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
+		read_enable <= (data_to_ram > (NUM_OF_TEST_DATA-1));  // starts the readback operation
+		done_writing <= (data_to_ram > (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
 		done_reading <= 0;
 	end
 	
 	else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
 		if(done_writing && 
-			(i_user_data > 0)) // such that it would only reset address only ONCE
+			(data_to_ram > 0)) // such that it would only reset address only ONCE
 			i_user_data_address <= 0;  // read from the first piece of data written
 		
 		else i_user_data_address <= i_user_data_address + 1;
 		
-		i_user_data <= 0;  // not related to DDR read operation, only for DDR write operation
+		data_to_ram <= 0;  // not related to DDR read operation, only for DDR write operation
 		write_enable <= 0;
 		
 		if(done) read_enable <= 0;  // already finished reading all data
@@ -167,7 +167,7 @@ begin
 		else read_enable <= 1;
 		
 		done_writing <= done_writing;
-		done_reading <= (o_user_data > (NUM_OF_TEST_DATA-1));
+		done_reading <= (data_from_ram > (NUM_OF_TEST_DATA-1));
 	end
 end
 
@@ -247,7 +247,7 @@ end
 		ila_64_bits ila_states_and_wait_count (
 			.CONTROL(CONTROL5), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0({i_user_data, o_user_data, low_Priority_Refresh_Request, high_Priority_Refresh_Request,
+			.TRIG0({data_to_ram, data_from_ram, low_Priority_Refresh_Request, high_Priority_Refresh_Request,
 			 		write_enable, read_enable, dqs_counter, dqs_rising_edge, dqs_falling_edge, 
 					main_state, wait_count, refresh_Queue}) // IN BUS [63:0]
 		);
@@ -276,8 +276,8 @@ ddr3_memory_controller ddr3
 	.write_enable(write_enable),  // write to DDR memory
 	.read_enable(read_enable),  // read from DDR memory
 	.i_user_data_address(i_user_data_address),  // the DDR memory address for which the user wants to write/read the data
-	.i_user_data(i_user_data),  // data for which the user wants to write to DDR RAM
-	.o_user_data(o_user_data),  // the requested data from DDR RAM after read operation
+	.data_to_ram(data_to_ram),  // data for which the user wants to write to DDR RAM
+	.data_from_ram(data_from_ram),  // the requested data from DDR RAM after read operation
 	.user_desired_extra_read_or_write_cycles(user_desired_extra_read_or_write_cycles),  // for the purpose of postponing refresh commands
 	
 	// these are to be fed into external DDR3 memory

@@ -74,8 +74,8 @@ module ddr3_memory_controller
 	input write_enable,  // write to DDR memory
 	input read_enable,  // read from DDR memory
 	input [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address,  // the DDR memory address for which the user wants to write/read the data
-	input [DQ_BITWIDTH-1:0] i_user_data,  // data for which the user wants to write to DDR
-	output reg [DQ_BITWIDTH-1:0] o_user_data,  // the requested data from DDR RAM after read operation
+	input [DQ_BITWIDTH-1:0] data_to_ram,  // data for which the user wants to write to DDR
+	output reg [DQ_BITWIDTH-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
 	`ifndef XILINX
 		input [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
 	`else
@@ -437,7 +437,7 @@ assign dqs_n_w = clk90_slow_is_at_low;
 
 `endif
 
-assign dq_w = i_user_data;  // the input data stream of 'i_user_data' is NOT serialized
+assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT serialized
 
 
 // See https://www.micron.com/-/media/client/global/documents/products/technical-note/dram/tn4605.pdf#page=7
@@ -524,11 +524,11 @@ wire dqs_n_phase_shifted = ~dqs_phase_shifted;
 
 always @(*)
 begin
-	if(reset) o_user_data <= 0;
+	if(reset) data_from_ram <= 0;
 
 	else if(dqs_phase_shifted & ~dqs_n_phase_shifted)
 	begin
-		o_user_data <= dq_r;  // 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs)
+		data_from_ram <= dq_r;  // 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs)
 	end
 end
 
@@ -752,11 +752,11 @@ endgenerate
 
 	always @(posedge clk)
 	begin
-		if(reset) o_user_data <= 0;
+		if(reset) data_from_ram <= 0;
 
 		else if(dqs_r_phase_shifted & ~dqs_n_r_phase_shifted)
 		begin
-			o_user_data <= dq_r;  // 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs_r)
+			data_from_ram <= dq_r;  // 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs_r)
 		end
 	end
 
