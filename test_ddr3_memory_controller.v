@@ -1,4 +1,4 @@
-`define USE_x16 1
+
 // `define HIGH_SPEED 1
 // `define TDQS 1
 
@@ -6,14 +6,18 @@
 `define RAM_SIZE_2GB
 //`define RAM_SIZE_4GB
 
-// for internal logic analyzer
-`define USE_ILA 1
+`ifndef FORMAL
+	// for internal logic analyzer
+	`define USE_ILA 1
 
-// for lattice ECP5 FPGA
-//`define LATTICE 1
+	`define USE_x16 1
+	
+	// for lattice ECP5 FPGA
+	//`define LATTICE 1
 
-// for Xilinx Spartan-6 FPGA
-`define XILINX 1
+	// for Xilinx Spartan-6 FPGA
+	`define XILINX 1
+`endif
 
 // write data to RAM and then read them back from RAM
 `define LOOPBACK 1

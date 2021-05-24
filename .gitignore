@@ -34,3 +34,5 @@ _xmsgs/
 *.bit
 _impact*
 openocd
+ddr3_memory_controller_cover/
+ddr3_memory_controller_proof/

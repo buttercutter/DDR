@@ -9,7 +9,6 @@
 // Once this code supports DLL on mode, formal verification will proceed with using Micron simulation model
 
 
-`define USE_x16 1
 // `define HIGH_SPEED 1
 // `define TDQS 1
 
@@ -17,15 +16,18 @@
 `define RAM_SIZE_2GB
 //`define RAM_SIZE_4GB
 
-// for internal logic analyzer
-`define USE_ILA 1
+`ifndef FORMAL
+	// for internal logic analyzer
+	`define USE_ILA 1
 
-// for lattice ECP5 FPGA
-//`define LATTICE 1
+	`define USE_x16 1
 
-// for Xilinx Spartan-6 FPGA
-`define XILINX 1
+	// for lattice ECP5 FPGA
+	//`define LATTICE 1
 
+	// for Xilinx Spartan-6 FPGA
+	`define XILINX 1
+`endif
 
 `ifndef XILINX
 localparam NUM_OF_DDR_STATES = 20;
@@ -726,39 +728,6 @@ endgenerate
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
 
-
-	// phase-shifts the incoming dqs_r and dqs_n_r signals by 90 degrees 
-	// with reference to outgoing 'ck' DDR signal
-	// the reason is to sample at the middle of incoming `dq_r` signal
-	reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
-
-	wire dqs_rising_edge = (dqs_r & ~dqs_n_r);
-	wire dqs_falling_edge = (~dqs_r & dqs_n_r);
-
-	always @(posedge clk)
-	begin
-		if(reset) dqs_counter <= 0;
-		
-		else begin
-			if(dqs_rising_edge | dqs_falling_edge) dqs_counter <= 1;
-			
-			else if(dqs_counter > 0) 
-				dqs_counter <= dqs_counter + 1;
-		end
-	end
-
-	wire dqs_r_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO >> 1)]);
-	wire dqs_n_r_phase_shifted = ~dqs_r_phase_shifted;
-
-	always @(posedge clk)
-	begin
-		if(reset) data_from_ram <= 0;
-
-		else if(dqs_r_phase_shifted & ~dqs_n_r_phase_shifted)
-		begin
-			data_from_ram <= dq_r;  // 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs_r)
-		end
-	end
 
 	reg first_clock_had_passed;
 	initial first_clock_had_passed = 0;
