@@ -887,6 +887,9 @@ begin
 	else if(clk90_slow_posedge)  // use the slower clk90_slow_posedge signal for low speed testing mode
 `endif
 	begin
+		if(write_enable) write_is_enabled <= 1;
+		if(read_enable) read_is_enabled <= 1;
+	
 		wait_count <= wait_count + 1;
 
 		if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
@@ -1146,7 +1149,7 @@ begin
 	                wait_count <= 0;
 	            end
 	            
-	            else if (write_enable | read_enable)
+	            else if (write_is_enabled | read_is_enabled)
 	            begin
 	            	ck_en <= 1;
 	            	cs_n <= 0;
@@ -1154,9 +1157,6 @@ begin
 	            	cas_n <= 1;
 	            	we_n <= 1;
 	                main_state <= STATE_ACTIVATE;
-	                
-	                if(write_enable) write_is_enabled <= 1;
-	                if(read_enable) read_is_enabled <= 1;
 	                
 	                wait_count <= 0;
 	            end

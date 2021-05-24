@@ -15,6 +15,12 @@
 // for Xilinx Spartan-6 FPGA
 `define XILINX 1
 
+// write data to RAM and then read them back from RAM
+`define LOOPBACK 1
+`ifdef LOOPBACK
+	// data loopback requires ILA capability to check data integrity
+	`define USE_ILA 1
+`endif
 
 module test_ddr3_memory_controller
 #(
@@ -91,6 +97,9 @@ localparam NUM_OF_DDR_STATES = 20;
 localparam MAX_TIMING = 24999;  // just for initial development stage, will refine the value later
 `endif
 
+localparam STATE_WRITE_DATA = 8;
+localparam STATE_READ_DATA = 11;
+
 // for STATE_IDLE transition into STATE_REFRESH
 localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
 
@@ -111,6 +120,9 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 reg [DQ_BITWIDTH-1:0] i_user_data;  // data for which the user wants to write/read to/from DDR
 wire [DQ_BITWIDTH-1:0] o_user_data;  // the requested data from DDR RAM after read operation
 
+
+`ifdef LOOPBACK
+
 reg write_enable, read_enable;
 reg done_writing, done_reading;
 
@@ -124,24 +136,26 @@ begin
 	begin
 		i_user_data_address <= 0;
 		i_user_data <= 0;
-		write_enable <= 0;
+		write_enable <= 1;  // writes data first
 		read_enable <= 0;
 		done_writing <= 0;
 		done_reading <= 0;
 	end
 	
-	else if(~done_writing)  // write operation has higher priority in loopback mechanism
+	else if((~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
 	begin
 		i_user_data_address <= i_user_data_address + 1;
 		i_user_data <= i_user_data + 1;
-		write_enable <= 1;
-		read_enable <= 0;
-		done_writing <= (i_user_data == NUM_OF_TEST_DATA);
+		write_enable <= (i_user_data <= (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
+		read_enable <= (i_user_data > (NUM_OF_TEST_DATA-1));  // starts the readback operation
+		done_writing <= (i_user_data > (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
 		done_reading <= 0;
 	end
 	
-	else begin  // read operation
-		if(done_writing) i_user_data_address <= 0;  // read from the first piece of data written
+	else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
+		if(done_writing && 
+			(i_user_data > 0)) // such that it would only reset address only ONCE
+			i_user_data_address <= 0;  // read from the first piece of data written
 		
 		else i_user_data_address <= i_user_data_address + 1;
 		
@@ -153,9 +167,11 @@ begin
 		else read_enable <= 1;
 		
 		done_writing <= done_writing;
-		done_reading <= (o_user_data == NUM_OF_TEST_DATA);	
+		done_reading <= (o_user_data > (NUM_OF_TEST_DATA-1));
 	end
 end
+
+`endif
 
 
 `ifdef USE_ILA
@@ -186,7 +202,6 @@ end
 		wire [35:0] CONTROL3;
 		wire [35:0] CONTROL4;
 		wire [35:0] CONTROL5;
-		wire [35:0] CONTROL6;
 									
 		icon icon_inst (
 			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
@@ -194,8 +209,7 @@ end
 			.CONTROL2(CONTROL2), // INOUT BUS [35:0]
 			.CONTROL3(CONTROL3), // INOUT BUS [35:0]
 			.CONTROL4(CONTROL4), // INOUT BUS [35:0]
-			.CONTROL5(CONTROL5), // INOUT BUS [35:0]
-			.CONTROL6(CONTROL6)  // INOUT BUS [35:0]		
+			.CONTROL5(CONTROL5)  // INOUT BUS [35:0]	
 		);
 		
 		ila_1_bit ila_write_enable (
@@ -230,19 +244,14 @@ end
 				   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
 		);
 
-
-		ila_32_bits ila_states_and_wait_count (
+		ila_64_bits ila_states_and_wait_count (
 			.CONTROL(CONTROL5), // INOUT BUS [35:0]
 			.CLK(clk), // IN
-			.TRIG0({{4{1'b0}}, dqs_counter, dqs_rising_edge, dqs_falling_edge, 
-								main_state, wait_count, refresh_Queue}) // IN BUS [31:0]
+			.TRIG0({i_user_data, o_user_data, low_Priority_Refresh_Request, high_Priority_Refresh_Request,
+			 		write_enable, read_enable, dqs_counter, dqs_rising_edge, dqs_falling_edge, 
+					main_state, wait_count, refresh_Queue}) // IN BUS [63:0]
 		);
 
-		ila_32_bits ila_user_data (
-			.CONTROL(CONTROL6), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0({i_user_data, o_user_data}) // IN BUS [31:0]
-		);
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
