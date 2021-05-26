@@ -1,15 +1,13 @@
 // Credit : https://github.com/MartinGeisse/esdk2/blob/master/simsyn/orange-crab/src/mahdl/name/martingeisse/esdk/riscv/orange_crab/ddr3/RamController.mahdl
 
 
-// Unable to simulate loopback transaction (write some data into RAM, then read those data back from RAM)
-// because the verilog simulation model provided by Micron
+// Will simulate loopback transaction (write some data into RAM, then read those data back from RAM)
+// with the verilog simulation model provided by Micron
 // https://www.micron.com/products/dram/ddr3-sdram/part-catalog/mt41j128m16jt-125
-// does not yet support modelling of DLL off mode
-
-// Once this code supports DLL on mode, formal verification will proceed with using Micron simulation model
+// Later, formal verification will proceed with using Micron simulation model
 
 
-// `define HIGH_SPEED 1
+// `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
 
 //`define RAM_SIZE_1GB
@@ -177,10 +175,6 @@ end
 */
 
 
-//wire A10 = address[10];
-//wire A12 = address[12];
-
-
 // Commands truth table extracted from Micron specification document
 /*
 localparam MRS = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (~we_n);
@@ -309,8 +303,8 @@ localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Max
 `endif
 
 localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
-localparam TIME_WL = 6;  // Since DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
-localparam TIME_CWL = 6;  // Since DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
+localparam TIME_WL = 6;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
+localparam TIME_CWL = 6;  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
 localparam TIME_TBURST = 8;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8
 localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
 localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
@@ -339,6 +333,34 @@ localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
 localparam ADDRESS_FOR_MODE_REGISTER_1 = 1;
 localparam ADDRESS_FOR_MODE_REGISTER_2 = 2;
 localparam ADDRESS_FOR_MODE_REGISTER_3 = 3;
+
+
+// Mode register 0 (MR0) settings
+localparam MR0 = 2'b00;  // Mode register set 0
+localparam PRECHARGE_PD = 1'b1;  // DLL on
+localparam WRITE_RECOVERY = 3'b001;   // WR = 5
+localparam DLL_RESET = 1'b1;
+localparam CAS_LATENCY_46 = 3'b001;
+localparam CAS_LATENCY_2 = 1'b0;
+localparam CAS_LATENCY = {CAS_LATENCY_46, CAS_LATENCY_2};  // CL = 5
+localparam READ_BURST_TYPE = 1'b0;  // sequential burst
+localparam BURST_LENGTH = 2'b0;  // Fixed BL8
+							
+// Mode register 1 (MR1) settings
+localparam MR1 = 2'b01;  // Mode register set 1
+localparam Q_OFF = 1'b0;  // Output enabled
+localparam TDQS = 1'b0;  // TDQS disabled (x8 configuration only)
+localparam RTT_9 = 1'b0;
+localparam RTT_6 = 1'b0;
+localparam RTT_2 = 1'b0;
+localparam RTT = {RTT_9, RTT_6, RTT_2};  // on-die termination resistance value
+localparam WL = 1'b0;  // Write levelling disabled
+localparam ODS_5 = 1'b0;
+localparam ODS_2 = 1'b1;
+localparam ODS = {ODS_5, ODS_2};  // Output drive strength set at 34 ohm
+localparam AL = 2'b0;  // Additive latency disabled
+localparam DLL_EN = 1'b0;  // DLL is enabled
+
 
 localparam A10 = 10;  // address bit for auto-precharge option
 localparam A12 = 12;  // address bit for burst-chop option
@@ -1002,7 +1024,7 @@ begin
 				cas_n <= 0;
 				we_n <= 0;
 
-				// disable DLL; 34ohm output driver; no additive latency (AL); write leveling disabled;
+				// enable DLL; 34ohm output driver; no additive latency (AL); write leveling disabled;
 	            // termination resistors disabled; TDQS disabled; output enabled
 	            // Note: Write leveling : See https://i.imgur.com/mKY1Sra.png
 	            // Note: AL can be used somehow to save a few cycles when you ACTIVATE multiple banks
@@ -1010,7 +1032,7 @@ begin
 	            //       it is set to value of 0 for now.
 	            // 		 See https://blog.csdn.net/xingqingly/article/details/48997879 and
 	            //       https://application-notes.digchip.com/024/24-19971.pdf for more context on AL
-	            address <= 3;
+	            address <= {1'b0, MR1, 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 	                        			
 				if(wait_count > TIME_TMRD-1)
 				begin
@@ -1034,7 +1056,7 @@ begin
 				we_n <= 0;	
 
 	            // fixed burst length 8; sequential burst; CL=5; DLL reset yes
-	            // write recovery=5; precharge PD: DLL off
+	            // write recovery=5; precharge PD: DLL on
 	            
 	            // write recovery: WR(cycles) = roundup ( tWR (ns)/ tCK (ns) )
 	            // tWR sets the number of clock cycles between the completion of a valid write operation and
@@ -1057,7 +1079,8 @@ begin
 	            // See https://i.imgur.com/iuS45ld.png where tDQSCK starts AL + CL - 1 cycles 
 	            // after the READ command. 
 
-				address <= 'b0001100010000;
+				address <= {1'b0, MR0, 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+							READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 				
 				if(wait_count > TIME_TMOD-1)
 				begin
@@ -1078,7 +1101,7 @@ begin
 				ras_n <= 1;
 				cas_n <= 1;
 				we_n <= 0;	
-				address[10] <= 1;
+				address[A10] <= 1;
 	
 				if(wait_count > TIME_TZQINIT-1)
 				begin
@@ -1123,7 +1146,7 @@ begin
 					ras_n <= 0;
 					cas_n <= 1;
 					we_n <= 0;
-					address[10] <= 0;
+					address[A10] <= 0;
 	                main_state <= STATE_PRECHARGE;
 	                
 	                wait_count <= 0;
@@ -1150,7 +1173,7 @@ begin
 					ras_n <= 0;
 					cas_n <= 1;
 					we_n <= 0;
-					address[10] <= 0;
+					address[A10] <= 0;
 	                main_state <= STATE_PRECHARGE;
 	                
 	                wait_count <= 0;
@@ -1215,7 +1238,7 @@ begin
 						
 			STATE_WRITE :
 			begin
-				address[10] <= 0;  // do not use auto-precharge
+				address[A10] <= 0;  // do not use auto-precharge
 			end
 						
 			STATE_WRITE_AP :
@@ -1323,7 +1346,7 @@ begin
 				ras_n <= 1;
 				cas_n <= 0;
 				we_n <= 0;
-				address[10] <= 0;
+				address[A10] <= 0;
 				
 				if(wait_count > TIME_TRP-1)
 				begin

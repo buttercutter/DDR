@@ -1,5 +1,5 @@
 
-// `define HIGH_SPEED 1
+// `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
 
 //`define RAM_SIZE_1GB
