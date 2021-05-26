@@ -3,7 +3,7 @@
 
 // Unable to simulate loopback transaction (write some data into RAM, then read those data back from RAM)
 // because the verilog simulation model provided by Micron
-// https://www.micron.com/products/dram/ddr3-sdram/part-catalog/mt41k64m16tw-107
+// https://www.micron.com/products/dram/ddr3-sdram/part-catalog/mt41j128m16jt-125
 // does not yet support modelling of DLL off mode
 
 // Once this code supports DLL on mode, formal verification will proceed with using Micron simulation model
@@ -750,7 +750,7 @@ endgenerate
 			// cover(main_state == STATE_INIT_MRS_2);
 			// cover(main_state == STATE_INIT_MRS_3);
 			// cover(main_state == STATE_ZQ_CALIBRATION);
-			// cover(main_state == STATE_READ_DATA);  // to obtain a RAM read transaction waveform
+			cover(main_state == STATE_READ_DATA);  // to obtain a RAM read transaction waveform
 			cover(main_state == STATE_WRITE_DATA);  // to obtain a RAM write transaction waveform
 		end
 	end

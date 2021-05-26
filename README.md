@@ -1,5 +1,5 @@
 # DDR
-A simple DDR3 memory controller for [Micron DDR3 RAM](https://www.micron.com/products/dram/ddr3-sdram/part-catalog/mt41k64m16tw-107)
+A simple DDR3 memory controller for [Micron DDR3 RAM](https://www.micron.com/products/dram/ddr3-sdram/part-catalog/mt41j128m16jt-125)
 
 TODO:
 1. Debug the low-speed waveform when the DDR3 FPGA board arrives.
