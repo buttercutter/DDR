@@ -170,7 +170,7 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 
 	// Micron simulation model is using `timescale 1ps / 1ps
 	// duration for each bit = 1 * timescale = 1 * 1ps  = 1ps
-	localparam PERIOD = 2000;  // clock period = 20ns
+	localparam PERIOD = 3300;  // clock period = 3300ps
 
 	localparam RESET_TIMING = 200_000_000;  // 200us
 
@@ -184,12 +184,16 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 		
 		clk <= 1'b0;
 		resetn <= 1'b1;
-		#PERIOD;
+		@(posedge clk);
+
+		resetn <= 1'b0;  // asserts master reset signal
 		
-		resetn <= 1'b0;  // asserts reset signal
-		#(RESET_TIMING/PERIOD);  // minimum initial reset timing
+		@(posedge clk);
+		@(posedge clk);
 		
-		resetn <= 1'b1;  // releases reset signal
+		resetn <= 1'b1;  // releases master reset signal
+		
+		repeat(RESET_TIMING/PERIOD) @(posedge ck);  // minimum initial reset timing
 		
 		$stop;
 	end
