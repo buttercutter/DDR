@@ -146,12 +146,14 @@ initial begin
 	#(RESET_TIMING/PERIOD);  // minimum initial reset timing
 	
 	resetn = 1'b1;  // releases reset signal
+	
+	$stop;
 end
 
 // note that sensitive list is omitted in always block
 // therefore always-block run forever
 // clock period = 3.3 ns , frequency = 303 MHz
-always clk = ~clk;
+always #PERIOD clk = ~clk;
 `endif
 
 wire reset = ~resetn;  // just for convenience of verilog syntax
