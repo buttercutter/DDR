@@ -25,7 +25,7 @@
 
 `ifdef MICRON_SIM	
 	// clock and reset signals generation for Micron simulation testbench
-	`timescale 1ns/10ps  // time-unit = 1.65 ns, precision = 10 ps
+	`timescale 1ns / 10ps  // time-unit = 1 ns, precision = 10 ps
 `endif
 
 // write data to RAM and then read them back from RAM

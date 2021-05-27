@@ -103,6 +103,10 @@ module ddr3_memory_controller
 	output reg reset_n,
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
+
+`ifdef MICRON_SIM
+	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
+`endif
 	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
 `ifdef USE_ILA
@@ -209,10 +213,12 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 
 
 `ifndef USE_ILA
-	`ifndef XILINX
-	reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-	`else
-	reg [4:0] main_state;
+	`ifndef MICRON_SIM
+		`ifndef XILINX
+		reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+		`else
+		reg [4:0] main_state;
+		`endif
 	`endif
 `endif
 
