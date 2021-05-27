@@ -7,6 +7,8 @@
 // Later, formal verification will proceed with using Micron simulation model
 
 
+`define MICRON_SIM 1  // micron simulation model
+
 // `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
 
@@ -15,16 +17,19 @@
 //`define RAM_SIZE_4GB
 
 `ifndef FORMAL
-	// for internal logic analyzer
-	`define USE_ILA 1
+	`ifndef MICRON_SIM
+	
+		// for internal logic analyzer
+		`define USE_ILA 1
 
-	`define USE_x16 1
+		`define USE_x16 1
+		
+		// for lattice ECP5 FPGA
+		//`define LATTICE 1
 
-	// for lattice ECP5 FPGA
-	//`define LATTICE 1
-
-	// for Xilinx Spartan-6 FPGA
-	`define XILINX 1
+		// for Xilinx Spartan-6 FPGA
+		`define XILINX 1
+	`endif
 `endif
 
 `ifndef XILINX
@@ -483,6 +488,10 @@ assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT ser
 	`endif
 `endif
 
+`ifndef HIGH_SPEED
+reg dqs_is_at_high_previously;
+reg dqs_is_at_low_previously;
+`endif
 
 `ifndef USE_ILA
 	`ifdef USE_x16
@@ -492,6 +501,9 @@ assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT ser
 		wire dqs_is_at_high = (dqs & ~dqs_n);
 		wire dqs_is_at_low = (~dqs & dqs_n);
 	`endif
+	
+	wire dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+	wire dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
 `else
 	`ifdef USE_x16
 		assign dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
@@ -500,13 +512,13 @@ assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT ser
 		assign dqs_is_at_high = (dqs & ~dqs_n);
 		assign dqs_is_at_low = (~dqs & dqs_n);
 	`endif
+	
+	assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+	assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
 `endif
 
 
 `ifndef HIGH_SPEED
-
-reg dqs_is_at_high_previously;
-reg dqs_is_at_low_previously;
 
 always @(posedge clk) dqs_is_at_high_previously <= dqs_is_at_high;
 always @(posedge clk) dqs_is_at_low_previously <= dqs_is_at_low;
@@ -534,15 +546,6 @@ begin
 
 end
 
-`endif
-
-
-`ifndef USE_ILA
-	wire dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
-	wire dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
-`else
-	assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
-	assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
 `endif
 	
 

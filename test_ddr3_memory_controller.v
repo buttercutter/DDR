@@ -1,4 +1,4 @@
-//`define MICRON_SIM 1  // micron simulation model
+`define MICRON_SIM 1  // micron simulation model
 
 // `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
@@ -23,15 +23,7 @@
 	`endif
 `endif
 
-`ifdef LATTICE
-	`define FPGA 1
-`endif
-
-`ifdef XILINX
-	`define FPGA 1
-`endif
-
-`ifndef MICRON_SIM	
+`ifdef MICRON_SIM	
 	// clock and reset signals generation for Micron simulation testbench
 	`timescale 1ns/10ps  // time-unit = 1.65 ns, precision = 10 ps
 `endif
