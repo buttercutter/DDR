@@ -485,9 +485,6 @@ assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT ser
 
 
 `ifndef USE_ILA
-	wire dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
-	wire dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
-
 	`ifdef USE_x16
 		wire dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
 		wire dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
@@ -496,9 +493,6 @@ assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT ser
 		wire dqs_is_at_low = (~dqs & dqs_n);
 	`endif
 `else
-	assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
-	assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
-	
 	`ifdef USE_x16
 		assign dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
 		assign dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
@@ -507,7 +501,8 @@ assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT ser
 		assign dqs_is_at_low = (~dqs & dqs_n);
 	`endif
 `endif
-	
+
+
 `ifndef HIGH_SPEED
 
 reg dqs_is_at_high_previously;
@@ -540,6 +535,16 @@ begin
 end
 
 `endif
+
+
+`ifndef USE_ILA
+	wire dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+	wire dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
+`else
+	assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+	assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
+`endif
+	
 
 `ifndef XILINX
 wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO >> 1)]);

@@ -1,3 +1,4 @@
+//`define MICRON_SIM 1  // micron simulation model
 
 // `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
@@ -7,16 +8,19 @@
 //`define RAM_SIZE_4GB
 
 `ifndef FORMAL
-	// for internal logic analyzer
-	`define USE_ILA 1
-
-	`define USE_x16 1
+	`ifndef MICRON_SIM
 	
-	// for lattice ECP5 FPGA
-	//`define LATTICE 1
+		// for internal logic analyzer
+		`define USE_ILA 1
 
-	// for Xilinx Spartan-6 FPGA
-	`define XILINX 1
+		`define USE_x16 1
+		
+		// for lattice ECP5 FPGA
+		//`define LATTICE 1
+
+		// for Xilinx Spartan-6 FPGA
+		`define XILINX 1
+	`endif
 `endif
 
 `ifdef LATTICE
@@ -27,9 +31,7 @@
 	`define FPGA 1
 `endif
 
-`ifndef FPGA
-	`define MICRON_SIM 1  // micron simulation model
-	
+`ifndef MICRON_SIM	
 	// clock and reset signals generation for Micron simulation testbench
 	`timescale 1ns/10ps  // time-unit = 1.65 ns, precision = 10 ps
 `endif
@@ -38,8 +40,10 @@
 `define LOOPBACK 1
 `ifdef LOOPBACK
 	`ifndef FORMAL
-		// data loopback requires ILA capability to check data integrity
-		`define USE_ILA 1
+		`ifndef MICRON_SIM	
+			// data loopback requires ILA capability to check data integrity
+			`define USE_ILA 1
+		`endif
 	`endif
 `endif
 
@@ -130,6 +134,8 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 `ifndef MICRON_SIM
 assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 `else
+
+wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 
 // duration for each bit = 1 * timescale = 1 * 1 ns  = 1ns
 localparam PERIOD = 1;
