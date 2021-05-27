@@ -37,19 +37,19 @@ localparam MAX_TIMING = 24999;  // just for initial development stage, will refi
 /* verilator lint_on VARHIDDEN */
 `endif
 
-// for STATE_IDLE transition into STATE_REFRESH
-// tREFI = 65*tRFC calculated using info from Micron dataheet, so tREFI > 8 * tRFC
-// So it is entirely possible to do all 8 refresh commands inside one tREFI cycle 
-// since each refresh command will take tRFC cycle to finish
-// See also https://www.systemverilog.io/understanding-ddr4-timing-parameters#refresh
-/* verilator lint_off VARHIDDEN */
-localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
-/* verilator lint_on VARHIDDEN */
 
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
 #(
 	parameter CLK_PERIOD = 20,  // host clock period in ns
+	// for STATE_IDLE transition into STATE_REFRESH
+	// tREFI = 65*tRFC calculated using info from Micron dataheet, so tREFI > 8 * tRFC
+	// So it is entirely possible to do all 8 refresh commands inside one tREFI cycle 
+	// since each refresh command will take tRFC cycle to finish
+	// See also https://www.systemverilog.io/understanding-ddr4-timing-parameters#refresh
+	/* verilator lint_off VARHIDDEN */
+	parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8,  // 9 commands. one executed immediately, 8 more enqueued.
+	/* verilator lint_on VARHIDDEN */
 	
 	`ifdef RAM_SIZE_1GB
 		parameter ADDRESS_BITWIDTH = 14,

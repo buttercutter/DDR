@@ -457,8 +457,8 @@
     parameter CWL_MAX          =      10; // CWL        tCK   Maximum CAS Write Latency
 
     // Clock
-    //parameter TCK_MAX          =    3300; // tCK        ps    Maximum Clock Cycle Time
-    parameter TCK_MAX          =    80000; // tCK        ps    Maximum Clock Cycle Time , 12.5MHz
+    parameter TCK_MAX          =    3300; // tCK        ps    Maximum Clock Cycle Time
+    //parameter TCK_MAX          =    80000; // tCK        ps    Maximum Clock Cycle Time , 12.5MHz
     parameter TCH_AVG_MIN      =    0.47; // tCH        tCK   Minimum Clock High-Level Pulse Width
     parameter TCL_AVG_MIN      =    0.47; // tCL        tCK   Minimum Clock Low-Level Pulse Width
     parameter TCH_AVG_MAX      =    0.53; // tCH        tCK   Maximum Clock High-Level Pulse Width

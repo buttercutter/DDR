@@ -19,11 +19,28 @@
 	`define XILINX 1
 `endif
 
+`ifdef LATTICE
+	`define FPGA 1
+`endif
+
+`ifdef XILINX
+	`define FPGA 1
+`endif
+
+`ifndef FPGA
+	`define MICRON_SIM 1  // micron simulation model
+	
+	// clock and reset signals generation for Micron simulation testbench
+	`timescale 1ns/10ps  // time-unit = 1.65 ns, precision = 10 ps
+`endif
+
 // write data to RAM and then read them back from RAM
 `define LOOPBACK 1
 `ifdef LOOPBACK
-	// data loopback requires ILA capability to check data integrity
-	`define USE_ILA 1
+	`ifndef FORMAL
+		// data loopback requires ILA capability to check data integrity
+		`define USE_ILA 1
+	`endif
 `endif
 
 module test_ddr3_memory_controller
@@ -49,12 +66,13 @@ module test_ddr3_memory_controller
 	`endif
 )
 (
+`ifndef MICRON_SIM	
 	// these are FPGA internal signals
 	input clk,
 	input resetn,  // negation polarity due to pull-down tact switch
 	output done,  // finished DDR write and read operations in loopback mechaism
 	output led_test,  // just to test whether bitstream works or not
-	
+
 	// these are to be fed into external DDR3 memory
 	output [ADDRESS_BITWIDTH-1:0] address,
 	output [BANK_ADDRESS_BITWIDTH-1:0] bank_address,
@@ -69,26 +87,28 @@ module test_ddr3_memory_controller
 	output reset_n,
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
-`ifdef USE_x16
-	output ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
-	output udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
-	inout ldqs, // lower byte data strobe
-	inout ldqs_n,
-	inout udqs, // upper byte data strobe
-	inout udqs_n
-`else
-	inout dqs, // Data strobe
-	inout dqs_n,
 	
-	// driven to high-Z if TDQS termination function is disabled 
-	// according to TN-41-06: DDR3 Termination Data Strobe (TDQS)
-	// Please as well look at TN-41-04: DDR3 Dynamic On-Die Termination Operation 
-	`ifdef TDQS
-	inout tdqs, // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
+	`ifdef USE_x16
+		output ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
+		output udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
+		inout ldqs, // lower byte data strobe
+		inout ldqs_n,
+		inout udqs, // upper byte data strobe
+		inout udqs_n
 	`else
-	output tdqs,
+		inout dqs, // Data strobe
+		inout dqs_n,
+		
+		// driven to high-Z if TDQS termination function is disabled 
+		// according to TN-41-06: DDR3 Termination Data Strobe (TDQS)
+		// Please as well look at TN-41-04: DDR3 Dynamic On-Die Termination Operation 
+		`ifdef TDQS
+		inout tdqs, // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
+		`else
+		output tdqs,
+		`endif
+		inout tdqs_n
 	`endif
-	inout tdqs_n
 `endif
 );
 
@@ -105,10 +125,37 @@ localparam STATE_WRITE_DATA = 8;
 localparam STATE_READ_DATA = 11;
 
 // for STATE_IDLE transition into STATE_REFRESH
-localparam MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
+parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
 
-
+`ifndef MICRON_SIM
 assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
+`else
+
+// duration for each bit = 1 * timescale = 1 * 1 ns  = 1ns
+localparam PERIOD = 1;
+
+localparam RESET_TIMING = 200000;  // 200us
+
+reg clk;
+reg resetn;
+
+initial begin
+	clk = 1'b0;
+	resetn = 1'b1;
+	#PERIOD;
+	
+	resetn = 1'b0;  // asserts reset signal
+	#(RESET_TIMING/PERIOD);  // minimum initial reset timing
+	
+	resetn = 1'b1;  // releases reset signal
+end
+
+// note that sensitive list is omitted in always block
+// therefore always-block run forever
+// clock period = 3.3 ns , frequency = 303 MHz
+always clk = ~clk;
+`endif
+
 wire reset = ~resetn;  // just for convenience of verilog syntax
 
 `ifndef XILINX
@@ -272,7 +319,8 @@ end
 `endif
 
 
-ddr3_memory_controller ddr3
+ddr3_memory_controller #(.MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED))
+ddr3_control
 (
 	// these are FPGA internal signals
 	.clk(clk),
@@ -298,6 +346,10 @@ ddr3_memory_controller ddr3
 	.reset_n(reset_n),
 	
 	.dq(dq), // Data input/output
+
+`ifdef MICRON_SIM
+	.main_state(main_state),
+`endif
 	
 `ifdef USE_ILA
 	.dq_w(dq_w),
@@ -333,5 +385,30 @@ ddr3_memory_controller ddr3
 	.tdqs_n(tdqs_n)
 `endif
 );
+
+
+`ifdef MICRON_SIM
+// Micron simulation model
+
+ddr3 mem(
+    .rst_n(reset_n),
+    .ck(ck),
+    .ck_n(ck_n),
+    .cke(ck_en),
+    .cs_n(cs_n),
+    .ras_n(ras_n),
+    .cas_n(cas_n),
+    .we_n(we_n),
+    .dm_tdqs(tdqs),
+    .ba(bank_address),
+    .addr(address),
+    .dq(dq),
+    .dqs(dqs),
+    .dqs_n(dqs_n),
+    .tdqs_n(tdqs_n),
+    .odt(odt)
+);
+
+`endif
 
 endmodule
