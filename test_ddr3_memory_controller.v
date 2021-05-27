@@ -23,9 +23,9 @@
 	`endif
 `endif
 
-`ifdef MICRON_SIM	
-	// clock and reset signals generation for Micron simulation testbench
-	`timescale 1ns / 10ps  // time-unit = 1 ns, precision = 10 ps
+`ifdef MICRON_SIM
+// follows Micron simulation model
+`timescale 1ps / 1ps  // time-unit = 1 ns, precision = 10 ps
 `endif
 
 // write data to RAM and then read them back from RAM
@@ -124,36 +124,80 @@ localparam STATE_READ_DATA = 11;
 parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
 
 `ifndef MICRON_SIM
-assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
+	assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
 `else
 
-wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+	wire done;  // finished DDR write and read operations in loopback mechaism
 
-// duration for each bit = 1 * timescale = 1 * 1 ns  = 1ns
-localparam PERIOD = 1;
+	// these are to be fed into external DDR3 memory
+	wire [ADDRESS_BITWIDTH-1:0] address;
+	wire [BANK_ADDRESS_BITWIDTH-1:0] bank_address;
+	wire ck; // CK
+	wire ck_n; // CK#
+	wire ck_en; // CKE
+	wire cs_n; // chip select signal
+	wire odt; // on-die termination
+	wire ras_n; // RAS#
+	wire cas_n; // CAS#
+	wire we_n; // WE#
+	wire reset_n;
 
-localparam RESET_TIMING = 200000;  // 200us
+	wire [DQ_BITWIDTH-1:0] dq; // Data input/output
 
-reg clk;
-reg resetn;
+	`ifdef USE_x16
+		wire ldm;  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
+		wire udm; // upper-byte data mask, to be asserted HIGH during data write activities into RAM
+		wire ldqs; // lower byte data strobe
+		wire ldqs_n;
+		wire udqs; // upper byte data strobe
+		wire udqs_n;
+	`else
+		wire dqs; // Data strobe
+		wire dqs_n;
+		
+		// driven to high-Z if TDQS termination function is disabled 
+		// according to TN-41-06: DDR3 Termination Data Strobe (TDQS)
+		// Please as well look at TN-41-04: DDR3 Dynamic On-Die Termination Operation 
+		`ifdef TDQS
+		wire tdqs; // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
+		`else
+		wire tdqs;
+		`endif
+		wire tdqs_n;
+	`endif
 
-initial begin
-	clk = 1'b0;
-	resetn = 1'b1;
-	#PERIOD;
-	
-	resetn = 1'b0;  // asserts reset signal
-	#(RESET_TIMING/PERIOD);  // minimum initial reset timing
-	
-	resetn = 1'b1;  // releases reset signal
-	
-	$stop;
-end
+	wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 
-// note that sensitive list is omitted in always block
-// therefore always-block run forever
-// clock period = 3.3 ns , frequency = 303 MHz
-always #PERIOD clk = ~clk;
+	// Micron simulation model is using `timescale 1ps / 1ps
+	// duration for each bit = 1 * timescale = 1 * 1ps  = 1ps
+	localparam PERIOD = 2000;  // clock period = 20ns
+
+	localparam RESET_TIMING = 200_000_000;  // 200us
+
+	// clock and reset signals generation for Micron simulation testbench
+	reg clk;
+	reg resetn;
+
+	initial begin
+		$dumpfile("ddr3.vcd");
+		$dumpvars(0, test_ddr3_memory_controller);
+		
+		clk <= 1'b0;
+		resetn <= 1'b1;
+		#PERIOD;
+		
+		resetn <= 1'b0;  // asserts reset signal
+		#(RESET_TIMING/PERIOD);  // minimum initial reset timing
+		
+		resetn <= 1'b1;  // releases reset signal
+		
+		$stop;
+	end
+
+	// note that sensitive list is omitted in always block
+	// therefore always-block run forever
+	// clock period = 3.3 ns , frequency = 303 MHz
+	always #PERIOD clk = ~clk;
 `endif
 
 wire reset = ~resetn;  // just for convenience of verilog syntax
