@@ -1,5 +1,7 @@
 `define MICRON_SIM 1  // micron simulation model
 
+`define USE_x16 1
+
 // `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
 
@@ -12,8 +14,6 @@
 	
 		// for internal logic analyzer
 		`define USE_ILA 1
-
-		`define USE_x16 1
 		
 		// for lattice ECP5 FPGA
 		//`define LATTICE 1
