@@ -43,10 +43,24 @@ localparam MAX_TIMING = 24999;  // just for initial development stage, will refi
 `endif
 
 
+`ifdef MICRON_SIM
+	localparam MAXIMUM_CK_PERIOD = 3300;  // 3300ps which is defined by Micron simulation model
+	localparam PICO_TO_NANO_CONVERSION_FACTOR = 1000;  // 1ns = 1000ps
+`endif
+
+
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
 #(
-	parameter CLK_PERIOD = 20,  // host clock period in ns
+	parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+	
+	`ifdef MICRON_SIM
+		// host clock period in ns
+		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 825ps , clock period of 'ck' = 3300ps
+	`else
+		parameter CLK_PERIOD = 20,  // 20ns
+	`endif
+	
 	// for STATE_IDLE transition into STATE_REFRESH
 	// tREFI = 65*tRFC calculated using info from Micron dataheet, so tREFI > 8 * tRFC
 	// So it is entirely possible to do all 8 refresh commands inside one tREFI cycle 
@@ -418,7 +432,6 @@ wire dqs_n_w;
 
 // See https://www.edaplayground.com/x/gXC for waveform simulation of the clock divider
 reg clk_slow;
-localparam DIVIDE_RATIO = 4;
 localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 
 `ifndef XILINX
@@ -434,7 +447,7 @@ begin
 	if(reset) counter_reset <= 0;
 
 `ifndef XILINX	
-	else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO >> 1)] - 1'b1);
+	else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO_HALVED)] - 1'b1);
 `else
 	else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: 1] - 1'b1);
 `endif
@@ -556,7 +569,7 @@ end
 	
 
 `ifndef XILINX
-wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO >> 1)]);
+wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO_HALVED)]);
 `else
 wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: 2]);
 `endif
@@ -886,6 +899,11 @@ begin
 	if(reset) 
 	begin
 		main_state <= STATE_RESET;
+		ck_en <= 0;
+		cs_n <= 0;			
+		ras_n <= 0;
+		cas_n <= 0;
+		we_n <= 0;
 		wait_count <= 0;
 		refresh_Queue <= 0;
 		postponed_refresh_timing_count <= 0;

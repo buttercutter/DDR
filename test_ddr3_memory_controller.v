@@ -39,9 +39,23 @@
 	`endif
 `endif
 
+
+`ifdef MICRON_SIM
+	localparam MAXIMUM_CK_PERIOD = 3300;  // 3300ps which is defined by Micron simulation model
+	localparam PICO_TO_NANO_CONVERSION_FACTOR = 1000;  // 1ns = 1000ps
+`endif
+
+
 module test_ddr3_memory_controller
 #(
-	parameter CLK_PERIOD = 20,  // host clock period in ns
+	parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+	
+	`ifdef MICRON_SIM
+		// host clock period in ns
+		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 825ps , clock period of 'ck' = 3300ps
+	`else
+		parameter CLK_PERIOD = 20,  // 20ns
+	`endif
 	
 	`ifdef RAM_SIZE_1GB
 		parameter ADDRESS_BITWIDTH = 14,
@@ -170,9 +184,9 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 
 	// Micron simulation model is using `timescale 1ps / 1ps
 	// duration for each bit = 1 * timescale = 1 * 1ps  = 1ps
-	localparam PERIOD = 3300;  // clock period = 3300ps
 
 	localparam RESET_TIMING = 200_000_000;  // 200us
+	localparam STOP_TIMING =  900_000_000;  // 900us
 
 	// clock and reset signals generation for Micron simulation testbench
 	reg clk;
@@ -193,7 +207,7 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 		
 		resetn <= 1'b1;  // releases master reset signal
 		
-		repeat(RESET_TIMING/PERIOD) @(posedge ck);  // minimum initial reset timing
+		repeat(STOP_TIMING/CLK_PERIOD) @(posedge clk);  // minimum runtime
 		
 		$stop;
 	end
@@ -201,7 +215,7 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 	// note that sensitive list is omitted in always block
 	// therefore always-block run forever
 	// clock period = 3.3 ns , frequency = 303 MHz
-	always #PERIOD clk = ~clk;
+	always #CLK_PERIOD clk = ~clk;
 `endif
 
 wire reset = ~resetn;  // just for convenience of verilog syntax
@@ -354,8 +368,7 @@ end
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
-
-		localparam DIVIDE_RATIO = 4;
+		
 		localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 		
 		wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
