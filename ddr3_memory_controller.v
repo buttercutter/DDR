@@ -71,6 +71,8 @@ module ddr3_memory_controller
 	/* verilator lint_on VARHIDDEN */
 	
 	`ifdef USE_x16
+		parameter DQS_BITWIDTH = 2,
+	
 		`ifdef RAM_SIZE_1GB
 			parameter ADDRESS_BITWIDTH = 13,
 			
@@ -80,7 +82,9 @@ module ddr3_memory_controller
 		`elsif RAM_SIZE_4GB
 			parameter ADDRESS_BITWIDTH = 15,
 		`endif
-	`else	
+	`else
+		parameter DQS_BITWIDTH = 1,	
+		
 		`ifdef RAM_SIZE_1GB
 			parameter ADDRESS_BITWIDTH = 14,
 			
@@ -170,18 +174,18 @@ module ddr3_memory_controller
 	inout udqs, // upper byte data strobe
 	inout udqs_n
 `else
-	inout dqs, // Data strobe
-	inout dqs_n,
+	inout [DQS_BITWIDTH-1:0] dqs, // Data strobe
+	inout [DQS_BITWIDTH-1:0] dqs_n,
 	
 	// driven to high-Z if TDQS termination function is disabled 
 	// according to TN-41-06: DDR3 Termination Data Strobe (TDQS)
 	// Please as well look at TN-41-04: DDR3 Dynamic On-Die Termination Operation 
 	`ifdef TDQS
-	inout tdqs, // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
+	inout [DQS_BITWIDTH-1:0] tdqs, // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
 	`else
-	output tdqs,
+	output [DQS_BITWIDTH-1:0] tdqs,
 	`endif
-	inout tdqs_n
+	inout [DQS_BITWIDTH-1:0] tdqs_n
 `endif
 );
 

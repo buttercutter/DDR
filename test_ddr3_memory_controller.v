@@ -58,6 +58,9 @@ module test_ddr3_memory_controller
 	`endif
 
 	`ifdef USE_x16
+		parameter DM_BITWIDTH = 2,
+		parameter DQS_BITWIDTH = 2,
+	
 		`ifdef RAM_SIZE_1GB
 			parameter ADDRESS_BITWIDTH = 13,
 			
@@ -67,7 +70,10 @@ module test_ddr3_memory_controller
 		`elsif RAM_SIZE_4GB
 			parameter ADDRESS_BITWIDTH = 15,
 		`endif
-	`else	
+	`else
+		parameter DM_BITWIDTH = 1,
+		parameter DQS_BITWIDTH = 1,	
+		
 		`ifdef RAM_SIZE_1GB
 			parameter ADDRESS_BITWIDTH = 14,
 			
@@ -118,18 +124,18 @@ module test_ddr3_memory_controller
 		inout udqs, // upper byte data strobe
 		inout udqs_n
 	`else
-		inout dqs, // Data strobe
-		inout dqs_n,
+		inout [DQS_BITWIDTH-1:0] dqs, // Data strobe
+		inout [DQS_BITWIDTH-1:0] dqs_n,
 		
 		// driven to high-Z if TDQS termination function is disabled 
 		// according to TN-41-06: DDR3 Termination Data Strobe (TDQS)
 		// Please as well look at TN-41-04: DDR3 Dynamic On-Die Termination Operation 
 		`ifdef TDQS
-		inout tdqs, // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
+		inout [DQS_BITWIDTH-1:0] tdqs, // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
 		`else
-		output tdqs,
+		output [DQS_BITWIDTH-1:0] tdqs,
 		`endif
-		inout tdqs_n
+		inout [DQS_BITWIDTH-1:0] tdqs_n
 	`endif
 `endif
 );
@@ -177,19 +183,23 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 		wire ldqs_n;
 		wire udqs; // upper byte data strobe
 		wire udqs_n;
+		
+		wire [DM_BITWIDTH-1:0]  dm = {udm, ldm};
+		wire [DQS_BITWIDTH-1:0] dqs = {udqs, ldqs};
+		wire [DQS_BITWIDTH-1:0] dqs_n = {udqs_n, ldqs_n};
 	`else
-		wire dqs; // Data strobe
-		wire dqs_n;
+		wire [DQS_BITWIDTH-1:0] dqs; // Data strobe
+		wire [DQS_BITWIDTH-1:0] dqs_n;
 		
 		// driven to high-Z if TDQS termination function is disabled 
 		// according to TN-41-06: DDR3 Termination Data Strobe (TDQS)
 		// Please as well look at TN-41-04: DDR3 Dynamic On-Die Termination Operation 
 		`ifdef TDQS
-		wire tdqs; // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
+		wire [DQS_BITWIDTH-1:0] tdqs; // Termination data strobe, but can act as data-mask (DM) when TDQS function is disabled
 		`else
-		wire tdqs;
+		wire [DQS_BITWIDTH-1:0] tdqs;
 		`endif
-		wire tdqs_n;
+		wire [DQS_BITWIDTH-1:0] tdqs_n;
 	`endif
 
 	wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
@@ -472,7 +482,7 @@ ddr3 mem(
     .ras_n(ras_n),
     .cas_n(cas_n),
     .we_n(we_n),
-    .dm_tdqs(tdqs),
+    .dm_tdqs(dm),
     .ba(bank_address),
     .addr(address),
     .dq(dq),

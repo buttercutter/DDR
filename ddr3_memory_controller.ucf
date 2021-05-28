@@ -27,7 +27,6 @@ NET "dq[15]" LOC = R1;
 NET "bank_address[0]" LOC = C3;
 NET "bank_address[1]" LOC = C2;
 NET "bank_address[2]" LOC = B1;
-NET "address[14]" LOC = F5;
 NET "address[13]" LOC = F6;
 NET "address[11]" LOC = E3;
 NET "address[10]" LOC = G6;
@@ -50,9 +49,7 @@ NET "udm" LOC = K3;
 NET "ldm" LOC = J4;
 NET "led_test" LOC = R9;
 NET "resetn" LOC = T8;
-NET "address[14]" IOSTANDARD = LVCMOS25;
-NET "address[14]" DRIVE = 12;
-NET "address[14]" SLEW = SLOW;
+NET "odt" LOC = L5;
 NET "address[13]" IOSTANDARD = LVCMOS25;
 NET "address[13]" DRIVE = 12;
 NET "address[13]" SLEW = SLOW;
@@ -205,7 +202,3 @@ NET "udqs" SLEW = SLOW;
 NET "udqs_n" IOSTANDARD = LVCMOS25;
 NET "udqs_n" DRIVE = 12;
 NET "udqs_n" SLEW = SLOW;
-
-# PlanAhead Generated physical constraints 
-
-NET "odt" LOC = L5;
