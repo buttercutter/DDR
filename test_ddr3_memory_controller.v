@@ -56,15 +56,27 @@ module test_ddr3_memory_controller
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
-	
-	`ifdef RAM_SIZE_1GB
-		parameter ADDRESS_BITWIDTH = 14,
-		
-	`elsif RAM_SIZE_2GB
-		parameter ADDRESS_BITWIDTH = 15,
-		
-	`elsif RAM_SIZE_4GB
-		parameter ADDRESS_BITWIDTH = 16,
+
+	`ifdef USE_x16
+		`ifdef RAM_SIZE_1GB
+			parameter ADDRESS_BITWIDTH = 13,
+			
+		`elsif RAM_SIZE_2GB
+			parameter ADDRESS_BITWIDTH = 14,
+			
+		`elsif RAM_SIZE_4GB
+			parameter ADDRESS_BITWIDTH = 15,
+		`endif
+	`else	
+		`ifdef RAM_SIZE_1GB
+			parameter ADDRESS_BITWIDTH = 14,
+			
+		`elsif RAM_SIZE_2GB
+			parameter ADDRESS_BITWIDTH = 15,
+			
+		`elsif RAM_SIZE_4GB
+			parameter ADDRESS_BITWIDTH = 16,
+		`endif
 	`endif
 	
 	parameter BANK_ADDRESS_BITWIDTH = 3,  //  8 banks, and $clog2(8) = 3
