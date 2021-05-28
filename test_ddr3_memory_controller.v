@@ -52,7 +52,8 @@ module test_ddr3_memory_controller
 	
 	`ifdef MICRON_SIM
 		// host clock period in ns
-		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 825ps , clock period of 'ck' = 3300ps
+		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
@@ -145,8 +146,8 @@ module test_ddr3_memory_controller
 localparam NUM_OF_DDR_STATES = 20;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
-// TIME_INITIAL_CK_INACTIVE = 24999;
-localparam MAX_TIMING = 24999;  // just for initial development stage, will refine the value later
+// TIME_INITIAL_CK_INACTIVE = 151515;
+localparam MAX_TIMING = 151515;  // just for initial development stage, will refine the value later
 `endif
 
 localparam STATE_WRITE_DATA = 8;
@@ -237,7 +238,7 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 	// note that sensitive list is omitted in always block
 	// therefore always-block run forever
 	// clock period = 3.3 ns , frequency = 303 MHz
-	always #CLK_PERIOD clk = ~clk;
+	always #((CLK_PERIOD*PICO_TO_NANO_CONVERSION_FACTOR)/2) clk = ~clk;  // clock edge transition every half clock cycle period
 `endif
 
 wire reset = ~resetn;  // just for convenience of verilog syntax
