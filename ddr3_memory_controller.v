@@ -497,7 +497,8 @@ wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counte
 wire clk90_slow_posedge = (~clk_slow && counter_reset);
 wire clk_slow_posedge = (clk_slow && ~counter_reset);
 wire clk_slow_negedge = (~clk_slow && ~counter_reset);
-// wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
+wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
+wire clk180_slow_posedge = clk_slow_negedge;
 
 
 // phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
@@ -913,14 +914,6 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 `endif
 
 
-`ifndef HIGH_SPEED
-	`ifndef XILINX
-	reg [$clog2(DIVIDE_RATIO):0] wait_count_clk;  // indicates how many cycles of 'clk' inside each 'ck' cycle
-	`else
-	reg [2:0] wait_count_clk;  // indicates how many cycles of 'clk' inside each 'ck' cycle
-	`endif
-`endif
-
 // will switch to using always @(posedge clk90_slow) in later stage of project
 always @(posedge clk)
 begin
@@ -935,9 +928,6 @@ begin
 		address <=0;
 		bank_address <= 0;
 		wait_count <= 0;
-	`ifndef HIGH_SPEED
-		wait_count_clk <= 0;
-	`endif
 		refresh_Queue <= 0;
 		postponed_refresh_timing_count <= 0;
 		refresh_timing_count <= 0;
@@ -951,7 +941,12 @@ begin
 	// such that all outgoing DDR signals are sampled in the middle of during posedge(ck)
 	// For more info, see the initialization sequence : https://i.imgur.com/JClPQ6G.png
 	
-	else if(clk90_slow_posedge)  // use the slower clk90_slow_posedge signal ('ck') for low speed testing mode
+	// since clocked always block only updates the new data at the next clock cycle, 
+	// clk180_slow_posedge is used instead of clk90_slow_posedge to produce a new data 
+	// that is 90 degree phase-shifted, for which the data will be sampled in the middle by 'clk_slow' ('ck')
+	// Since DIVIDE_RATIO=4, so in half clock period for 'clk' signal, there are 2 'clk' cycles
+	// Therefore, clk180_slow_posedge is 1 'clk' cycle in advance/early with comparison to clk90_slow_posedge
+	else if(clk180_slow_posedge)  // use the slower clk180_slow_posedge signal for low speed testing mode
 `endif
 	begin
 		if(write_enable) write_is_enabled <= 1;
@@ -1009,9 +1004,18 @@ begin
 					main_state <= STATE_INIT_CLOCK_ENABLE;
 					wait_count <= 0;
 				end
-				
+
+				else if(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1)  // setup timing of 'ck_en' with respect to 'ck'
+				begin
+					ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
+					main_state <= STATE_RESET_FINISH;				
+				end
+						
 				else begin
-					ck_en <= 0;  // CK inactive
+					if(ck_en) ck_en <= 1;  // continue to be active after first transition to active logic high
+					
+					else ck_en <= 0;  // CK inactive
+			
 					main_state <= STATE_RESET_FINISH;
 				end			
 			end
@@ -1469,30 +1473,6 @@ begin
 			
 		endcase
 	end
-	
-`ifndef HIGH_SPEED
-	else begin  // activities that MUST happen within a timing smaller than the precision of a 'ck' cycle
-		if((main_state == STATE_RESET_FINISH) && 
-			(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1))  // this is still not within a 'ck' cycle
-		begin
-			if(wait_count_clk >= (DIVIDE_RATIO-TIME_TIS))  // setup timing of 'ck_en' with respect to 'clk'
-			begin
-				ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
-				main_state <= STATE_RESET_FINISH;	
-				wait_count_clk <= 0;			
-			end
-
-			else begin
-				if(ck_en) ck_en <= 1;  // continue to be active after first transition to active logic high
-				
-				else ck_en <= 0;  // CK inactive
-				
-				main_state <= STATE_RESET_FINISH;	
-				wait_count_clk <= wait_count_clk + 1;			
-			end
-		end
-	end
-`endif
 end
 
 endmodule
