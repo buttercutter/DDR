@@ -358,11 +358,13 @@ localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CK_PERIOD)); 
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_PERIOD));  // Minimum 195ps, setup time
 `else
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = 1;  // Minimum 195ps, setup time
 `endif
 
 localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
@@ -910,6 +912,15 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 		= (refresh_timing_count == TIME_TREFI[0 +: 9]);
 `endif
 
+
+`ifndef HIGH_SPEED
+	`ifndef XILINX
+	reg [$clog2(DIVIDE_RATIO):0] wait_count_clk;  // indicates how many cycles of 'clk' inside each 'ck' cycle
+	`else
+	reg [2:0] wait_count_clk;  // indicates how many cycles of 'clk' inside each 'ck' cycle
+	`endif
+`endif
+
 // will switch to using always @(posedge clk90_slow) in later stage of project
 always @(posedge clk)
 begin
@@ -921,7 +932,12 @@ begin
 		ras_n <= 0;
 		cas_n <= 0;
 		we_n <= 0;
+		address <=0;
+		bank_address <= 0;
 		wait_count <= 0;
+	`ifndef HIGH_SPEED
+		wait_count_clk <= 0;
+	`endif
 		refresh_Queue <= 0;
 		postponed_refresh_timing_count <= 0;
 		refresh_timing_count <= 0;
@@ -935,7 +951,7 @@ begin
 	// such that all outgoing DDR signals are sampled in the middle of during posedge(ck)
 	// For more info, see the initialization sequence : https://i.imgur.com/JClPQ6G.png
 	
-	else if(clk90_slow_posedge)  // use the slower clk90_slow_posedge signal for low speed testing mode
+	else if(clk90_slow_posedge)  // use the slower clk90_slow_posedge signal ('ck') for low speed testing mode
 `endif
 	begin
 		if(write_enable) write_is_enabled <= 1;
@@ -997,7 +1013,7 @@ begin
 				else begin
 					ck_en <= 0;  // CK inactive
 					main_state <= STATE_RESET_FINISH;
-				end				
+				end			
 			end
 			
 			STATE_INIT_CLOCK_ENABLE :
@@ -1453,6 +1469,30 @@ begin
 			
 		endcase
 	end
+	
+`ifndef HIGH_SPEED
+	else begin  // activities that MUST happen within a timing smaller than the precision of a 'ck' cycle
+		if((main_state == STATE_RESET_FINISH) && 
+			(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1))  // this is still not within a 'ck' cycle
+		begin
+			if(wait_count_clk >= (DIVIDE_RATIO-TIME_TIS))  // setup timing of 'ck_en' with respect to 'clk'
+			begin
+				ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
+				main_state <= STATE_RESET_FINISH;	
+				wait_count_clk <= 0;			
+			end
+
+			else begin
+				if(ck_en) ck_en <= 1;  // continue to be active after first transition to active logic high
+				
+				else ck_en <= 0;  // CK inactive
+				
+				main_state <= STATE_RESET_FINISH;	
+				wait_count_clk <= wait_count_clk + 1;			
+			end
+		end
+	end
+`endif
 end
 
 endmodule
