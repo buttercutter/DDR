@@ -1008,7 +1008,13 @@ begin
 				else if(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1)  // setup timing of 'ck_en' with respect to 'ck'
 				begin
 					ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
-					main_state <= STATE_RESET_FINISH;				
+					main_state <= STATE_RESET_FINISH;
+					
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;				
 				end
 						
 				else begin
