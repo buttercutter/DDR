@@ -1040,6 +1040,12 @@ begin
 					main_state <= STATE_INIT_MRS_2;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
 					wait_count <= 0;
+					
+					// no more NOP command in next 'ck' cycle, transition to MR2 command
+					cs_n <= 0;
+					ras_n <= 0;
+					cas_n <= 0;
+					we_n <= 0;					
 				end
 				
 				else begin
@@ -1050,10 +1056,13 @@ begin
 			STATE_INIT_MRS_2 :
 			begin
 				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating MRS command is executed, and followed by NOP commands
 				cs_n <= 0;
-				ras_n <= 0;
-				cas_n <= 0;
-				we_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;	
 
 	            // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled
 	            address <= 0;
@@ -1063,6 +1072,12 @@ begin
 					main_state <= STATE_INIT_MRS_3;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
 					wait_count <= 0;
+					
+					// no more NOP command in next 'ck' cycle, transition to MR3 command
+					cs_n <= 0;
+					ras_n <= 0;
+					cas_n <= 0;
+					we_n <= 0;						
 				end
 				
 				else begin
@@ -1074,10 +1089,13 @@ begin
 			STATE_INIT_MRS_3 :
 			begin
 				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating MRS command is executed, and followed by NOP commands
 				cs_n <= 0;
-				ras_n <= 0;
-				cas_n <= 0;
-				we_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;	
 				
 				// MPR disabled
 				address <= 0;
@@ -1087,6 +1105,12 @@ begin
 					main_state <= STATE_INIT_MRS_1;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
 					wait_count <= 0;
+					
+					// no more NOP command in next 'ck' cycle, transition to MR1 command
+					cs_n <= 0;
+					ras_n <= 0;
+					cas_n <= 0;
+					we_n <= 0;						
 				end
 				
 				else begin
@@ -1098,10 +1122,13 @@ begin
 			STATE_INIT_MRS_1 :
 			begin
 				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating MRS command is executed, and followed by NOP commands
 				cs_n <= 0;
-				ras_n <= 0;
-				cas_n <= 0;
-				we_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;	
 
 				// enable DLL; 34ohm output driver; no additive latency (AL); write leveling disabled;
 	            // termination resistors disabled; TDQS disabled; output enabled
@@ -1118,6 +1145,12 @@ begin
 					main_state <= STATE_INIT_MRS_0;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
 					wait_count <= 0;
+					
+					// no more NOP command in next 'ck' cycle, transition to MR0 command
+					cs_n <= 0;
+					ras_n <= 0;
+					cas_n <= 0;
+					we_n <= 0;						
 				end
 				
 				else begin
@@ -1129,10 +1162,13 @@ begin
 			STATE_INIT_MRS_0 :
 			begin
 				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating MRS command is executed, and followed by NOP commands
 				cs_n <= 0;
-				ras_n <= 0;
-				cas_n <= 0;
-				we_n <= 0;	
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;	
 
 	            // fixed burst length 8; sequential burst; CL=5; DLL reset yes
 	            // write recovery=5; precharge PD: DLL on
