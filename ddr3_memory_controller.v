@@ -44,7 +44,8 @@ localparam MAX_TIMING = 151515;  // just for initial development stage, will ref
 
 
 `ifdef MICRON_SIM
-	localparam MAXIMUM_CK_PERIOD = 3300;  // 3300ps which is defined by Micron simulation model
+	localparam PERIOD_MARGIN = 10;  // 10ps margin
+	localparam MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN;  // 3300ps which is defined by Micron simulation model
 	localparam PICO_TO_NANO_CONVERSION_FACTOR = 1000;  // 1ns = 1000ps
 `endif
 
@@ -1274,6 +1275,13 @@ begin
 				begin
 					main_state <= STATE_ZQ_CALIBRATION;
 					wait_count <= 0;
+					
+					// no more NOP command in next 'ck' cycle, transition to ZQCL command
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 0;	
+					address[A10] <= 1;					
 				end
 				
 				else begin
@@ -1285,11 +1293,13 @@ begin
 			STATE_ZQ_CALIBRATION :  // https://i.imgur.com/n4VU0MF.png
 			begin
 				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ZQCL command is executed, and followed by NOP commands
 				cs_n <= 0;
 				ras_n <= 1;
 				cas_n <= 1;
-				we_n <= 0;	
-				address[A10] <= 1;
+				we_n <= 1;	
 	
 				if(wait_count > TIME_TZQINIT-1)
 				begin

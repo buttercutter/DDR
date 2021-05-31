@@ -41,7 +41,8 @@
 
 
 `ifdef MICRON_SIM
-	localparam MAXIMUM_CK_PERIOD = 3300;  // 3300ps which is defined by Micron simulation model
+	localparam PERIOD_MARGIN = 10;  // 10ps margin
+	localparam MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN;  // 3300ps which is defined by Micron simulation model
 	localparam PICO_TO_NANO_CONVERSION_FACTOR = 1000;  // 1ns = 1000ps
 `endif
 
