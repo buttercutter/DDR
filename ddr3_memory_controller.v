@@ -1420,7 +1420,16 @@ begin
 					if(write_is_enabled)  // write operation has higher priority
 					begin
 						write_is_enabled <= 0;
+						
+						// no more NOP command in next 'ck' cycle, transition to WRAP command
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 1;
+						cas_n <= 0;
+						we_n <= 0;
+						address[A10] <= 1;
 						main_state <= STATE_WRITE_AP;
+						
 						wait_count <= 0;
 					end
 						
@@ -1448,11 +1457,14 @@ begin
 				// will implement multiple consecutive WRITE commands (TIME_TCCD) in later stage of project
 			
 				ck_en <= 1;
-				cs_n <= 0;			
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				cs_n <= 0;
 				ras_n <= 1;
-				cas_n <= 0;
-				we_n <= 0;
-				
+				cas_n <= 1;
+				we_n <= 1;	
+								
 				address <= 	// column address
 						   	{
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
