@@ -53,10 +53,11 @@ module test_ddr3_memory_controller
 	`ifdef MICRON_SIM
 		// host clock period in ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
-		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
+
+	parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 
 	`ifdef USE_x16
 		parameter DM_BITWIDTH = 2,
@@ -256,11 +257,10 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 reg [DQ_BITWIDTH-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
 wire [DQ_BITWIDTH-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
 
-
-`ifdef LOOPBACK
-
 reg write_enable, read_enable;
 reg done_writing, done_reading;
+
+`ifdef LOOPBACK
 
 assign done = (done_writing & done_reading);  // finish a data loopback transaction
 

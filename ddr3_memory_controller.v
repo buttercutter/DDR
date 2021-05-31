@@ -57,10 +57,11 @@ module ddr3_memory_controller
 	`ifdef MICRON_SIM
 		// host clock period in ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
-		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
+	
+	parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	
 	// for STATE_IDLE transition into STATE_REFRESH
 	// tREFI = 65*tRFC calculated using info from Micron dataheet, so tREFI > 8 * tRFC
@@ -1037,8 +1038,11 @@ begin
 				// The clock must be present and valid for at least 10ns (and a minimum of five clocks)			
 				if(wait_count > TIME_TXPR-1)
 				begin
+					// prepare necessary parameters for next state
 					main_state <= STATE_INIT_MRS_2;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
+		            address <= 0;  // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled					
+					
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to MR2 command
@@ -1069,8 +1073,11 @@ begin
 	                        			
 				if(wait_count > TIME_TMRD-1)
 				begin
+					// prepare necessary parameters for next state				
 					main_state <= STATE_INIT_MRS_3;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+					address <= 0;  // MPR disabled					
+					
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to MR3 command
@@ -1102,8 +1109,34 @@ begin
 				
 				if(wait_count > TIME_TMRD-1)
 				begin
+					// prepare necessary parameters for next state				
 					main_state <= STATE_INIT_MRS_1;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+
+					`ifdef USE_x16
+					
+						`ifdef RAM_SIZE_1GB
+							address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_2GB
+							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_4GB
+							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						`endif
+					`else
+						
+						`ifdef RAM_SIZE_1GB
+							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_2GB
+							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_4GB
+							address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						`endif
+					`endif
+					
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to MR1 command
@@ -1138,12 +1171,44 @@ begin
 	            //       it is set to value of 0 for now.
 	            // 		 See https://blog.csdn.net/xingqingly/article/details/48997879 and
 	            //       https://application-notes.digchip.com/024/24-19971.pdf for more context on AL
-	            address <= {1'b0, MR1, 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+	            // address <= {1'b0, MR1, 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 	                        			
 				if(wait_count > TIME_TMRD-1)
 				begin
+					// prepare necessary parameters for next state				
 					main_state <= STATE_INIT_MRS_0;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
+
+					`ifdef USE_x16
+					
+						`ifdef RAM_SIZE_1GB
+							address <= {PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+							
+						`elsif RAM_SIZE_2GB
+							address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+							
+						`elsif RAM_SIZE_4GB
+							address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+						`endif
+					`else
+						
+						`ifdef RAM_SIZE_1GB
+							address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+							
+						`elsif RAM_SIZE_2GB
+							address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+							
+						`elsif RAM_SIZE_4GB
+							address <= {MR0[0], 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+						`endif
+					`endif
+							
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to MR0 command
@@ -1194,8 +1259,8 @@ begin
 	            // See https://i.imgur.com/iuS45ld.png where tDQSCK starts AL + CL - 1 cycles 
 	            // after the READ command. 
 
-				address <= {1'b0, MR0, 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-							READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+				//address <= {1'b0, MR0, 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+				//			READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 				
 				if(wait_count > TIME_TMOD-1)
 				begin
