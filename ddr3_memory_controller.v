@@ -926,11 +926,11 @@ begin
 	begin
 		main_state <= STATE_RESET;
 		ck_en <= 0;
-		cs_n <= 0;			
-		ras_n <= 0;
-		cas_n <= 0;
-		we_n <= 0;
-		address <=0;
+		cs_n <= 1;			
+		ras_n <= 1;
+		cas_n <= 1;
+		we_n <= 1;
+		address <= 0;
 		bank_address <= 0;
 		wait_count <= 0;
 		refresh_Queue <= 0;
@@ -966,7 +966,15 @@ begin
 		if(it_is_time_to_do_refresh_now) refresh_timing_count <= 0;
 			
 		else refresh_timing_count <= refresh_timing_count + 1;
-				
+
+
+		// defaults the command signals high & only pulse low for the 1 clock when need to issue a command.
+		cs_n <= 1;			
+		ras_n <= 1;
+		cas_n <= 1;
+		we_n <= 1;
+		
+						
 		// https://i.imgur.com/VUdYasX.png
 		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
 		case(main_state)
