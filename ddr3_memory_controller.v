@@ -1384,10 +1384,13 @@ begin
 			STATE_ACTIVATE :
 			begin
 				ck_en <= 1;
-				cs_n <= 0;			
-				ras_n <= 0;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				cs_n <= 0;
+				ras_n <= 1;
 				cas_n <= 1;
-				we_n <= 1;
+				we_n <= 1;	
 				
 				// need to make sure that 'i_user_data_address' remains unchanged for at least tRRD
 				// because according to the definition of tRAS and tRC, it is legal within the same bank, 
