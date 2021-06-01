@@ -301,8 +301,8 @@ localparam STATE_INIT_MRS_0 = 19;
 localparam TIME_INITIAL_RESET_ACTIVE = 2;
 localparam TIME_INITIAL_CK_INACTIVE = 2;
 localparam TIME_TZQINIT = 2;
+localparam TIME_RL = 2;
 localparam TIME_WL = 2;
-localparam TIME_CWL = 2;
 localparam TIME_TBURST = 2;
 localparam TIME_TXPR = 2;
 localparam TIME_TMRD = 2;
@@ -351,8 +351,8 @@ localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Max
 `endif
 
 localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
-localparam TIME_WL = 6;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
-localparam TIME_CWL = 6;  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
+localparam TIME_RL = 6;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
+localparam TIME_WL = 6;  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
 localparam TIME_TBURST = 8;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8
 localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
 localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
@@ -645,7 +645,7 @@ end
 	TRELLIS_IO BB_dqs (
 		.B(dqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(dqs_r)
 	);
@@ -653,7 +653,7 @@ end
 	TRELLIS_IO BB_dqs_n (
 		.B(dqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(dqs_n_r)
 	);
@@ -663,7 +663,7 @@ end
 	TRELLIS_IO BB_ldqs (
 		.B(ldqs),
 		.I(ldqs_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_r)
 	);
@@ -671,7 +671,7 @@ end
 	TRELLIS_IO BB_ldqs_n (
 		.B(ldqs_n),
 		.I(ldqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_n_r)
 	);
@@ -679,7 +679,7 @@ end
 	TRELLIS_IO BB_udqs (
 		.B(udqs),
 		.I(udqs_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_r)
 	);
@@ -687,7 +687,7 @@ end
 	TRELLIS_IO BB_udqs_n (
 		.B(udqs_n),
 		.I(udqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_n_r)
 	);
@@ -702,7 +702,7 @@ begin : dq_tristate_io
 	TRELLIS_IO BB_dq (
 		.B(dq[dq_index]),
 		.I(dq_w[dq_index]),
-		.T(((wait_count > TIME_WL) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(dq_r[dq_index])
 	);
@@ -721,7 +721,7 @@ endgenerate
 	IOBUF IO_dqs (
 		.IO(dqs),
 		.I(dqs_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(dqs_r)
 	);
@@ -729,7 +729,7 @@ endgenerate
 	IOBUF IO_dqs_n (
 		.IO(dqs_n),
 		.I(dqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(dqs_n_r)
 	);
@@ -739,7 +739,7 @@ endgenerate
 	IOBUF IO_ldqs (
 		.IO(ldqs),
 		.I(ldqs_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_r)
 	);
@@ -747,7 +747,7 @@ endgenerate
 	IOBUF IO_ldqs_n (
 		.IO(ldqs_n),
 		.I(ldqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_n_r)
 	);
@@ -755,7 +755,7 @@ endgenerate
 	IOBUF IO_udqs (
 		.IO(udqs),
 		.I(udqs_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_r)
 	);
@@ -763,7 +763,7 @@ endgenerate
 	IOBUF IO_udqs_n (
 		.IO(udqs_n),
 		.I(udqs_n_w),
-		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_n_r)
 	);
@@ -779,7 +779,7 @@ begin : dq_tristate_io
 	IOBUF IO_dq (
 		.IO(dq[dq_index]),
 		.I(dq_w[dq_index]),
-		.T(((wait_count > TIME_WL) && (main_state == STATE_READ_AP)) || 
+		.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(dq_r[dq_index])
 	);
@@ -1553,7 +1553,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > TIME_CWL-1)
+				if(wait_count > TIME_WL-1)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
@@ -1600,7 +1600,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > TIME_WL-1)
+				if(wait_count > TIME_RL-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
