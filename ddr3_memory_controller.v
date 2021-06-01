@@ -507,26 +507,27 @@ assign ck_n = ~clk_slow;
 
 wire clk90_slow_is_at_high = (~clk_slow && counter_reset) || (clk_slow && ~counter_reset);
 wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counter_reset);
-wire clk90_slow_posedge = (~clk_slow && counter_reset);
+wire clk90_slow_posedge = (clk_slow && counter_reset);
 wire clk_slow_posedge = (clk_slow && ~counter_reset);
 wire clk_slow_negedge = (~clk_slow && ~counter_reset);
 wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
 wire clk180_slow_posedge = clk_slow_negedge;
 
-
-	// phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
 	`ifdef USE_x16
-		assign ldqs_w = clk90_slow_is_at_high;
-		assign ldqs_n_w = clk90_slow_is_at_low;
-		assign udqs_w = clk90_slow_is_at_high;
-		assign udqs_n_w = clk90_slow_is_at_low;		
+		assign ldqs_w = clk_slow;
+		assign ldqs_n_w = ~clk_slow;
+		assign udqs_w = clk_slow;
+		assign udqs_n_w = ~clk_slow;		
 	`else
-		assign dqs_w = clk90_slow_is_at_high;
-		assign dqs_n_w = clk90_slow_is_at_low;
+		assign dqs_w = clk_slow;
+		assign dqs_n_w = ~clk_slow;
 	`endif
 
 `endif
 
+// phase-shift dq_w, dq_n_w signals by 90 degree with reference to clk_slow ('ck') before sending to RAM
+// such that dq signals are sampled right at its middle by dqs signals
+// the purpose is for dq signal integrity at high speed PCB trace
 `ifdef USE_x16
 	wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
 	wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
@@ -1026,11 +1027,13 @@ begin
 	// For more info, see the initialization sequence : https://i.imgur.com/JClPQ6G.png
 	
 	// since clocked always block only updates the new data at the next clock cycle, 
-	// clk180_slow_posedge is used instead of clk90_slow_posedge to produce a new data 
-	// that is 90 degree phase-shifted, for which the data will be sampled in the middle by 'clk_slow' ('ck')
+	// clk90_slow_posedge is used instead of clk180_slow_posedge to produce a new data 
+	// that is 180 degree phase-shifted, for which the data will be sampled in the middle by 'clk_slow' ('ck')
 	// Since DIVIDE_RATIO=4, so in half clock period for 'clk' signal, there are 2 'clk' cycles
-	// Therefore, clk180_slow_posedge is 1 'clk' cycle in advance/early with comparison to clk90_slow_posedge
-	else if(clk180_slow_posedge)  // use the slower clk180_slow_posedge signal for low speed testing mode
+	// Therefore, clk90_slow_posedge is 1 'clk' cycle in advance/early with comparison to clk180_slow_posedge
+	// The purpose of doing so is to have larger setup and hold timing margin for positive edge of clk_slow,
+	// while still obeying DDR3 datasheet specifications
+	else if(clk90_slow_posedge)  // generates new data at 180 degrees before positive edge of clk_slow
 `endif
 	begin
 		if(write_enable) write_is_enabled <= 1;
@@ -1553,7 +1556,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > TIME_WL-1)
+				if(wait_count > (TIME_WL-TIME_TWPRE)-1)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
@@ -1566,7 +1569,7 @@ begin
 			
 			STATE_WRITE_DATA :
 			begin							
-				if(wait_count > (TIME_TBURST + TIME_TWPST)-1)
+				if(wait_count > TIME_TBURST-1)
 				begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
