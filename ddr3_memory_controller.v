@@ -37,8 +37,8 @@
 localparam NUM_OF_DDR_STATES = 20;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
-// TIME_INITIAL_CK_INACTIVE = 151515;
-localparam MAX_TIMING = 151515;  // just for initial development stage, will refine the value later
+// TIME_INITIAL_CK_INACTIVE = 152068;
+localparam MAX_TIMING = 152068;  // just for initial development stage, will refine the value later
 /* verilator lint_on VARHIDDEN */
 `endif
 
@@ -418,9 +418,6 @@ localparam A12 = 12;  // address bit for burst-chop option
 localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 
-// outgoing signals to RAM
-wire dqs_w;
-wire dqs_n_w;
 `ifndef USE_ILA
 	wire [DQ_BITWIDTH-1:0] dq_w;  // the output data stream is NOT serialized
 `endif
@@ -440,7 +437,17 @@ wire dqs_n_w;
 	wire dqs_n_r;
 `endif
 
-
+// outgoing signals to RAM
+`ifdef USE_x16
+	wire ldqs_w;
+	wire ldqs_n_w;
+	wire udqs_w;
+	wire udqs_n_w;	
+`else
+	wire dqs_w;
+	wire dqs_n_w;
+`endif
+	
 `ifndef HIGH_SPEED
 
 // Purposes of Clock divider:
@@ -507,14 +514,26 @@ wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will g
 wire clk180_slow_posedge = clk_slow_negedge;
 
 
-// phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
-assign dqs_w = clk90_slow_is_at_high;
-assign dqs_n_w = clk90_slow_is_at_low;
+	// phase-shift dqs_w and dqs_n_w signals by 90 degree with reference to clk_slow before sending to RAM
+	`ifdef USE_x16
+		assign ldqs_w = clk90_slow_is_at_high;
+		assign ldqs_n_w = clk90_slow_is_at_low;
+		assign udqs_w = clk90_slow_is_at_high;
+		assign udqs_n_w = clk90_slow_is_at_low;		
+	`else
+		assign dqs_w = clk90_slow_is_at_high;
+		assign dqs_n_w = clk90_slow_is_at_low;
+	`endif
 
 `endif
 
-assign dq_w = data_to_ram;  // the input data stream of 'data_to_ram' is NOT serialized
-
+`ifdef USE_x16
+	wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
+	wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
+	assign dq_w = {udq_w, ldq_w};
+`else
+	assign dq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
+`endif
 
 // See https://www.micron.com/-/media/client/global/documents/products/technical-note/dram/tn4605.pdf#page=7
 // for an overview on DQS Preamble and Postamble bits
@@ -643,7 +662,7 @@ end
 
 	TRELLIS_IO BB_ldqs (
 		.B(ldqs),
-		.I(dqs_w),
+		.I(ldqs_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_r)
@@ -651,7 +670,7 @@ end
 
 	TRELLIS_IO BB_ldqs_n (
 		.B(ldqs_n),
-		.I(dqs_n_w),
+		.I(ldqs_n_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_n_r)
@@ -659,7 +678,7 @@ end
 
 	TRELLIS_IO BB_udqs (
 		.B(udqs),
-		.I(dqs_w),
+		.I(udqs_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_r)
@@ -667,7 +686,7 @@ end
 
 	TRELLIS_IO BB_udqs_n (
 		.B(udqs_n),
-		.I(dqs_n_w),
+		.I(udqs_n_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_n_r)
@@ -719,7 +738,7 @@ endgenerate
 
 	IOBUF IO_ldqs (
 		.IO(ldqs),
-		.I(dqs_w),
+		.I(ldqs_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_r)
@@ -727,7 +746,7 @@ endgenerate
 
 	IOBUF IO_ldqs_n (
 		.IO(ldqs_n),
-		.I(dqs_n_w),
+		.I(ldqs_n_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(ldqs_n_r)
@@ -735,7 +754,7 @@ endgenerate
 
 	IOBUF IO_udqs (
 		.IO(udqs),
-		.I(dqs_w),
+		.I(udqs_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_r)
@@ -743,7 +762,7 @@ endgenerate
 
 	IOBUF IO_udqs_n (
 		.IO(udqs_n),
-		.I(dqs_n_w),
+		.I(udqs_n_w),
 		.T(((wait_count > TIME_WL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 				  (main_state == STATE_READ_DATA)),
 		.O(udqs_n_r)
@@ -768,6 +787,64 @@ end
 
 endgenerate
 		
+`endif
+
+
+`ifdef MICRON_SIM
+	`ifndef USE_x16
+	
+	assign dqs = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+
+	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
+
+	assign dqs_n = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+
+	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
+
+	assign dq = (((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+
+	assign dq_r = dq;  // only for formal modelling of tri-state logic
+	
+	`else
+	
+	assign ldqs = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? ldqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+
+	assign ldqs_r = ldqs;  // only for formal modelling of tri-state logic
+
+	assign ldqs_n = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? ldqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+
+	assign ldqs_n_r = ldqs_n;  // only for formal modelling of tri-state logic
+
+	assign ldq = (((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? ldq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+
+	assign ldq_r = ldq;  // only for formal modelling of tri-state logic	
+
+
+	assign udqs = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? udqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+
+	assign udqs_r = udqs;  // only for formal modelling of tri-state logic
+
+	assign udqs_n = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? udqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+
+	assign udqs_n_r = udqs_n;  // only for formal modelling of tri-state logic
+
+	assign udq = (((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+				  (main_state == STATE_WRITE_DATA)) ? udq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+
+	assign udq_r = udq;  // only for formal modelling of tri-state logic
+	
+	
+	assign dqs = {udqs, ldqs};
+	assign dqs_n = {udqs_n, ldqs_n};		
+	`endif
 `endif
 
 

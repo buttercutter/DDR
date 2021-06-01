@@ -148,8 +148,8 @@ module test_ddr3_memory_controller
 localparam NUM_OF_DDR_STATES = 20;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
-// TIME_INITIAL_CK_INACTIVE = 151515;
-localparam MAX_TIMING = 151515;  // just for initial development stage, will refine the value later
+// TIME_INITIAL_CK_INACTIVE = 152068;
+localparam MAX_TIMING = 152068;  // just for initial development stage, will refine the value later
 `endif
 
 localparam STATE_WRITE_DATA = 8;
