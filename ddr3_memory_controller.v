@@ -122,6 +122,12 @@ module ddr3_memory_controller
 		input [3:0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
 	`endif
 	
+	`ifndef HIGH_SPEED
+		output clk_slow_posedge,  // for dq phase shifting purpose
+		output clk180_slow_posedge,  // for dq phase shifting purpose
+	`endif
+	
+	
 	// these are to be fed into external DDR3 memory
 	output reg [ADDRESS_BITWIDTH-1:0] address,
 	output reg [BANK_ADDRESS_BITWIDTH-1:0] bank_address,
@@ -508,10 +514,10 @@ assign ck_n = ~clk_slow;
 wire clk90_slow_is_at_high = (~clk_slow && counter_reset) || (clk_slow && ~counter_reset);
 wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counter_reset);
 wire clk90_slow_posedge = (clk_slow && counter_reset);
-wire clk_slow_posedge = (clk_slow && ~counter_reset);
+assign clk_slow_posedge = (clk_slow && ~counter_reset);
 wire clk_slow_negedge = (~clk_slow && ~counter_reset);
 wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
-wire clk180_slow_posedge = clk_slow_negedge;
+assign clk180_slow_posedge = clk_slow_negedge;
 
 	`ifdef USE_x16
 		assign ldqs_w = clk_slow;
@@ -525,9 +531,6 @@ wire clk180_slow_posedge = clk_slow_negedge;
 
 `endif
 
-// phase-shift dq_w, dq_n_w signals by 90 degree with reference to clk_slow ('ck') before sending to RAM
-// such that dq signals are sampled right at its middle by dqs signals
-// the purpose is for dq signal integrity at high speed PCB trace
 `ifdef USE_x16
 	wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
 	wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized

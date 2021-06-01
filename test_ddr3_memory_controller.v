@@ -254,6 +254,14 @@ wire reset = ~resetn;  // just for convenience of verilog syntax
 assign user_desired_extra_read_or_write_cycles = MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED;
 
 
+// phase-shift dq_w, dq_n_w signals by 90 degree with reference to clk_slow ('ck') before sending to RAM
+// such that dq signals are sampled right at its middle by dqs signals
+// the purpose is for dq signal integrity at high speed PCB trace
+`ifndef HIGH_SPEED
+wire clk_slow_posedge;  // for dq phase shifting purpose
+wire clk180_slow_posedge;  // for dq phase shifting purpose
+`endif
+
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 reg [DQ_BITWIDTH-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
 wire [DQ_BITWIDTH-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
@@ -279,7 +287,15 @@ begin
 		done_reading <= 0;
 	end
 	
-	else if((~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
+	else if(
+	`ifndef HIGH_SPEED
+		// Since this is always block which updates new data in next clock cycle,
+		// and DIVIDE_RATIO=4 which means there are 2 'clk' cycles in each half period of a 'ck' cycle,
+		// the following immediate single line of code will update new data 
+		// both at 90 degrees before and after positive edge of 'ck'
+		(clk180_slow_posedge | clk_slow_posedge) &&
+	`endif
+			(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
 	begin
 		i_user_data_address <= i_user_data_address + 1;
 		data_to_ram <= data_to_ram + 1;
@@ -416,6 +432,10 @@ ddr3_control
 	.data_to_ram(data_to_ram),  // data for which the user wants to write to DDR RAM
 	.data_from_ram(data_from_ram),  // the requested data from DDR RAM after read operation
 	.user_desired_extra_read_or_write_cycles(user_desired_extra_read_or_write_cycles),  // for the purpose of postponing refresh commands
+	`ifndef HIGH_SPEED
+	.clk_slow_posedge(clk_slow_posedge),  // for dq phase shifting purpose
+	.clk180_slow_posedge(clk180_slow_posedge),  // for dq phase shifting purpose
+	`endif
 	
 	// these are to be fed into external DDR3 memory
 	.address(address),
