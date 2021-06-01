@@ -793,18 +793,18 @@ endgenerate
 `ifdef MICRON_SIM
 	`ifndef USE_x16
 	
-	assign dqs = (((wait_count > TIME_CWL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+	assign dqs = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+					dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
-	assign dqs_n = (((wait_count > TIME_CWL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+	assign dqs_n = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+					dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
-	assign dq = (((wait_count > TIME_CWL) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+	assign dq = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+					dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
 	
@@ -842,6 +842,7 @@ endgenerate
 	assign udq_r = udq;  // only for formal modelling of tri-state logic
 	
 	
+	assign dq = {udq, ldq};
 	assign dqs = {udqs, ldqs};
 	assign dqs_n = {udqs_n, ldqs_n};		
 	`endif
@@ -867,18 +868,18 @@ endgenerate
 	end
 */
 
-	assign dqs = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+	assign dqs = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+					dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
-	assign dqs_n = (((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+	assign dqs_n = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+					dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
-	assign dq = (((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
-				  (main_state == STATE_WRITE_DATA)) ? dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+	assign dq = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+					dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
 
