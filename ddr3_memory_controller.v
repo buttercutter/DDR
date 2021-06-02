@@ -359,7 +359,7 @@ localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Max
 localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
 localparam TIME_RL = 6;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , WL=6
 localparam TIME_WL = 6;  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=6
-localparam TIME_TBURST = 8;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8
+localparam TIME_TBURST = 4;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
 localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
 localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
 
@@ -1572,7 +1572,7 @@ begin
 			
 			STATE_WRITE_DATA :
 			begin							
-				if(wait_count > TIME_TBURST-1)
+				if(wait_count > (TIME_TBURST+TIME_TWR)-1)
 				begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;

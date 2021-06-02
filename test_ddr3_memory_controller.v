@@ -273,7 +273,7 @@ reg done_writing, done_reading;
 
 assign done = (done_writing & done_reading);  // finish a data loopback transaction
 
-localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 4;  // only 4 pieces of data are used during data loopback integrity test
+localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 8;  // only 8 pieces of data are used during data loopback integrity test
 
 always @(posedge clk)
 begin
@@ -301,7 +301,7 @@ begin
 		data_to_ram <= data_to_ram + 1;
 		write_enable <= (data_to_ram <= (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
 		read_enable <= (data_to_ram > (NUM_OF_TEST_DATA-1));  // starts the readback operation
-		done_writing <= (data_to_ram > (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
+		done_writing <= (data_to_ram >= (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
 		done_reading <= 0;
 	end
 	
