@@ -973,8 +973,8 @@ endgenerate
 `endif
 
 `ifdef USE_x16
-	 assign ldm = (main_state == STATE_WRITE_DATA);
-	 assign udm = (main_state == STATE_WRITE_DATA);
+	 assign ldm = (main_state != STATE_WRITE_DATA);
+	 assign udm = (main_state != STATE_WRITE_DATA);
 `endif
 
 
