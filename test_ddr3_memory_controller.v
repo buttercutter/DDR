@@ -290,7 +290,7 @@ begin
 	else if(
 	`ifndef HIGH_SPEED
 		// Since this is always block which updates new data in next clock cycle,
-		// and DIVIDE_RATIO=4 which means there are 2 'clk' cycles in each half period of a 'ck' cycle,
+		// and DIVIDE_RATIO=4 which means there are 2 'clk' cycles in each half period of a 'clk_slow' cycle,
 		// the following immediate single line of code will update new data 
 		// both at 90 degrees before and after positive edge of 'ck'
 		(clk180_slow_posedge | clk_slow_posedge) &&
