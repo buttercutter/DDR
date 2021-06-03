@@ -379,6 +379,7 @@ localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four 
 localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = 1;  // Minimum 195ps, setup time
 `endif
 
+localparam TIME_TDAL = TIME_TWR + TIME_TRP;  // Auto precharge write recovery + precharge time
 localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
 localparam TIME_TRPST = 1;  // this is for read post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
 localparam TIME_TWPRE = 1;  // this is for write pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
@@ -1581,7 +1582,7 @@ begin
 				cas_n <= 1;
 				we_n <= 1;				
 							
-				if(wait_count > (TIME_TBURST+TIME_TWR)-1)
+				if(wait_count > (TIME_TBURST+TIME_TDAL)-1)
 				begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
