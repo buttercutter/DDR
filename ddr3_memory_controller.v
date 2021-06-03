@@ -1571,7 +1571,16 @@ begin
 			end
 			
 			STATE_WRITE_DATA :
-			begin							
+			begin
+				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				cs_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;				
+							
 				if(wait_count > (TIME_TBURST+TIME_TWR)-1)
 				begin
 					main_state <= STATE_IDLE;
