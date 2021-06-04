@@ -42,6 +42,9 @@ localparam MAX_TIMING = 152068;  // just for initial development stage, will ref
 /* verilator lint_on VARHIDDEN */
 `endif
 
+// write data to RAM and then read them back from RAM
+`define LOOPBACK 1
+
 
 `ifdef MICRON_SIM
 	localparam PERIOD_MARGIN = 10;  // 10ps margin
@@ -800,50 +803,59 @@ endgenerate
 `ifdef MICRON_SIM
 	`ifndef USE_x16
 	
-	assign dqs = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign dqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				  (main_state == STATE_WRITE_DATA)) ? 
 					dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
-	assign dqs_n = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign dqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+					(main_state == STATE_WRITE_DATA)) ? 
 					dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
-	assign dq = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign dq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				 (main_state == STATE_WRITE_DATA)) ? 
 					dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
 	
 	`else
 	
-	assign ldqs = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign ldqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				   (main_state == STATE_WRITE_DATA)) ? 
 					ldqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign ldqs_r = ldqs;  // only for formal modelling of tri-state logic
 
-	assign ldqs_n = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign ldqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+					 (main_state == STATE_WRITE_DATA)) ? 
 					ldqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign ldqs_n_r = ldqs_n;  // only for formal modelling of tri-state logic
 
-	assign ldq = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign ldq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				  (main_state == STATE_WRITE_DATA)) ? 
 					ldq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
 
 	assign ldq_r = ldq;  // only for formal modelling of tri-state logic	
 
 
-	assign udqs = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign udqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				   (main_state == STATE_WRITE_DATA)) ? 
 	 				udqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign udqs_r = udqs;  // only for formal modelling of tri-state logic
 
-	assign udqs_n = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign udqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+					 (main_state == STATE_WRITE_DATA)) ? 
 					udqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign udqs_n_r = udqs_n;  // only for formal modelling of tri-state logic
 
-	assign udq = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign udq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				  (main_state == STATE_WRITE_DATA)) ? 
 	 				udq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
 
 	assign udq_r = udq;  // only for formal modelling of tri-state logic
@@ -875,17 +887,20 @@ endgenerate
 	end
 */
 
-	assign dqs = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign dqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				  (main_state == STATE_WRITE_DATA)) ? 
 					dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
-	assign dqs_n = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign dqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+					(main_state == STATE_WRITE_DATA)) ? 
 					dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
 
 	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
-	assign dq = ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_DATA)) ? 
+	assign dq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
+				 (main_state == STATE_WRITE_DATA)) ? 
 					dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
@@ -917,7 +932,8 @@ endgenerate
 
 	always @(posedge clk)
 	begin
-		if(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		if(((wait_count > TIME_WL-TIME_TWPRE) && 
+		    ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_AP))) || 
 				  (main_state == STATE_WRITE_DATA))
 		begin
 			assert(dqs == dqs_w);
@@ -928,7 +944,8 @@ endgenerate
 
 	always @(posedge clk)
 	begin
-		if(((wait_count > TIME_WL-TIME_TWPRE) && (main_state == STATE_WRITE_AP)) || 
+		if(((wait_count > TIME_WL-TIME_TWPRE) && 
+		    ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_AP))) || 
 				  (main_state == STATE_WRITE_DATA))
 		begin
 			assert(dqs_n == dqs_n_w);
@@ -939,7 +956,8 @@ endgenerate
 
 	always @(posedge clk)
 	begin
-		if(((wait_count > TIME_WL) && (main_state == STATE_WRITE_AP)) || 
+		if(((wait_count > TIME_WL) && 
+		    ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_AP))) || 
 				  (main_state == STATE_WRITE_DATA))
 		begin
 			assert(dq == dq_w);
@@ -1512,8 +1530,16 @@ begin
 						ras_n <= 1;
 						cas_n <= 0;
 						we_n <= 0;
-						address[A10] <= 1;
-						main_state <= STATE_WRITE_AP;
+						
+						`ifdef LOOPBACK
+							// for data loopback, auto-precharge will close the bank, 
+							// which means read operation could not proceeed without reopening the bank
+							address[A10] <= 0;
+							main_state <= STATE_WRITE;
+						`else
+							address[A10] <= 1;
+							main_state <= STATE_WRITE_AP;
+						`endif
 						
 						wait_count <= 0;
 					end
@@ -1539,7 +1565,34 @@ begin
 						
 			STATE_WRITE :
 			begin
-				address[A10] <= 0;  // do not use auto-precharge
+				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				cs_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;
+				
+				address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								1'b1,  // A10 : use auto-precharge
+								i_user_data_address[A10-1:0]
+							};
+				
+				if(wait_count > (TIME_WL-TIME_TWPRE)-1)
+				begin
+					main_state <= STATE_WRITE_DATA;
+					wait_count <= 0;
+				end
+				
+				else begin
+					main_state <= STATE_WRITE;
+				end							
 			end
 						
 			STATE_WRITE_AP :
@@ -1590,8 +1643,20 @@ begin
 							
 				if(wait_count > (TIME_TBURST+TIME_TDAL)-1)
 				begin
-					main_state <= STATE_IDLE;
-					wait_count <= 0;
+					`ifdef LOOPBACK
+						// no more NOP command in next 'ck' cycle, transition to RDAP command
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 1;
+						cas_n <= 0;
+						we_n <= 1;
+						address[A10] <= 1;
+						main_state <= STATE_READ_AP;
+						wait_count <= 0;					
+					`else
+						main_state <= STATE_IDLE;
+						wait_count <= 0;
+					`endif
 				end
 
 				else if(wait_count > TIME_TBURST-1)
