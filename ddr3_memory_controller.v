@@ -236,12 +236,12 @@ localparam WRS8 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (
 localparam WRAP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (~we_n) & (A10);
 localparam WRAPS4 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (~we_n) & (~A12) & (A10);
 localparam WRAPS8 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (~we_n) & (A12) & (A10);
-localparam RD = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (we_n) & (~A10);
-localparam RDS4 = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (we_n) & (~A12) & (~A10);
-localparam RDS8 = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (we_n) & (A12) & (~A10);
-localparam RDAP = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (we_n) & (A10);
-localparam RDAPS4 = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (we_n) & (~A12) & (A10);
-localparam RDAPS8 = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (we_n) & (A12) & (A10);
+localparam RD = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (we_n) & (~A10);
+localparam RDS4 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (we_n) & (~A12) & (~A10);
+localparam RDS8 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (we_n) & (A12) & (~A10);
+localparam RDAP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (we_n) & (A10);
+localparam RDAPS4 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (we_n) & (~A12) & (A10);
+localparam RDAPS8 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (we_n) & (A12) & (A10);
 localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 localparam DES = (previous_clk_en) & (ck_en) & (cs_n);
 localparam PDE = (previous_clk_en) & (~ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
@@ -1521,7 +1521,7 @@ begin
 						// no more NOP command in next 'ck' cycle, transition to RDAP command
 						ck_en <= 1;
 						cs_n <= 0;			
-						ras_n <= 0;
+						ras_n <= 1;
 						cas_n <= 0;
 						we_n <= 1;
 						address[A10] <= 1;
