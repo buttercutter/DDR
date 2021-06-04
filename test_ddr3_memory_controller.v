@@ -299,8 +299,8 @@ begin
 	begin
 		i_user_data_address <= i_user_data_address + 1;
 		data_to_ram <= data_to_ram + 1;
-		write_enable <= (data_to_ram <= (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
-		read_enable <= (data_to_ram > (NUM_OF_TEST_DATA-1));  // starts the readback operation
+		write_enable <= (data_to_ram < (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
+		read_enable <= (data_to_ram >= (NUM_OF_TEST_DATA-1));  // starts the readback operation
 		done_writing <= (data_to_ram >= (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
 		done_reading <= 0;
 	end

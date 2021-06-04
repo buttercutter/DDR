@@ -1503,9 +1503,7 @@ begin
 				if(wait_count > TIME_TRCD-1)
 				begin
 					if(write_is_enabled)  // write operation has higher priority
-					begin
-						write_is_enabled <= 0;
-						
+					begin					
 						// no more NOP command in next 'ck' cycle, transition to WRAP command
 						ck_en <= 1;
 						cs_n <= 0;			
@@ -1520,7 +1518,13 @@ begin
 						
 					else if(read_is_enabled) 
 					begin
-						read_is_enabled <= 0;
+						// no more NOP command in next 'ck' cycle, transition to RDAP command
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 1;
+						address[A10] <= 1;
 						main_state <= STATE_READ_AP;
 						wait_count <= 0;
 					end
@@ -1587,7 +1591,13 @@ begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
 				end
-				
+
+				else if(wait_count > TIME_TBURST-1)
+				begin
+					main_state <= STATE_WRITE_DATA;
+					write_is_enabled <= 0;
+				end
+								
 				else begin
 					main_state <= STATE_WRITE_DATA;
 				end					
@@ -1601,10 +1611,13 @@ begin
 			STATE_READ_AP :
 			begin
 				ck_en <= 1;
-				cs_n <= 0;			
-				ras_n <= 0;
-				cas_n <= 0;
-				we_n <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				cs_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;	
 				
 				address <= 	// column address
 						   	{
@@ -1638,7 +1651,13 @@ begin
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
 				end
-				
+
+				else if(wait_count > TIME_TBURST-1)
+				begin
+					main_state <= STATE_READ_DATA;
+					read_is_enabled <= 0;
+				end
+								
 				else begin
 					main_state <= STATE_READ_DATA;
 				end					
@@ -1659,6 +1678,13 @@ begin
 				begin
 					main_state <= STATE_REFRESH;
 					wait_count <= 0;
+					
+					// no more NOP command in next 'ck' cycle, transition to REF command
+					ck_en <= 1;
+					cs_n <= 0;
+					ras_n <= 0;
+					cas_n <= 0;
+					we_n <= 1;					
 				end
 				
 				else begin
@@ -1683,10 +1709,13 @@ begin
 				// would not be obeyed anymore
 
 				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
 				cs_n <= 0;
-				ras_n <= 0;
-				cas_n <= 0;
-				we_n <= 1;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;	
 
 				if(refresh_Queue > 0)
 					refresh_Queue <= refresh_Queue - 1;  // a countdown trigger for precharge/refresh operation
