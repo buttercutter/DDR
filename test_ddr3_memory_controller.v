@@ -271,6 +271,12 @@ reg done_writing, done_reading;
 
 `ifdef LOOPBACK
 
+`ifdef USE_x16
+	reg [(DQ_BITWIDTH >> 1)-1:0] test_data;
+`else
+	reg [DQ_BITWIDTH-1:0] test_data;
+`endif
+
 assign done = (done_writing & done_reading);  // finish a data loopback transaction
 
 localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 8;  // only 8 pieces of data are used during data loopback integrity test
@@ -280,6 +286,7 @@ begin
 	if(reset) 
 	begin
 		i_user_data_address <= 0;
+		test_data <= 0;
 		data_to_ram <= 0;
 		write_enable <= 1;  // writes data first
 		read_enable <= 0;
@@ -298,21 +305,26 @@ begin
 			(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
 	begin
 		i_user_data_address <= i_user_data_address + 1;
-		data_to_ram <= data_to_ram + 1;
-		write_enable <= (data_to_ram < (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
-		read_enable <= (data_to_ram >= (NUM_OF_TEST_DATA-1));  // starts the readback operation
-		done_writing <= (data_to_ram >= (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
+		`ifdef USE_x16
+			data_to_ram <= {test_data+1, test_data};
+		`else
+			data_to_ram <= test_data;
+		`endif
+		test_data <= test_data + 1;
+		write_enable <= (test_data < (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
+		read_enable <= (test_data >= (NUM_OF_TEST_DATA-1));  // starts the readback operation
+		done_writing <= (test_data >= (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
 		done_reading <= 0;
 	end
 	
 	else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
 		if(done_writing && 
-			(data_to_ram > 0)) // such that it would only reset address only ONCE
+			(test_data > 0)) // such that it would only reset address only ONCE
 			i_user_data_address <= 0;  // read from the first piece of data written
 		
 		else i_user_data_address <= i_user_data_address + 1;
 		
-		data_to_ram <= 0;  // not related to DDR read operation, only for DDR write operation
+		test_data <= 0;  // not related to DDR read operation, only for DDR write operation
 		write_enable <= 0;
 		
 		if(done) read_enable <= 0;  // already finished reading all data
