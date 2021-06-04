@@ -533,8 +533,10 @@ assign clk180_slow_posedge = clk_slow_negedge;
 `endif
 
 `ifdef USE_x16
-	wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
-	wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
+	wire [(DQ_BITWIDTH >> 1)-1:0] ldq;
+	wire [(DQ_BITWIDTH >> 1)-1:0] udq;
+	wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram[0 +: (DQ_BITWIDTH >> 1)];
+	wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram[(DQ_BITWIDTH >> 1) +: (DQ_BITWIDTH >> 1)];
 	assign dq_w = {udq_w, ldq_w};
 `else
 	assign dq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
