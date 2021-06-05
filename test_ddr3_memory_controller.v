@@ -182,14 +182,14 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 	`ifdef USE_x16
 		wire ldm;  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
 		wire udm; // upper-byte data mask, to be asserted HIGH during data write activities into RAM
-		wire ldqs; // lower byte data strobe
-		wire ldqs_n;
-		wire udqs; // upper byte data strobe
-		wire udqs_n;
+		wire [(DQS_BITWIDTH >> 1)-1:0] ldqs; // lower byte data strobe
+		wire [(DQS_BITWIDTH >> 1)-1:0] ldqs_n;
+		wire [(DQS_BITWIDTH >> 1)-1:0] udqs; // upper byte data strobe
+		wire [(DQS_BITWIDTH >> 1)-1:0] udqs_n;
 		
 		wire [DM_BITWIDTH-1:0]  dm = {udm, ldm};
-		wire [DQS_BITWIDTH-1:0] dqs = {udqs, ldqs};
-		wire [DQS_BITWIDTH-1:0] dqs_n = {udqs_n, ldqs_n};
+		// wire [DQS_BITWIDTH-1:0] dqs = {udqs, ldqs};
+		// wire [DQS_BITWIDTH-1:0] dqs_n = {udqs_n, ldqs_n};
 	`else
 		wire [DQS_BITWIDTH-1:0] dqs; // Data strobe
 		wire [DQS_BITWIDTH-1:0] dqs_n;
@@ -520,8 +520,8 @@ ddr3 mem(
     .ba(bank_address),
     .addr(address),
     .dq(dq),
-    .dqs(dqs),
-    .dqs_n(dqs_n),
+    .dqs({udqs, ldqs}),
+    .dqs_n({udqs_n, ldqs_n}),
     .tdqs_n(tdqs_n),
     .odt(odt)
 );
