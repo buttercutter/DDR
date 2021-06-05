@@ -825,13 +825,13 @@ endgenerate
 	
 	assign ldqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				   (main_state == STATE_WRITE_DATA)) ? 
-					ldqs_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
+					ldqs_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
 	assign ldqs_r = ldqs;  // only for formal modelling of tri-state logic
 
 	assign ldqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					 (main_state == STATE_WRITE_DATA)) ? 
-					ldqs_n_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
+					ldqs_n_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
 	assign ldqs_n_r = ldqs_n;  // only for formal modelling of tri-state logic
 
@@ -844,13 +844,13 @@ endgenerate
 
 	assign udqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				   (main_state == STATE_WRITE_DATA)) ? 
-	 				udqs_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
+	 				udqs_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
 	assign udqs_r = udqs;  // only for formal modelling of tri-state logic
 
 	assign udqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					 (main_state == STATE_WRITE_DATA)) ? 
-					udqs_n_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
+					udqs_n_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
 	assign udqs_n_r = udqs_n;  // only for formal modelling of tri-state logic
 
