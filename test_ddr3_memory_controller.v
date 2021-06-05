@@ -332,7 +332,11 @@ begin
 		else read_enable <= 1;
 		
 		done_writing <= done_writing;
-		done_reading <= (data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >= (NUM_OF_TEST_DATA-1));
+		
+		if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >= (NUM_OF_TEST_DATA-1))
+		begin
+			done_reading <= 1;
+		end
 	end
 end
 
