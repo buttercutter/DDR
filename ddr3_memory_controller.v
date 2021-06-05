@@ -636,7 +636,7 @@ begin
 
 	else if(dqs_phase_shifted & ~dqs_n_phase_shifted)
 	begin
-		data_from_ram <= dq_r;  // 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs)
+		data_from_ram <= dq;  // 'dq' is sampled at its middle (thanks to 90 degree phase shift on dqs)
 	end
 end
 
