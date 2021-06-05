@@ -634,9 +634,18 @@ always @(posedge clk)
 begin
 	if(reset) data_from_ram <= 0;
 
+	// 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs)
 	else if(dqs_phase_shifted & ~dqs_n_phase_shifted)
 	begin
-		data_from_ram <= dq;  // 'dq' is sampled at its middle (thanks to 90 degree phase shift on dqs)
+		`ifdef XILINX
+			data_from_ram <= dq_r;
+			
+		`elsif LATTICE
+			data_from_ram <= dq_r;
+						
+		`else  // Micron DDR3 simulation model
+			data_from_ram <= dq;
+		`endif		
 	end
 end
 
@@ -807,19 +816,19 @@ endgenerate
 				  (main_state == STATE_WRITE_DATA)) ? 
 					dqs_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
-	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
+	// assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
 	assign dqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					(main_state == STATE_WRITE_DATA)) ? 
 					dqs_n_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
-	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
+	// assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
 	assign dq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				 (main_state == STATE_WRITE_DATA)) ? 
 					dq_w : {DQ_BITWIDTH{1'bz}};  // dq value of 1'bz is for input
 
-	assign dq_r = dq;  // only for formal modelling of tri-state logic
+	// assign dq_r = dq;  // only for formal modelling of tri-state logic
 	
 	`else
 	
@@ -827,38 +836,38 @@ endgenerate
 				   (main_state == STATE_WRITE_DATA)) ? 
 					ldqs_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
-	assign ldqs_r = ldqs;  // only for formal modelling of tri-state logic
+	// assign ldqs_r = ldqs;  // only for formal modelling of tri-state logic
 
 	assign ldqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					 (main_state == STATE_WRITE_DATA)) ? 
 					ldqs_n_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
-	assign ldqs_n_r = ldqs_n;  // only for formal modelling of tri-state logic
+	// assign ldqs_n_r = ldqs_n;  // only for formal modelling of tri-state logic
 
 	assign ldq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				  (main_state == STATE_WRITE_DATA)) ? 
 					ldq_w : {(DQ_BITWIDTH >> 1){1'bz}};  // dq value of 1'bz is for input
 
-	assign ldq_r = ldq;  // only for formal modelling of tri-state logic	
+	// assign ldq_r = ldq;  // only for formal modelling of tri-state logic	
 
 
 	assign udqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				   (main_state == STATE_WRITE_DATA)) ? 
 	 				udqs_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
-	assign udqs_r = udqs;  // only for formal modelling of tri-state logic
+	// assign udqs_r = udqs;  // only for formal modelling of tri-state logic
 
 	assign udqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					 (main_state == STATE_WRITE_DATA)) ? 
 					udqs_n_w : {(DQS_BITWIDTH >> 1){1'bz}};  // dqs value of 1'bz is for input
 
-	assign udqs_n_r = udqs_n;  // only for formal modelling of tri-state logic
+	// assign udqs_n_r = udqs_n;  // only for formal modelling of tri-state logic
 
 	assign udq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				  (main_state == STATE_WRITE_DATA)) ? 
 	 				udq_w : {(DQ_BITWIDTH >> 1){1'bz}};  // dq value of 1'bz is for input
 
-	assign udq_r = udq;  // only for formal modelling of tri-state logic
+	// assign udq_r = udq;  // only for formal modelling of tri-state logic
 	
 	
 	assign dq = {udq, ldq};
