@@ -805,19 +805,19 @@ endgenerate
 	
 	assign dqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				  (main_state == STATE_WRITE_DATA)) ? 
-					dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+					dqs_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
 	assign dqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					(main_state == STATE_WRITE_DATA)) ? 
-					dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+					dqs_n_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
 	assign dq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				 (main_state == STATE_WRITE_DATA)) ? 
-					dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+					dq_w : {DQ_BITWIDTH{1'bz}};  // dq value of 1'bz is for input
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
 	
@@ -825,38 +825,38 @@ endgenerate
 	
 	assign ldqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				   (main_state == STATE_WRITE_DATA)) ? 
-					ldqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+					ldqs_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign ldqs_r = ldqs;  // only for formal modelling of tri-state logic
 
 	assign ldqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					 (main_state == STATE_WRITE_DATA)) ? 
-					ldqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+					ldqs_n_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign ldqs_n_r = ldqs_n;  // only for formal modelling of tri-state logic
 
 	assign ldq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				  (main_state == STATE_WRITE_DATA)) ? 
-					ldq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+					ldq_w : {(DQ_BITWIDTH >> 1){1'bz}};  // dq value of 1'bz is for input
 
 	assign ldq_r = ldq;  // only for formal modelling of tri-state logic	
 
 
 	assign udqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				   (main_state == STATE_WRITE_DATA)) ? 
-	 				udqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+	 				udqs_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign udqs_r = udqs;  // only for formal modelling of tri-state logic
 
 	assign udqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					 (main_state == STATE_WRITE_DATA)) ? 
-					udqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+					udqs_n_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign udqs_n_r = udqs_n;  // only for formal modelling of tri-state logic
 
 	assign udq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				  (main_state == STATE_WRITE_DATA)) ? 
-	 				udq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+	 				udq_w : {(DQ_BITWIDTH >> 1){1'bz}};  // dq value of 1'bz is for input
 
 	assign udq_r = udq;  // only for formal modelling of tri-state logic
 	
@@ -889,19 +889,19 @@ endgenerate
 
 	assign dqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				  (main_state == STATE_WRITE_DATA)) ? 
-					dqs_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+					dqs_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign dqs_r = dqs;  // only for formal modelling of tri-state logic
 
 	assign dqs_n = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 					(main_state == STATE_WRITE_DATA)) ? 
-					dqs_n_w : 1'b0;  // dqs strobe with 0 value will not sample dq
+					dqs_n_w : {DQS_BITWIDTH{1'bz}};  // dqs value of 1'bz is for input
 
 	assign dqs_n_r = dqs_n;  // only for formal modelling of tri-state logic
 
 	assign dq = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
 				 (main_state == STATE_WRITE_DATA)) ? 
-					dq_w : 1'b0;  // dq value of 0 is don't care (needs dqs strobe)
+					dq_w : {DQ_BITWIDTH{1'bz}};  // dq value of 1'bz is for input
 
 	assign dq_r = dq;  // only for formal modelling of tri-state logic
 

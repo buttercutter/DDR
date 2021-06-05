@@ -25,7 +25,7 @@
 
 `ifdef MICRON_SIM
 // follows Micron simulation model
-`timescale 1ps / 1ps  // time-unit = 1 ns, precision = 10 ps
+`timescale 1ps / 1ps  // time-unit = 1 ps, precision = 1 ps
 `endif
 
 // write data to RAM and then read them back from RAM
@@ -332,7 +332,7 @@ begin
 		else read_enable <= 1;
 		
 		done_writing <= done_writing;
-		done_reading <= (data_from_ram > (NUM_OF_TEST_DATA-1));
+		done_reading <= (data_from_ram >= (NUM_OF_TEST_DATA-1));
 	end
 end
 
