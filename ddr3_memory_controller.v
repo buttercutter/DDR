@@ -11,7 +11,6 @@
 
 `define USE_x16 1
 
-// `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
 
 //`define RAM_SIZE_1GB
@@ -29,6 +28,9 @@
 
 		// for Xilinx Spartan-6 FPGA
 		`define XILINX 1
+		
+		`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
+				
 	`endif
 `endif
 
@@ -533,6 +535,21 @@ assign clk180_slow_posedge = clk_slow_negedge;
 		assign dqs_n_w = ~clk_slow;
 	`endif
 
+`else
+
+	`ifdef XILINX
+		  pll instance_name
+		   (// Clock in ports
+			.clk(clk),      // IN
+			// Clock out ports
+			.ck(ck),     // OUT
+			.ck_90(ck_90),     // OUT
+			.ck_180(ck_180),     // OUT
+			// Status and control signals
+			.reset(reset),// IN
+			.locked(locked));      // OUT	
+	`endif
+
 `endif
 
 `ifdef USE_x16
@@ -617,7 +634,7 @@ end
 
 always @(posedge dqs)
 begin
-
+	
 end
 
 `endif

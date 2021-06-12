@@ -2,7 +2,6 @@
 
 `define USE_x16 1
 
-// `define HIGH_SPEED 1  // for GHz operating frequency range
 // `define TDQS 1
 
 //`define RAM_SIZE_1GB
@@ -20,6 +19,9 @@
 
 		// for Xilinx Spartan-6 FPGA
 		`define XILINX 1
+		
+		`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
+				
 	`endif
 `endif
 
