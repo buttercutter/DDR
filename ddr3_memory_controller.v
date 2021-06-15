@@ -543,7 +543,7 @@ assign clk180_slow_posedge = clk_slow_negedge;
 			.clk(clk),      // IN
 			// Clock out ports
 			.ck(ck),     // OUT
-			.ck_90(ck_90),     // OUT
+			.ck_90(ck_90),     // OUT, for dq phase shifting purpose
 			.ck_180(ck_180),     // OUT
 			// Status and control signals
 			.reset(reset),// IN
@@ -611,60 +611,112 @@ reg dqs_is_at_low_previously;
 
 `ifndef HIGH_SPEED
 
-always @(posedge clk) dqs_is_at_high_previously <= dqs_is_at_high;
-always @(posedge clk) dqs_is_at_low_previously <= dqs_is_at_low;
+	always @(posedge clk) dqs_is_at_high_previously <= dqs_is_at_high;
+	always @(posedge clk) dqs_is_at_low_previously <= dqs_is_at_low;
 
-always @(posedge clk)
-begin
-	if(reset) dqs_counter <= 0;
-	
-	else begin
-		// Due to PCB trace layout and high-speed DDR signal transmission,
-		// there is no alignment to any generic clock signal that we can depend upon,
-		// especially when data is coming back from the SDRAM chip.
-		// Thus, we could only depend upon incoming `DQS` signal to sample 'DQ' signal
-		if(dqs_rising_edge | dqs_falling_edge) dqs_counter <= 1;
-		
-		else if(dqs_counter > 0) 
-			dqs_counter <= dqs_counter + 1;
-	end
-end
-
-`else
-
-always @(posedge dqs)
-begin
-	
-end
-
-`endif
-	
-
-`ifndef XILINX
-wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO_HALVED)]);
-`else
-wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: 2]);
-`endif
-wire dqs_n_phase_shifted = ~dqs_phase_shifted;
-
-always @(posedge clk)
-begin
-	if(reset) data_from_ram <= 0;
-
-	// 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs)
-	else if(dqs_phase_shifted & ~dqs_n_phase_shifted)
+	always @(posedge clk)
 	begin
-		`ifdef XILINX
-			data_from_ram <= dq_r;
+		if(reset) dqs_counter <= 0;
+		
+		else begin
+			// Due to PCB trace layout and high-speed DDR signal transmission,
+			// there is no alignment to any generic clock signal that we can depend upon,
+			// especially when data is coming back from the SDRAM chip.
+			// Thus, we could only depend upon incoming `DQS` signal to sample 'DQ' signal
+			if(dqs_rising_edge | dqs_falling_edge) dqs_counter <= 1;
 			
-		`elsif LATTICE
-			data_from_ram <= dq_r;
-						
-		`else  // Micron DDR3 simulation model
-			data_from_ram <= dq;
-		`endif		
+			else if(dqs_counter > 0) 
+				dqs_counter <= dqs_counter + 1;
+		end
 	end
-end
+
+	`ifndef XILINX
+	wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO_HALVED)]);
+	`else
+	wire dqs_phase_shifted = (dqs_counter == DIVIDE_RATIO_HALVED[0 +: 2]);
+	`endif
+	wire dqs_n_phase_shifted = ~dqs_phase_shifted;
+
+	always @(posedge clk)
+	begin
+		if(reset) data_from_ram <= 0;
+
+		// 'dq_r' is sampled at its middle (thanks to 90 degree phase shift on dqs)
+		else if(dqs_phase_shifted & ~dqs_n_phase_shifted)
+		begin
+			`ifdef XILINX
+				data_from_ram <= dq_r;
+				
+			`elsif LATTICE
+				data_from_ram <= dq_r;
+							
+			`else  // Micron DDR3 simulation model
+				data_from_ram <= dq;
+			`endif		
+		end
+	end
+
+`else
+	`ifdef XILINX
+		`ifdef USE_x16
+		
+			// DDR Data Reception Using Two BUFIO2s
+			// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
+			
+			serdes_1_to_n_clk_ddr_s8_diff ldqs_serdes
+			(
+				.clkin_p(ldqs_r),
+				.clkin_n(ldqs_n_r),
+				.rxioclkp(rxioclkp),
+				.rxioclkn(rxioclkn),
+				.rx_serdesstrobe(rx_serdesstrobe),
+				.rx_bufg_x1(gclk)
+			)
+			
+			serdes_1_to_n_data_ddr_s8_diff ldq_serdes
+			(
+				.use_phase_detector(1'b1),
+				.datain_p(ldq_r),
+				.datain_n(ldq_n_r),
+				.rxioclkp(rxioclkp),
+				.rxioclkn(rxioclkn),
+				.rxserdesstrobe(rx_serdesstrobe),
+				.reset(reset),
+				.gclk(gclk),
+				.bitslip(1'b1),
+				.debug_in(debug_in),
+				.data_out(data_from_ram),
+				.debug(debug)
+			)
+			
+			serdes_1_to_n_clk_ddr_s8_diff udqs_serdes
+			(
+				.clkin_p(udqs_r),
+				.clkin_n(udqs_n_r),
+				.rxioclkp(rxioclkp),
+				.rxioclkn(rxioclkn),
+				.rx_serdesstrobe(rx_serdesstrobe),
+				.rx_bufg_x1(gclk)
+			)
+			
+			serdes_1_to_n_data_ddr_s8_diff udq_serdes
+			(
+				.use_phase_detector(1'b1),
+				.datain_p(udq_r),
+				.datain_n(udq_n_r),
+				.rxioclkp(rxioclkp),
+				.rxioclkn(rxioclkn),
+				.rxserdesstrobe(rx_serdesstrobe),
+				.reset(reset),
+				.gclk(gclk),
+				.bitslip(1'b1),
+				.debug_in(debug_in),
+				.data_out(data_from_ram),
+				.debug(debug)
+			)		
+		`endif
+	`endif
+`endif
 
 
 `ifdef LATTICE
@@ -771,7 +823,7 @@ endgenerate
 	);
 
 `else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
-
+	
 	IOBUF IO_ldqs (
 		.IO(ldqs),
 		.I(ldqs_w),
