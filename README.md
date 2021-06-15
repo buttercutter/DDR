@@ -13,6 +13,8 @@ Notes on Modelsim simulation for Micron DDR3 memory simulation model:
 2. `vsim -gui work._2048Mb_ddr3_parameters_vh_unit work.ddr3 work.ddr3_memory_controller work.ddr3_memory_controller_v_unit work.test_ddr3_memory_controller`
 3. Inside Modelsim, open `vsim.wlf` file and then `add wave -r *`
 
+![modelsim_waveform](./micron_simulation_model_waveform.png)
+
 Credit: [@Morin](https://github.com/MartinGeisse), [@Greg](https://github.com/gregdavill/), [@BrianHG and @NorthGuy](https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/) for their helpful technical help and explanation
 
 Reference:
