@@ -663,56 +663,69 @@ reg dqs_is_at_low_previously;
 			// DDR Data Reception Using Two BUFIO2s
 			// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
 			
+			wire rxioclkp_ldqs;
+			wire rxioclkn_ldqs;
+			wire rx_serdesstrobe_ldqs;
+			
+			wire rxioclkp_udqs;
+			wire rxioclkn_udqs;
+			wire rx_serdesstrobe_udqs;
+			
+			wire gclk;
+			
+			wire [(DQ_BITWIDTH >> 1)-1:0] ldq_n_r = ~ldq;
+			wire [(DQ_BITWIDTH >> 1)-1:0] udq_n_r = ~udq;
+			
 			serdes_1_to_n_clk_ddr_s8_diff ldqs_serdes
 			(
 				.clkin_p(ldqs_r),
 				.clkin_n(ldqs_n_r),
-				.rxioclkp(rxioclkp),
-				.rxioclkn(rxioclkn),
-				.rx_serdesstrobe(rx_serdesstrobe),
+				.rxioclkp(rxioclkp_ldqs),
+				.rxioclkn(rxioclkn_ldqs),
+				.rx_serdesstrobe(rx_serdesstrobe_ldqs),
 				.rx_bufg_x1(gclk)
 			)
 			
 			serdes_1_to_n_data_ddr_s8_diff ldq_serdes
 			(
 				.use_phase_detector(1'b1),
-				.datain_p(ldq_r),
+				.datain_p(ldq),
 				.datain_n(ldq_n_r),
-				.rxioclkp(rxioclkp),
-				.rxioclkn(rxioclkn),
-				.rxserdesstrobe(rx_serdesstrobe),
+				.rxioclkp(rxioclkp_ldqs),
+				.rxioclkn(rxioclkn_ldqs),
+				.rxserdesstrobe(rx_serdesstrobe_ldqs),
 				.reset(reset),
 				.gclk(gclk),
 				.bitslip(1'b1),
-				.debug_in(debug_in),
-				.data_out(data_from_ram),
-				.debug(debug)
+				.debug_in(2'b00),
+				.data_out(data_from_ram[0 +: (DQ_BITWIDTH >> 1)]),
+				.debug(debug_ldq_serdes)
 			)
 			
 			serdes_1_to_n_clk_ddr_s8_diff udqs_serdes
 			(
 				.clkin_p(udqs_r),
 				.clkin_n(udqs_n_r),
-				.rxioclkp(rxioclkp),
-				.rxioclkn(rxioclkn),
-				.rx_serdesstrobe(rx_serdesstrobe),
+				.rxioclkp(rxioclkp_udqs),
+				.rxioclkn(rxioclkn_udqs),
+				.rx_serdesstrobe(rx_serdesstrobe_udqs),
 				.rx_bufg_x1(gclk)
 			)
 			
 			serdes_1_to_n_data_ddr_s8_diff udq_serdes
 			(
 				.use_phase_detector(1'b1),
-				.datain_p(udq_r),
+				.datain_p(udq),
 				.datain_n(udq_n_r),
-				.rxioclkp(rxioclkp),
-				.rxioclkn(rxioclkn),
-				.rxserdesstrobe(rx_serdesstrobe),
+				.rxioclkp(rxioclkp_udqs),
+				.rxioclkn(rxioclkn_udqs),
+				.rxserdesstrobe(rx_serdesstrobe_udqs),
 				.reset(reset),
 				.gclk(gclk),
 				.bitslip(1'b1),
-				.debug_in(debug_in),
-				.data_out(data_from_ram),
-				.debug(debug)
+				.debug_in(2'b00),
+				.data_out(data_from_ram[(DQ_BITWIDTH >> 1) +: (DQ_BITWIDTH >> 1)]),
+				.debug(debug_udq_serdes)
 			)		
 		`endif
 	`endif
