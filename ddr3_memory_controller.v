@@ -659,9 +659,6 @@ reg dqs_is_at_low_previously;
 `else
 	`ifdef XILINX
 		
-		// DDR Data Reception Using Two BUFIO2s
-		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
-		
 		// why need IOSERDES primitives ?
 		// because you want a memory transaction rate much higher than the main clock frequency 
 		// and you don't want to require a very high main clock frequency
@@ -672,12 +669,15 @@ reg dqs_is_at_low_previously;
 		// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
 		// This literally means SERDES_RATIO=8 
 		localparam SERDES_RATIO = 8;
+
+		// DDR Data Reception Using Two BUFIO2s
+		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
 		
 		wire rxioclkp;
 		wire rxioclkn;
 		wire rx_serdesstrobe;
 		
-		wire gclk;
+		wire gclk_iserdes;
 		
 		wire [DQ_BITWIDTH-1:0] dq_n_r = ~dq_r;
 		
@@ -689,7 +689,7 @@ reg dqs_is_at_low_previously;
 			.rxioclkp(rxioclkp),
 			.rxioclkn(rxioclkn),
 			.rx_serdesstrobe(rx_serdesstrobe),
-			.rx_bufg_x1(gclk)
+			.rx_bufg_x1(gclk_iserdes)
 		)
 		
 		serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
@@ -702,25 +702,30 @@ reg dqs_is_at_low_previously;
 			.rxioclkn(rxioclkn),
 			.rxserdesstrobe(rx_serdesstrobe),
 			.reset(reset),
-			.gclk(gclk),
+			.gclk(gclk_iserdes),
 			.bitslip(1'b1),
 			.debug_in(2'b00),
 			.data_out(data_from_ram),
 			.debug(debug_dq_serdes)
 		)
 
+		// DDR Data Transmission Using Two BUFIO2s
+		// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
+
+		wire gclk_oserdes;
+
 		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
 		dqs_oserdes
 		(
-			.clkin_p(),
-			.clkin_n(),
-			.ioclkap(),
-			.ioclkan(),
+			.clkin_p(clk),
+			.clkin_n(~clk),
+			.ioclkap(txioclkp),
+			.ioclkan(txioclkn),
 			.serdesstrobea(),
 			.ioclkbp(),
 			.ioclkbn(),
 			.serdesstrobeb(),
-			.gclk()
+			.gclk(gclk_oserdes)
 		)
 		
 		serdes_n_to_1_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
@@ -730,7 +735,7 @@ reg dqs_is_at_low_previously;
 			.txioclkn(txioclkn),
 			.txserdesstrobe(txserdesstrobe),
 			.reset(reset),
-			.gclk(gclk),
+			.gclk(gclk_oserdes),
 			.datain(),
 			.dataout_p(),
 			.dataout_n()
