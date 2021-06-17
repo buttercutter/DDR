@@ -658,250 +658,242 @@ reg dqs_is_at_low_previously;
 
 `else
 	`ifdef XILINX
-		`ifdef USE_x16
 		
-			// DDR Data Reception Using Two BUFIO2s
-			// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
-			
-			// why need IOSERDES primitives ?
-			// because you want a memory transaction rate much higher than the main clock frequency 
-			// and you don't want to require a very high main clock frequency
-			
-			// send a write of 8w bits to the memory controller, 
-			// which is similar to bundling multiple transactions into one wider one,
-			// and the memory controller issues 8 writes of w bits to the memory, 
-			// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
-			// This literally means SERDES_RATIO=8 
-			localparam SERDES_RATIO = 8;
-			
-			wire rxioclkp_ldqs;
-			wire rxioclkn_ldqs;
-			wire rx_serdesstrobe_ldqs;
-			
-			wire rxioclkp_udqs;
-			wire rxioclkn_udqs;
-			wire rx_serdesstrobe_udqs;
-			
-			wire gclk;
-			
-			wire [(DQ_BITWIDTH >> 1)-1:0] ldq_n_r = ~ldq;
-			wire [(DQ_BITWIDTH >> 1)-1:0] udq_n_r = ~udq;
-			
-			serdes_1_to_n_clk_ddr_s8_diff #(.D(DQ_BITWIDTH))
-			ldqs_serdes
-			(
-				.clkin_p(ldqs_r),
-				.clkin_n(ldqs_n_r),
-				.rxioclkp(rxioclkp_ldqs),
-				.rxioclkn(rxioclkn_ldqs),
-				.rx_serdesstrobe(rx_serdesstrobe_ldqs),
-				.rx_bufg_x1(gclk)
-			)
-			
-			serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-			ldq_serdes
-			(
-				.use_phase_detector(1'b1),
-				.datain_p(ldq),
-				.datain_n(ldq_n_r),
-				.rxioclkp(rxioclkp_ldqs),
-				.rxioclkn(rxioclkn_ldqs),
-				.rxserdesstrobe(rx_serdesstrobe_ldqs),
-				.reset(reset),
-				.gclk(gclk),
-				.bitslip(1'b1),
-				.debug_in(2'b00),
-				.data_out(data_from_ram[0 +: (DQ_BITWIDTH >> 1)]),
-				.debug(debug_ldq_serdes)
-			)
-			
-			serdes_1_to_n_clk_ddr_s8_diff #(.D(DQ_BITWIDTH))
-			udqs_serdes
-			(
-				.clkin_p(udqs_r),
-				.clkin_n(udqs_n_r),
-				.rxioclkp(rxioclkp_udqs),
-				.rxioclkn(rxioclkn_udqs),
-				.rx_serdesstrobe(rx_serdesstrobe_udqs),
-				.rx_bufg_x1(gclk)
-			)
-			
-			serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-			udq_serdes
-			(
-				.use_phase_detector(1'b1),
-				.datain_p(udq),
-				.datain_n(udq_n_r),
-				.rxioclkp(rxioclkp_udqs),
-				.rxioclkn(rxioclkn_udqs),
-				.rxserdesstrobe(rx_serdesstrobe_udqs),
-				.reset(reset),
-				.gclk(gclk),
-				.bitslip(1'b1),
-				.debug_in(2'b00),
-				.data_out(data_from_ram[(DQ_BITWIDTH >> 1) +: (DQ_BITWIDTH >> 1)]),
-				.debug(debug_udq_serdes)
-			)		
-		`endif
+		// DDR Data Reception Using Two BUFIO2s
+		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
+		
+		// why need IOSERDES primitives ?
+		// because you want a memory transaction rate much higher than the main clock frequency 
+		// and you don't want to require a very high main clock frequency
+		
+		// send a write of 8w bits to the memory controller, 
+		// which is similar to bundling multiple transactions into one wider one,
+		// and the memory controller issues 8 writes of w bits to the memory, 
+		// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
+		// This literally means SERDES_RATIO=8 
+		localparam SERDES_RATIO = 8;
+		
+		wire rxioclkp;
+		wire rxioclkn;
+		wire rx_serdesstrobe;
+		
+		wire gclk;
+		
+		wire [DQ_BITWIDTH-1:0] dq_n_r = ~dq_r;
+		
+		serdes_1_to_n_clk_ddr_s8_diff #(.D(DQ_BITWIDTH))
+		dqs_iserdes
+		(
+			.clkin_p(dqs_r),
+			.clkin_n(dqs_n_r),
+			.rxioclkp(rxioclkp),
+			.rxioclkn(rxioclkn),
+			.rx_serdesstrobe(rx_serdesstrobe),
+			.rx_bufg_x1(gclk)
+		)
+		
+		serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		dq_iserdes
+		(
+			.use_phase_detector(1'b1),
+			.datain_p(dq_r),
+			.datain_n(dq_n_r),
+			.rxioclkp(rxioclkp),
+			.rxioclkn(rxioclkn),
+			.rxserdesstrobe(rx_serdesstrobe),
+			.reset(reset),
+			.gclk(gclk),
+			.bitslip(1'b1),
+			.debug_in(2'b00),
+			.data_out(data_from_ram),
+			.debug(debug_dq_serdes)
+		)
+
+		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
+		dqs_oserdes
+		(
+			.clkin_p(),
+			.clkin_n(),
+			.ioclkap(),
+			.ioclkan(),
+			.serdesstrobea(),
+			.ioclkbp(),
+			.ioclkbn(),
+			.serdesstrobeb(),
+			.gclk()
+		)
+		
+		serdes_n_to_1_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		dq_oserdes
+		(
+			.txioclkp(txioclkp),
+			.txioclkn(txioclkn),
+			.txserdesstrobe(txserdesstrobe),
+			.reset(reset),
+			.gclk(gclk),
+			.datain(),
+			.dataout_p(),
+			.dataout_n()
+		)
 	`endif
 `endif
 
 
 `ifdef LATTICE
 
-// look for BB primitive in this lattice document :
-// http://www.latticesemi.com/-/media/LatticeSemi/Documents/UserManuals/EI/FPGALibrariesReferenceGuide33.ashx?document_id=50790
+	// look for BB primitive in this lattice document :
+	// http://www.latticesemi.com/-/media/LatticeSemi/Documents/UserManuals/EI/FPGALibrariesReferenceGuide33.ashx?document_id=50790
 
-// we cannot have tristate signal inside the logic of an ECP5. tristates only work at the I/O boundary.
-// So, need to split up the read/write signals and have logic to handle these as two separate paths 
-// that meet at the I/O boundary at the BB primitive.
+	// we cannot have tristate signal inside the logic of an ECP5. tristates only work at the I/O boundary.
+	// So, need to split up the read/write signals and have logic to handle these as two separate paths 
+	// that meet at the I/O boundary at the BB primitive.
 
-`ifndef USE_x16
+	`ifndef USE_x16
 
-	TRELLIS_IO BB_dqs (
-		.B(dqs),
-		.I(dqs_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(dqs_r)
-	);
+		TRELLIS_IO BB_dqs (
+			.B(dqs),
+			.I(dqs_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(dqs_r)
+		);
 
-	TRELLIS_IO BB_dqs_n (
-		.B(dqs_n),
-		.I(dqs_n_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(dqs_n_r)
-	);
+		TRELLIS_IO BB_dqs_n (
+			.B(dqs_n),
+			.I(dqs_n_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(dqs_n_r)
+		);
 
-`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
+	`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
 
-	TRELLIS_IO BB_ldqs (
-		.B(ldqs),
-		.I(ldqs_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(ldqs_r)
-	);
+		TRELLIS_IO BB_ldqs (
+			.B(ldqs),
+			.I(ldqs_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(ldqs_r)
+		);
 
-	TRELLIS_IO BB_ldqs_n (
-		.B(ldqs_n),
-		.I(ldqs_n_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(ldqs_n_r)
-	);
+		TRELLIS_IO BB_ldqs_n (
+			.B(ldqs_n),
+			.I(ldqs_n_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(ldqs_n_r)
+		);
 
-	TRELLIS_IO BB_udqs (
-		.B(udqs),
-		.I(udqs_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(udqs_r)
-	);
+		TRELLIS_IO BB_udqs (
+			.B(udqs),
+			.I(udqs_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(udqs_r)
+		);
 
-	TRELLIS_IO BB_udqs_n (
-		.B(udqs_n),
-		.I(udqs_n_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(udqs_n_r)
-	);
-`endif
+		TRELLIS_IO BB_udqs_n (
+			.B(udqs_n),
+			.I(udqs_n_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(udqs_n_r)
+		);
+	`endif
 
-generate
-genvar dq_index;  // to indicate the bit position of DQ signal
+	generate
+	genvar dq_index;  // to indicate the bit position of DQ signal
 
-for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
-begin : dq_tristate_io
+	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
+	begin : dq_tristate_io
 
-	TRELLIS_IO BB_dq (
-		.B(dq[dq_index]),
-		.I(dq_w[dq_index]),
-		.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(dq_r[dq_index])
-	);
-end
+		TRELLIS_IO BB_dq (
+			.B(dq[dq_index]),
+			.I(dq_w[dq_index]),
+			.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(dq_r[dq_index])
+		);
+	end
 
-endgenerate
+	endgenerate
 
 `endif
 
 `ifdef XILINX
 
-// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=126
+	// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=126
 
-`ifndef USE_x16
+	`ifndef USE_x16
 
-	IOBUF IO_dqs (
-		.IO(dqs),
-		.I(dqs_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(dqs_r)
-	);
+		IOBUF IO_dqs (
+			.IO(dqs),
+			.I(dqs_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(dqs_r)
+		);
 
-	IOBUF IO_dqs_n (
-		.IO(dqs_n),
-		.I(dqs_n_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(dqs_n_r)
-	);
+		IOBUF IO_dqs_n (
+			.IO(dqs_n),
+			.I(dqs_n_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(dqs_n_r)
+		);
 
-`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
-	
-	IOBUF IO_ldqs (
-		.IO(ldqs),
-		.I(ldqs_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(ldqs_r)
-	);
+	`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
+		
+		IOBUF IO_ldqs (
+			.IO(ldqs),
+			.I(ldqs_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(ldqs_r)
+		);
 
-	IOBUF IO_ldqs_n (
-		.IO(ldqs_n),
-		.I(ldqs_n_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(ldqs_n_r)
-	);
+		IOBUF IO_ldqs_n (
+			.IO(ldqs_n),
+			.I(ldqs_n_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(ldqs_n_r)
+		);
 
-	IOBUF IO_udqs (
-		.IO(udqs),
-		.I(udqs_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(udqs_r)
-	);
+		IOBUF IO_udqs (
+			.IO(udqs),
+			.I(udqs_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(udqs_r)
+		);
 
-	IOBUF IO_udqs_n (
-		.IO(udqs_n),
-		.I(udqs_n_w),
-		.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(udqs_n_r)
-	);
+		IOBUF IO_udqs_n (
+			.IO(udqs_n),
+			.I(udqs_n_w),
+			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(udqs_n_r)
+		);
 
-`endif
+	`endif
 
-generate
-genvar dq_index;  // to indicate the bit position of DQ signal
+	generate
+	genvar dq_index;  // to indicate the bit position of DQ signal
 
-for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
-begin : dq_tristate_io
+	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
+	begin : dq_tristate_io
 
-	IOBUF IO_dq (
-		.IO(dq[dq_index]),
-		.I(dq_w[dq_index]),
-		.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
-				  (main_state == STATE_READ_DATA)),
-		.O(dq_r[dq_index])
-	);
-end
+		IOBUF IO_dq (
+			.IO(dq[dq_index]),
+			.I(dq_w[dq_index]),
+			.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),
+			.O(dq_r[dq_index])
+		);
+	end
 
-endgenerate
+	endgenerate
 		
 `endif
 
