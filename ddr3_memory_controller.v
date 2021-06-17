@@ -462,68 +462,68 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 	
 `ifndef HIGH_SPEED
 
-// Purposes of Clock divider:
-// 1. for developing correct logic first before making the DDR memory controller works in higher frequency,
-// 2. to perform 90 degree phase shift on DQ signal with relative to DQS signal during data writing stage
-// 3. to perform 180 degree phase shift (DDR mechanism of both DQS and DQ signals need to work on 
-//	  both posedge and negedge clk) for the next consecutive data
+	// Purposes of Clock divider:
+	// 1. for developing correct logic first before making the DDR memory controller works in higher frequency,
+	// 2. to perform 90 degree phase shift on DQ signal with relative to DQS signal during data writing stage
+	// 3. to perform 180 degree phase shift (DDR mechanism of both DQS and DQ signals need to work on 
+	//	  both posedge and negedge clk) for the next consecutive data
 
-// See https://i.imgur.com/dnDwZul.png or 
-// https://www.markimicrowave.com/blog/top-7-ways-to-create-a-quadrature-90-phase-shift/
-// See https://i.imgur.com/ZnBuofE.png or
-// https://patentimages.storage.googleapis.com/0e/94/46/6fdcafc946e940/US5297181.pdf#page=3
-// Will use digital PLL or https://stackoverflow.com/a/50172237/8776167 in later stage of the project
+	// See https://i.imgur.com/dnDwZul.png or 
+	// https://www.markimicrowave.com/blog/top-7-ways-to-create-a-quadrature-90-phase-shift/
+	// See https://i.imgur.com/ZnBuofE.png or
+	// https://patentimages.storage.googleapis.com/0e/94/46/6fdcafc946e940/US5297181.pdf#page=3
+	// Will use digital PLL or https://stackoverflow.com/a/50172237/8776167 in later stage of the project
 
-// See https://www.edaplayground.com/x/gXC for waveform simulation of the clock divider
-reg clk_slow;
-localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
+	// See https://www.edaplayground.com/x/gXC for waveform simulation of the clock divider
+	reg clk_slow;
+	localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 
-`ifndef XILINX
-reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] counter;
-`else
-reg [1:0] counter;
-`endif
+	`ifndef XILINX
+	reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] counter;
+	`else
+	reg [1:0] counter;
+	`endif
 
-reg counter_reset;
+	reg counter_reset;
 
-always @(posedge clk)
-begin
-	if(reset) counter_reset <= 0;
+	always @(posedge clk)
+	begin
+		if(reset) counter_reset <= 0;
 
-`ifndef XILINX	
-	else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO_HALVED)] - 1'b1);
-`else
-	else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: 1] - 1'b1);
-`endif
-end
+	`ifndef XILINX	
+		else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO_HALVED)] - 1'b1);
+	`else
+		else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: 1] - 1'b1);
+	`endif
+	end
 
-always @(posedge clk)
-begin
-	if(reset) counter <= 0;
-	
-	else if(counter_reset) counter <= 1;
-	
-	else counter <= counter + 1;
-end
+	always @(posedge clk)
+	begin
+		if(reset) counter <= 0;
+		
+		else if(counter_reset) counter <= 1;
+		
+		else counter <= counter + 1;
+	end
 
-always @(posedge clk)
-begin
-	if(reset) clk_slow <= 0;
-	
-	else if(counter_reset)
-	  	clk_slow <= ~clk_slow;
-end
+	always @(posedge clk)
+	begin
+		if(reset) clk_slow <= 0;
+		
+		else if(counter_reset)
+		  	clk_slow <= ~clk_slow;
+	end
 
-assign ck = clk_slow;
-assign ck_n = ~clk_slow;
+	assign ck = clk_slow;
+	assign ck_n = ~clk_slow;
 
-wire clk90_slow_is_at_high = (~clk_slow && counter_reset) || (clk_slow && ~counter_reset);
-wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counter_reset);
-wire clk90_slow_posedge = (clk_slow && counter_reset);
-assign clk_slow_posedge = (clk_slow && ~counter_reset);
-wire clk_slow_negedge = (~clk_slow && ~counter_reset);
-wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
-assign clk180_slow_posedge = clk_slow_negedge;
+	wire clk90_slow_is_at_high = (~clk_slow && counter_reset) || (clk_slow && ~counter_reset);
+	wire clk90_slow_is_at_low = (clk_slow && counter_reset) || (~clk_slow && ~counter_reset);
+	wire clk90_slow_posedge = (clk_slow && counter_reset);
+	assign clk_slow_posedge = (clk_slow && ~counter_reset);
+	wire clk_slow_negedge = (~clk_slow && ~counter_reset);
+	wire clk180_slow = ~clk_slow;  // simply inversion of the clk_slow signal will give 180 degree phase shift
+	assign clk180_slow_posedge = clk_slow_negedge;
 
 	`ifdef USE_x16
 		assign ldqs_w = clk_slow;
@@ -663,6 +663,17 @@ reg dqs_is_at_low_previously;
 			// DDR Data Reception Using Two BUFIO2s
 			// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
 			
+			// why need IOSERDES primitives ?
+			// because you want a memory transaction rate much higher than the main clock frequency 
+			// and you don't want to require a very high main clock frequency
+			
+			// send a write of 8w bits to the memory controller, 
+			// which is similar to bundling multiple transactions into one wider one,
+			// and the memory controller issues 8 writes of w bits to the memory, 
+			// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
+			// This literally means SERDES_RATIO=8 
+			localparam SERDES_RATIO = 8;
+			
 			wire rxioclkp_ldqs;
 			wire rxioclkn_ldqs;
 			wire rx_serdesstrobe_ldqs;
@@ -676,7 +687,8 @@ reg dqs_is_at_low_previously;
 			wire [(DQ_BITWIDTH >> 1)-1:0] ldq_n_r = ~ldq;
 			wire [(DQ_BITWIDTH >> 1)-1:0] udq_n_r = ~udq;
 			
-			serdes_1_to_n_clk_ddr_s8_diff ldqs_serdes
+			serdes_1_to_n_clk_ddr_s8_diff #(.D(DQ_BITWIDTH))
+			ldqs_serdes
 			(
 				.clkin_p(ldqs_r),
 				.clkin_n(ldqs_n_r),
@@ -686,7 +698,8 @@ reg dqs_is_at_low_previously;
 				.rx_bufg_x1(gclk)
 			)
 			
-			serdes_1_to_n_data_ddr_s8_diff ldq_serdes
+			serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+			ldq_serdes
 			(
 				.use_phase_detector(1'b1),
 				.datain_p(ldq),
@@ -702,7 +715,8 @@ reg dqs_is_at_low_previously;
 				.debug(debug_ldq_serdes)
 			)
 			
-			serdes_1_to_n_clk_ddr_s8_diff udqs_serdes
+			serdes_1_to_n_clk_ddr_s8_diff #(.D(DQ_BITWIDTH))
+			udqs_serdes
 			(
 				.clkin_p(udqs_r),
 				.clkin_n(udqs_n_r),
@@ -712,7 +726,8 @@ reg dqs_is_at_low_previously;
 				.rx_bufg_x1(gclk)
 			)
 			
-			serdes_1_to_n_data_ddr_s8_diff udq_serdes
+			serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+			udq_serdes
 			(
 				.use_phase_detector(1'b1),
 				.datain_p(udq),
