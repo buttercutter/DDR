@@ -273,11 +273,12 @@ wire ck_90;  // for dq phase shifting purpose
 `endif
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
-reg [DQ_BITWIDTH-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
 
 `ifdef HIGH_SPEED
+	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
 	wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
 `else
+	reg [DQ_BITWIDTH-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
 	wire [DQ_BITWIDTH-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
 `endif
 

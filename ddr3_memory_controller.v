@@ -125,10 +125,11 @@ module ddr3_memory_controller
 	input write_enable,  // write to DDR memory
 	input read_enable,  // read from DDR memory
 	input [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address,  // the DDR memory address for which the user wants to write/read the data
-	input [DQ_BITWIDTH-1:0] data_to_ram,  // data for which the user wants to write to DDR
 	`ifdef HIGH_SPEED
+		input [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram,  // data for which the user wants to write to DDR
 		output reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
 	`else
+		input [DQ_BITWIDTH-1:0] data_to_ram,  // data for which the user wants to write to DDR
 		output reg [DQ_BITWIDTH-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
 	`endif
 	
@@ -723,6 +724,10 @@ reg dqs_is_at_low_previously;
 		// DDR Data Transmission Using Two BUFIO2s
 		// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
 
+		wire txioclkp;
+		wire txioclkn;
+		wire serdesstrobea;
+		
 		wire gclk_oserdes;
 
 		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
@@ -732,7 +737,7 @@ reg dqs_is_at_low_previously;
 			.clkin_n(~clk),
 			.ioclkap(txioclkp),
 			.ioclkan(txioclkn),
-			.serdesstrobea(),
+			.serdesstrobea(serdesstrobea),
 			.ioclkbp(),
 			.ioclkbn(),
 			.serdesstrobeb(),
@@ -747,9 +752,9 @@ reg dqs_is_at_low_previously;
 			.txserdesstrobe(txserdesstrobe),
 			.reset(reset),
 			.gclk(gclk_oserdes),
-			.datain(),
-			.dataout_p(),
-			.dataout_n()
+			.datain(data_to_ram),
+			.dataout_p(dq_w),
+			.dataout_n(~dq_w)
 		)
 	`endif
 `endif
