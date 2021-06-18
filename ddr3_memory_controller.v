@@ -552,9 +552,9 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 	`ifdef XILINX
 		  pll instance_name
 		   (// Clock in ports
-			.clk(clk),      // IN
+			.clk(clk),      // IN 50MHz
 			// Clock out ports
-			.ck(ck),     // OUT
+			.ck(ck),     // OUT 400MHz
 			.ck_90(ck_90),     // OUT, for dq phase shifting purpose
 			.ck_180(ck_180),     // OUT
 			// Status and control signals
@@ -685,8 +685,8 @@ reg dqs_is_at_low_previously;
 		// DDR Data Reception Using Two BUFIO2s
 		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
 		
-		wire rxioclkp;
-		wire rxioclkn;
+		wire rxioclkp = ck;  // from PLL, ck is 400MHz
+		wire rxioclkn = ~ck;
 		wire rx_serdesstrobe;
 		
 		wire gclk_iserdes;
@@ -724,8 +724,8 @@ reg dqs_is_at_low_previously;
 		// DDR Data Transmission Using Two BUFIO2s
 		// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
 
-		wire txioclkp;
-		wire txioclkn;
+		wire txioclkp = ck;  // from PLL, ck is 400MHz
+		wire txioclkn = ~ck;
 		wire serdesstrobea;
 		
 		wire gclk_oserdes;
@@ -749,7 +749,7 @@ reg dqs_is_at_low_previously;
 		(
 			.txioclkp(txioclkp),
 			.txioclkn(txioclkn),
-			.txserdesstrobe(txserdesstrobe),
+			.txserdesstrobe(serdesstrobea),
 			.reset(reset),
 			.gclk(gclk_oserdes),
 			.datain(data_to_ram),
