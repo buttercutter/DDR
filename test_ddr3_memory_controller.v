@@ -51,7 +51,13 @@
 
 module test_ddr3_memory_controller
 #(
-	parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+	`ifndef HIGH_SPEED
+		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+	`else
+		// why 8 ? because of FPGA development board is using external 50 MHz crystal
+		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
+		parameter integer SERDES_RATIO = 8,
+	`endif
 	
 	`ifdef MICRON_SIM
 		// host clock period in ns
@@ -268,7 +274,12 @@ wire ck_90;  // for dq phase shifting purpose
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 reg [DQ_BITWIDTH-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
-wire [DQ_BITWIDTH-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
+
+`ifdef HIGH_SPEED
+	wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
+`else
+	wire [DQ_BITWIDTH-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
+`endif
 
 reg write_enable, read_enable;
 reg done_writing, done_reading;
@@ -444,7 +455,13 @@ reg done_writing, done_reading;
 `endif
 
 
-ddr3_memory_controller #(.MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED))
+ddr3_memory_controller 
+#(
+	.MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED)
+	`ifdef HIGH_SPEED
+		, .SERDES_RATIO(SERDES_RATIO)
+	`endif
+)
 ddr3_control
 (
 	// these are FPGA internal signals
