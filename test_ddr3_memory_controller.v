@@ -297,11 +297,7 @@ reg done_writing, done_reading;
 
 	localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 8;  // only 8 pieces of data are used during data loopback integrity test
 
-	`ifndef HIGH_SPEED
 	always @(posedge clk)
-	`else
-	always @(posedge ck_90)
-	`endif
 	begin
 		if(reset) 
 		begin
@@ -325,11 +321,32 @@ reg done_writing, done_reading;
 			(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
 		begin
 			i_user_data_address <= i_user_data_address + 1;
-			`ifdef USE_x16
-				data_to_ram <= {test_data+1, test_data};
+			
+			`ifdef HIGH_SPEED
+
+				genvar data_write_index;
+				generate
+					for(data_write_index = 0; data_write_index < SERDES_RATIO;
+						data_write_index = data_write_index + 1)
+					begin
+						`ifdef USE_x16
+							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
+										{test_data + data_write_index + 1, test_data + data_write_index};
+						`else
+							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
+										test_data + data_write_index;
+						`endif
+					end
+				endgenerate		
+									
 			`else
-				data_to_ram <= test_data;
+				`ifdef USE_x16
+					data_to_ram <= {test_data+1, test_data};
+				`else
+					data_to_ram <= test_data;
+				`endif
 			`endif
+			
 			test_data <= test_data + 1;
 			write_enable <= (test_data < (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
 			read_enable <= (test_data >= (NUM_OF_TEST_DATA-1));  // starts the readback operation
