@@ -62,11 +62,11 @@ module test_ddr3_memory_controller
 	`ifdef MICRON_SIM
 		// host clock period in ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
 
-	parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 
 	`ifdef USE_x16
 		parameter DM_BITWIDTH = 2,
@@ -370,7 +370,11 @@ reg done_writing, done_reading;
 			
 			done_writing <= done_writing;
 			
+			`ifdef USE_x16			
 			if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >= (NUM_OF_TEST_DATA-1))
+			`else
+			if(data_from_ram[0 +: DQ_BITWIDTH] >= (NUM_OF_TEST_DATA-1))
+			`endif			
 			begin
 				done_reading <= 1;
 			end

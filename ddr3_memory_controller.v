@@ -69,11 +69,11 @@ module ddr3_memory_controller
 	`ifdef MICRON_SIM
 		// host clock period in ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
 	
-	parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	
 	// for STATE_IDLE transition into STATE_REFRESH
 	// tREFI = 65*tRFC calculated using info from Micron dataheet, so tREFI > 8 * tRFC
@@ -592,34 +592,33 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 `endif
 
 `ifndef HIGH_SPEED
-reg dqs_is_at_high_previously;
-reg dqs_is_at_low_previously;
-`endif
+	reg dqs_is_at_high_previously;
+	reg dqs_is_at_low_previously;
 
-`ifndef USE_ILA
-	`ifdef USE_x16
-		wire dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
-		wire dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
+	`ifndef USE_ILA
+		`ifdef USE_x16
+			wire dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
+			wire dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
+		`else
+			wire dqs_is_at_high = (dqs & ~dqs_n);
+			wire dqs_is_at_low = (~dqs & dqs_n);
+		`endif
+		
+		wire dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+		wire dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
 	`else
-		wire dqs_is_at_high = (dqs & ~dqs_n);
-		wire dqs_is_at_low = (~dqs & dqs_n);
+		`ifdef USE_x16
+			assign dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
+			assign dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
+		`else
+			assign dqs_is_at_high = (dqs & ~dqs_n);
+			assign dqs_is_at_low = (~dqs & dqs_n);
+		`endif
+		
+		assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
+		assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
 	`endif
-	
-	wire dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
-	wire dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
-`else
-	`ifdef USE_x16
-		assign dqs_is_at_high = (ldqs_r & ~ldqs_n_r) || (udqs_r & ~udqs_n_r);
-		assign dqs_is_at_low = (~ldqs_r & ldqs_n_r) || (~udqs_r & udqs_n_r);
-	`else
-		assign dqs_is_at_high = (dqs & ~dqs_n);
-		assign dqs_is_at_low = (~dqs & dqs_n);
-	`endif
-	
-	assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
-	assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
 `endif
-
 
 `ifndef HIGH_SPEED
 
@@ -702,7 +701,7 @@ reg dqs_is_at_low_previously;
 			.rxioclkn(rxioclkn),
 			.rx_serdesstrobe(rx_serdesstrobe),
 			.rx_bufg_x1(gclk_iserdes)
-		)
+		);
 		
 		serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
 		dq_iserdes
@@ -719,7 +718,7 @@ reg dqs_is_at_low_previously;
 			.debug_in(2'b00),
 			.data_out(data_from_ram),
 			.debug(debug_dq_serdes)
-		)
+		);
 
 		// DDR Data Transmission Using Two BUFIO2s
 		// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
@@ -742,7 +741,7 @@ reg dqs_is_at_low_previously;
 			.ioclkbn(),
 			.serdesstrobeb(),
 			.gclk(gclk_oserdes)
-		)
+		);
 		
 		serdes_n_to_1_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
 		dq_oserdes
@@ -755,7 +754,7 @@ reg dqs_is_at_low_previously;
 			.datain(data_to_ram),
 			.dataout_p(dq_w),
 			.dataout_n(~dq_w)
-		)
+		);
 	`endif
 `endif
 
