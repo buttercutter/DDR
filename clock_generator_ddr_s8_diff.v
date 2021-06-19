@@ -69,25 +69,26 @@ output		gclk ;				// global clock output from BUFIO2
 
 wire 		clkint ;			// 
 wire    	gclk_int ;      		// 
-wire    	freqgen_in_p ;      		// 
+//wire    	freqgen_in_p ;      		// 
 wire 		tx_bufio2_x1 ;			// 
 
 assign gclk = gclk_int ;
-
+// https://forums.xilinx.com/t5/General-Technical-Discussion/ERROR-Xst-2035-Port-lt-CLK-VGA-50M-gt-has-illegal-connections/td-p/173350
+/*
 IBUFGDS #(
 	.DIFF_TERM 		(DIFF_TERM)) 
 clk_iob_in (
 	.I    			(clkin_p),
 	.IB       		(clkin_n),
 	.O         		(freqgen_in_p));
-
+*/
 BUFIO2 #(
       .DIVIDE			(S),              		// The DIVCLK divider divide-by value; default 1
       .I_INVERT			("FALSE"),               	//
       .DIVIDE_BYPASS		("FALSE"),               	//
       .USE_DOUBLER		("TRUE"))               		
 bufio2_inst1 (              
-      .I			(freqgen_in_p),  		// Input source clock 0 degrees
+      .I			(clkin_p),  		// Input source clock 0 degrees
       .IOCLK			(ioclkap),        		// Output Clock for IO
       .DIVCLK			(tx_bufio2_x1),                	// Output Divided Clock
       .SERDESSTROBE		(serdesstrobea)) ;           	// Output SERDES strobe (Clock Enable)
@@ -97,7 +98,7 @@ BUFIO2 #(
       .DIVIDE_BYPASS		("FALSE"),               	//
       .USE_DOUBLER		("FALSE"))               	//
 bufio2_inst2 (                   
-      .I			(freqgen_in_p),               	// N_clk input from IDELAY
+      .I			(clkin_p),               	// N_clk input from IDELAY
       .IOCLK			(ioclkan),        		// Output Clock
       .DIVCLK			(),                		// Output Divided Clock
       .SERDESSTROBE		()) ;           		// Output SERDES strobe (Clock Enable)
@@ -108,7 +109,7 @@ BUFIO2 #(
       .DIVIDE_BYPASS		("FALSE"),               	//
       .USE_DOUBLER		("TRUE"))               		//
 bufio2_inst3 (            
-      .I			(freqgen_in_p),  		// Input source clock 0 degrees
+      .I			(clkin_p),  		// Input source clock 0 degrees
       .IOCLK			(ioclkbp),        		// Output Clock for IO
       .DIVCLK			(),                		// Output Divided Clock
       .SERDESSTROBE		(serdesstrobeb)) ;           	// Output SERDES strobe (Clock Enable)
@@ -118,7 +119,7 @@ BUFIO2 #(
       .DIVIDE_BYPASS		("FALSE"),               	//
       .USE_DOUBLER		("FALSE"))               	//
 bufio2_inst4  (                
-      .I			(freqgen_in_p),               	// N_clk input from IDELAY
+      .I			(clkin_p),               	// N_clk input from IDELAY
       .IOCLK			(ioclkbn),        		// Output Clock
       .DIVCLK			(),                		// Output Divided Clock
       .SERDESSTROBE		()) ;           		// Output SERDES strobe (Clock Enable)

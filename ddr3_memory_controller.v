@@ -548,7 +548,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 	`endif
 
 `else
-
+/*
 	`ifdef XILINX
 		wire ck_180;
 	
@@ -566,7 +566,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.locked(locked)  // OUT
 		);
 	`endif
-
+*/
 `endif
 
 
@@ -740,7 +740,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		dqs_oserdes
 		(
 			.clkin_p(clk),
-			.clkin_n(~clk),
+			.clkin_n(),
 			.ioclkap(txioclkp),
 			.ioclkan(txioclkn),
 			.serdesstrobea(txserdesstrobe),
