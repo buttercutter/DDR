@@ -297,90 +297,96 @@ reg done_writing, done_reading;
 
 	localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 8;  // only 8 pieces of data are used during data loopback integrity test
 
-	always @(posedge clk)
-	begin
-		if(reset) 
-		begin
-			i_user_data_address <= 0;
-			test_data <= 0;
-			data_to_ram <= 0;
-			write_enable <= 1;  // writes data first
-			read_enable <= 0;
-			done_writing <= 0;
-			done_reading <= 0;
-		end
-		
-		else if(
-		`ifndef HIGH_SPEED
-			// Since this is always block which updates new data in next clock cycle,
-			// and DIVIDE_RATIO=4 which means there are 2 'clk' cycles in each half period of a 'clk_slow' cycle,
-			// the following immediate single line of code will update new data 
-			// both at 90 degrees before and after positive edge of 'ck'
-			(clk180_slow_posedge | clk_slow_posedge) &&
-		`endif
-			(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
-		begin
-			i_user_data_address <= i_user_data_address + 1;
-			
-			`ifdef HIGH_SPEED
-
-				genvar data_write_index;
-				generate
-					for(data_write_index = 0; data_write_index < SERDES_RATIO;
-						data_write_index = data_write_index + 1)
-					begin
+	`ifdef HIGH_SPEED
+	genvar data_write_index;
+	generate
+		for(data_write_index = 0; data_write_index < SERDES_RATIO;
+			data_write_index = data_write_index + 1)
+		begin: data_write_loop
+	`endif			
+			always @(posedge clk)
+			begin
+				if(reset) 
+				begin
+					i_user_data_address <= 0;
+					test_data <= 0;
+					`ifdef HIGH_SPEED
+						data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
+					`else
+						data_to_ram <= 0;
+					`endif
+					write_enable <= 1;  // writes data first
+					read_enable <= 0;
+					done_writing <= 0;
+					done_reading <= 0;
+				end
+				
+				else if(
+				`ifndef HIGH_SPEED
+					// Since this is always block which updates new data in next clock cycle,
+					// and DIVIDE_RATIO=4 which means there are 2 'clk' cycles in each half period of a 'clk_slow' cycle,
+					// the following immediate single line of code will update new data 
+					// both at 90 degrees before and after positive edge of 'ck'
+					(clk180_slow_posedge | clk_slow_posedge) &&
+				`endif
+					(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
+				begin
+					i_user_data_address <= i_user_data_address + 1;
+					
+					`ifdef HIGH_SPEED							
 						`ifdef USE_x16
 							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
 										{test_data + data_write_index + 1, test_data + data_write_index};
 						`else
 							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
 										test_data + data_write_index;
+						`endif											
+					`else
+						`ifdef USE_x16
+							data_to_ram <= {test_data+1, test_data};
+						`else
+							data_to_ram <= test_data;
 						`endif
+					`endif
+					
+					test_data <= test_data + 1;
+					write_enable <= (test_data < (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
+					read_enable <= (test_data >= (NUM_OF_TEST_DATA-1));  // starts the readback operation
+					done_writing <= (test_data >= (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
+					done_reading <= 0;
+				end
+				
+				else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
+					if(done_writing && 
+						(test_data > 0)) // such that it would only reset address only ONCE
+						i_user_data_address <= 0;  // read from the first piece of data written
+					
+					else i_user_data_address <= i_user_data_address + 1;
+					
+					test_data <= 0;  // not related to DDR read operation, only for DDR write operation
+					write_enable <= 0;
+					
+					if(done) read_enable <= 0;  // already finished reading all data
+					
+					else read_enable <= 1;
+					
+					done_writing <= done_writing;
+					
+					`ifdef USE_x16			
+					if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >= (NUM_OF_TEST_DATA-1))
+					`else
+					if(data_from_ram[0 +: DQ_BITWIDTH] >= (NUM_OF_TEST_DATA-1))
+					`endif			
+					begin
+						done_reading <= 1;
 					end
-				endgenerate		
-									
-			`else
-				`ifdef USE_x16
-					data_to_ram <= {test_data+1, test_data};
-				`else
-					data_to_ram <= test_data;
-				`endif
-			`endif
-			
-			test_data <= test_data + 1;
-			write_enable <= (test_data < (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
-			read_enable <= (test_data >= (NUM_OF_TEST_DATA-1));  // starts the readback operation
-			done_writing <= (test_data >= (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
-			done_reading <= 0;
-		end
-		
-		else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
-			if(done_writing && 
-				(test_data > 0)) // such that it would only reset address only ONCE
-				i_user_data_address <= 0;  // read from the first piece of data written
-			
-			else i_user_data_address <= i_user_data_address + 1;
-			
-			test_data <= 0;  // not related to DDR read operation, only for DDR write operation
-			write_enable <= 0;
-			
-			if(done) read_enable <= 0;  // already finished reading all data
-			
-			else read_enable <= 1;
-			
-			done_writing <= done_writing;
-			
-			`ifdef USE_x16			
-			if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >= (NUM_OF_TEST_DATA-1))
-			`else
-			if(data_from_ram[0 +: DQ_BITWIDTH] >= (NUM_OF_TEST_DATA-1))
-			`endif			
-			begin
-				done_reading <= 1;
+				end
 			end
+			
+	`ifdef HIGH_SPEED
 		end
-	end
-
+	endgenerate		
+	`endif
 `endif
 
 
@@ -498,8 +504,6 @@ ddr3_control
 	`ifndef HIGH_SPEED
 	.clk_slow_posedge(clk_slow_posedge),  // for dq phase shifting purpose
 	.clk180_slow_posedge(clk180_slow_posedge),  // for dq phase shifting purpose
-	`else
-	.ck_90(ck_90),
 	`endif
 	
 	// these are to be fed into external DDR3 memory

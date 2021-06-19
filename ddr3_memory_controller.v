@@ -127,7 +127,7 @@ module ddr3_memory_controller
 	input [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address,  // the DDR memory address for which the user wants to write/read the data
 	`ifdef HIGH_SPEED
 		input [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram,  // data for which the user wants to write to DDR
-		output reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
+		output [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
 	`else
 		input [DQ_BITWIDTH-1:0] data_to_ram,  // data for which the user wants to write to DDR
 		output reg [DQ_BITWIDTH-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
@@ -550,16 +550,21 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 `else
 
 	`ifdef XILINX
-		  pll instance_name
-		   (// Clock in ports
-			.clk(clk),      // IN 50MHz
+		wire ck_180;
+	
+		pll instance_name
+		(	// Clock in ports
+			.clk(clk),  // IN 50MHz
+			
 			// Clock out ports
-			.ck(ck),     // OUT 400MHz
-			.ck_90(ck_90),     // OUT, for dq phase shifting purpose
-			.ck_180(ck_180),     // OUT
+			.ck(ck),  // OUT 400MHz
+			.ck_90(ck_90),  // OUT, for dq phase shifting purpose
+			.ck_180(ck_180),  // OUT, 180 degree phase-shifted
+			
 			// Status and control signals
-			.reset(reset),// IN
-			.locked(locked));      // OUT	
+			.reset(reset),  // IN
+			.locked(locked)  // OUT
+		);
 	`endif
 
 `endif
@@ -723,11 +728,12 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// DDR Data Transmission Using Two BUFIO2s
 		// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
 
-		wire txioclkp = ck;  // from PLL, ck is 400MHz
-		wire txioclkn = ~ck;
+		wire txioclkp;
+		wire txioclkn;
 		wire serdesstrobea;
 		
 		wire gclk_oserdes;
+		wire [DQ_BITWIDTH-1:0] dq_w_n;
 
 		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
 		dqs_oserdes
@@ -753,7 +759,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.gclk(gclk_oserdes),
 			.datain(data_to_ram),
 			.dataout_p(dq_w),
-			.dataout_n(~dq_w)
+			.dataout_n(dq_w_n)
 		);
 	`endif
 `endif
