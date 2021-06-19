@@ -96,10 +96,15 @@ generate
 for (i = 0 ; i <= (D-1) ; i = i+1)
 begin : loop0
 
+// there is already IOBUF for inout DQ signal,
+// DDR3 DQ data bit signal is not differential signal, so no need OBUFDS primitive
+assign dataout_p[i] = tx_data_out[i];
+/*
 OBUFDS io_data_out (
 	.O    			(dataout_p[i]),
 	.OB       		(dataout_n[i]),
 	.I         		(tx_data_out[i]));
+*/
 
 if (S > 4) begin // Two oserdes are needed
 

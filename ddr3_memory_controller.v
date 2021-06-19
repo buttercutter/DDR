@@ -695,7 +695,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		
 		wire gclk_iserdes;
 		
-		wire [DQ_BITWIDTH-1:0] dq_n_r = ~dq_r;
+		//wire [DQ_BITWIDTH-1:0] dq_n_r = ~dq_r;
 		assign dqs_n_r = ~dqs_r;
 		
 		serdes_1_to_n_clk_ddr_s8_diff #(.S(SERDES_RATIO))
@@ -714,7 +714,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		(
 			.use_phase_detector(1'b1),
 			.datain_p(dq_r),
-			.datain_n(dq_n_r),
+			.datain_n(),
 			.rxioclkp(rxioclkp),
 			.rxioclkn(rxioclkn),
 			.rxserdesstrobe(rx_serdesstrobe),
@@ -734,7 +734,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		wire txserdesstrobe;
 		
 		wire gclk_oserdes;
-		wire [DQ_BITWIDTH-1:0] dq_w_n;
+		//wire [DQ_BITWIDTH-1:0] dq_w_n;
 
 		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
 		dqs_oserdes
@@ -760,7 +760,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.gclk(gclk_oserdes),
 			.datain(data_to_ram),
 			.dataout_p(dq_w),
-			.dataout_n(dq_w_n)
+			.dataout_n()
 		);
 	`endif
 `endif

@@ -130,12 +130,17 @@ begin : loop0
 
 assign rx_data_in_fix[i] = rx_data_in[i] ^ RX_SWAP_MASK[i] ;	// Invert signals as required
 
+// DDR3 DQ data bit signal is not differential signal, so no need IBUFDS primitive
+assign rx_data_in[i] = datain_p[i];
+
+/*
 IBUFDS #(
 	.DIFF_TERM 		(DIFF_TERM)) 
 data_in (
 	.I    			(datain_p[i]),
 	.IB       		(datain_n[i]),
 	.O         		(rx_data_in[i]));
+*/
 
 IODELAY2 #(
 	.DATA_RATE      	("DDR"), 		// <SDR>, DDR
