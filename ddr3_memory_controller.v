@@ -569,15 +569,6 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 `endif
 
-`ifdef USE_x16
-	wire [(DQ_BITWIDTH >> 1)-1:0] ldq;
-	wire [(DQ_BITWIDTH >> 1)-1:0] udq;
-	wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram[0 +: (DQ_BITWIDTH >> 1)];
-	wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram[(DQ_BITWIDTH >> 1) +: (DQ_BITWIDTH >> 1)];
-	assign dq_w = {udq_w, ldq_w};
-`else
-	assign dq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
-`endif
 
 // See https://www.micron.com/-/media/client/global/documents/products/technical-note/dram/tn4605.pdf#page=7
 // for an overview on DQS Preamble and Postamble bits
@@ -623,9 +614,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		assign dqs_rising_edge = (dqs_is_at_low_previously && dqs_is_at_high);
 		assign dqs_falling_edge = (dqs_is_at_high_previously && dqs_is_at_low);
 	`endif
-`endif
-
-`ifndef HIGH_SPEED
+	
 
 	always @(posedge clk) dqs_is_at_high_previously <= dqs_is_at_high;
 	always @(posedge clk) dqs_is_at_low_previously <= dqs_is_at_low;
@@ -672,6 +661,17 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		end
 	end
 
+
+	`ifdef USE_x16
+		wire [(DQ_BITWIDTH >> 1)-1:0] ldq;
+		wire [(DQ_BITWIDTH >> 1)-1:0] udq;
+		wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram[0 +: (DQ_BITWIDTH >> 1)];
+		wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram[(DQ_BITWIDTH >> 1) +: (DQ_BITWIDTH >> 1)];
+		assign dq_w = {udq_w, ldq_w};
+	`else
+		assign dq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
+	`endif
+
 `else
 	`ifdef XILINX
 		
@@ -696,6 +696,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		wire gclk_iserdes;
 		
 		wire [DQ_BITWIDTH-1:0] dq_n_r = ~dq_r;
+		assign dqs_n_r = ~dqs_r;
 		
 		serdes_1_to_n_clk_ddr_s8_diff #(.S(SERDES_RATIO))
 		dqs_iserdes
