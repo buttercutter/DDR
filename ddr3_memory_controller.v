@@ -689,8 +689,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// DDR Data Reception Using Two BUFIO2s
 		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
 		
-		wire rxioclkp = ck;  // from PLL, ck is 400MHz
-		wire rxioclkn = ~ck;
+		wire rxioclkp;
+		wire rxioclkn;
 		wire rx_serdesstrobe;
 		
 		wire gclk_iserdes;
@@ -730,7 +730,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 		wire txioclkp;
 		wire txioclkn;
-		wire serdesstrobea;
+		wire txserdesstrobe;
 		
 		wire gclk_oserdes;
 		wire [DQ_BITWIDTH-1:0] dq_w_n;
@@ -742,7 +742,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.clkin_n(~clk),
 			.ioclkap(txioclkp),
 			.ioclkan(txioclkn),
-			.serdesstrobea(serdesstrobea),
+			.serdesstrobea(txserdesstrobe),
 			.ioclkbp(),
 			.ioclkbn(),
 			.serdesstrobeb(),
@@ -754,7 +754,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		(
 			.txioclkp(txioclkp),
 			.txioclkn(txioclkn),
-			.txserdesstrobe(serdesstrobea),
+			.txserdesstrobe(txserdesstrobe),
 			.reset(reset),
 			.gclk(gclk_oserdes),
 			.datain(data_to_ram),
