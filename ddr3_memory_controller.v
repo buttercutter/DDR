@@ -694,15 +694,14 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		wire rx_serdesstrobe;
 		
 		wire gclk_iserdes;
-		
-		//wire [DQ_BITWIDTH-1:0] dq_n_r = ~dq_r;
-		assign dqs_n_r = ~dqs_r;
+		wire clkin_p_iserdes = (udqs_r | ldqs_r);
+		wire clkin_n_iserdes = (udqs_n_r | ldqs_n_r);
 		
 		serdes_1_to_n_clk_ddr_s8_diff #(.S(SERDES_RATIO))
 		dqs_iserdes
 		(
-			.clkin_p(dqs_r),
-			.clkin_n(dqs_n_r),
+			.clkin_p(clkin_p_iserdes),
+			.clkin_n(clkin_n_iserdes),
 			.rxioclkp(rxioclkp),
 			.rxioclkn(rxioclkn),
 			.rx_serdesstrobe(rx_serdesstrobe),
@@ -734,7 +733,6 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		wire txserdesstrobe;
 		
 		wire gclk_oserdes;
-		//wire [DQ_BITWIDTH-1:0] dq_w_n;
 
 		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
 		dqs_oserdes

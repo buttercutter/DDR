@@ -75,6 +75,11 @@ wire		iob_data_in_n ;		//
 
 parameter  	RX_SWAP_CLK  = 1'b0 ;	// pinswap mask for input clock (0 = no swap (default), 1 = swap). Allows input to be connected the wrong way round to ease PCB routing.
 
+// There are already IOBUF primitives before 'clkin_n' and 'clkin_p' signals are passed into this verilog module
+wire rx_clk_in_n =  clkin_n;
+wire rx_clk_in_p =  clkin_p;
+
+/*
 IBUFDS_DIFF_OUT #(
 	.DIFF_TERM 		(DIFF_TERM)) 
 iob_clk_in (
@@ -82,6 +87,7 @@ iob_clk_in (
 	.IB       		(clkin_n),
 	.OB         		(rx_clk_in_n),
 	.O         		(rx_clk_in_p)) ;
+*/
 	
 assign iob_data_in_p = rx_clk_in_p ^ RX_SWAP_CLK ;		// Invert clock as required
 assign iob_data_in_n = rx_clk_in_n ^ RX_SWAP_CLK ;		// Invert clock as required
