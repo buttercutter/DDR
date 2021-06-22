@@ -168,6 +168,14 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 
 `ifndef MICRON_SIM
 	assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
+	
+	`ifndef USE_ILA
+		`ifndef XILINX
+			wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+		`else
+			wire [4:0] main_state;
+		`endif
+	`endif
 `else
 
 	wire done;  // finished DDR write and read operations in loopback mechaism
