@@ -548,25 +548,25 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 	`endif
 
 `else
-/*
+
 	`ifdef XILINX
 		wire ck_180;
 	
-		pll instance_name
+		pll pll_ddr
 		(	// Clock in ports
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.ck(ck),  // OUT 400MHz
-			.ck_90(ck_90),  // OUT, for dq phase shifting purpose
-			.ck_180(ck_180),  // OUT, 180 degree phase-shifted
+			.ck(ck),  // OUT 400MHz, 0 phase shift
+			.ck_90(ck_90),  // OUT 400MHz, 90 phase shift, for dq phase shifting purpose
+			.ck_180(ck_180),  // OUT 400MHz, 180 phase shift, 180 degree phase-shifted
 			
 			// Status and control signals
 			.reset(reset),  // IN
 			.locked(locked)  // OUT
 		);
 	`endif
-*/
+
 `endif
 
 
@@ -674,7 +674,47 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 `else
 	`ifdef XILINX
+	
+		// bitslip and IODELAY phase shift
+		// https://www.xilinx.com/support/documentation/application_notes/xapp1208-bitslip-logic.pdf#page=4
+		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=130
 		
+		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
+
+		wire dqs_r = (udqs_r | ldqs_r);
+
+		// IODDR2 primitives are needed because the 'dq' signals are of double-data-rate
+		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=123
+		
+		// IDDR2: Input Double Data Rate Input Register with Set, Reset and Clock Enable.
+		// Spartan-6
+		// Xilinx HDL Libraries Guide, version 14.7
+
+		IDDR2 #(
+			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.INIT_Q0(1'b0),  // Sets initial state of the Q0 output to 1'b0 or 1'b1
+			.INIT_Q1(1'b0),  // Sets initial state of the Q1 output to 1'b0 or 1'b1
+			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+		)
+		IDDR2_inst(
+			.Q0(dq_r_q0),  // 1-bit output captured with C0 clock
+			.Q1(dq_r_q1),  // 1-bit output captured with C1 clock
+			.C0(dqs_r),  // 1-bit clock input
+			.C1(dqs_n_r),  // 1-bit clock input
+			.CE(1'b1),  // 1-bit clock enable input
+			.D(dq_r),    // 1-bit DDR data input
+			.R(reset),    // 1-bit reset input
+			.S(1'b0)     // 1-bit set input
+		);
+		// End of IDDR2_inst instantiation		
+
+		// combines the interleaving 'dq_r_q0', 'dq_r_q1' 2-bit signals into a single 1-bit signal
+		reg dq_r_iserdes;
+		
+		always @(dq_r_q0, dq_r_q1, dqs_r)
+			dq_r_iserdes <= (dqs_r) ?  dq_r_q0: dq_r_q1;
+
+
 		// why need IOSERDES primitives ?
 		// because you want a memory transaction rate much higher than the main clock frequency 
 		// and you don't want to require a very high main clock frequency
@@ -686,9 +726,28 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// This literally means SERDES_RATIO=8 
 		// localparam SERDES_RATIO = 8;
 
+		iserdes #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		dq_iserdes
+		(
+			.clock_in(dqs_r),
+			.data_in(dq_r_iserdes),
+			.data_out(data_from_ram)
+		);
+
+		oserdes #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		dq_oserdes
+		(
+			.clock_in(dqs_w),
+			.data_in(dq_w_oserdes),
+			.data_out(data_to_ram)
+		);
+
+		// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
+		// See https://forums.xilinx.com/t5/Implementation/Xilinx-ISE-implementation-stage-issues/m-p/1255587/highlight/true#M30717
+
 		// DDR Data Reception Using Two BUFIO2s
 		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
-		
+		/*
 		wire rxioclkp;
 		wire rxioclkn;
 		wire rx_serdesstrobe;
@@ -760,6 +819,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.dataout_p(dq_w),
 			.dataout_n()
 		);
+		*/
 	`endif
 `endif
 
