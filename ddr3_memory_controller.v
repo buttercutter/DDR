@@ -567,6 +567,16 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		);
 	`endif
 
+	`ifdef USE_x16
+		assign ldqs_w = ck;
+		assign ldqs_n_w = ck_180;
+		assign udqs_w = ck;
+		assign udqs_n_w = ck_180;		
+	`else
+		assign dqs_w = ck;
+		assign dqs_n_w = ck_180;
+	`endif
+
 `endif
 
 
@@ -680,6 +690,84 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=130
 		
 		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
+
+		phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
+		pd_state_machine (
+			.use_phase_detector 	(use_phase_detector),
+			.busy			(busy_data),
+			.valid 			(valid_data),	
+			.inc_dec 		(incdec_data),	
+			.reset 			(reset),	
+			.gclk 			(gclk),		
+			.debug_in		(debug_in),		
+			.cal_master		(cal_data_master),
+			.cal_slave 		(cal_data_slave),	
+			.rst_out 		(rst_data),
+			.ce 			(ce_data),
+			.inc			(inc_data),
+			.debug			(debug)
+		);
+
+
+		IODELAY2 #(
+			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
+			.IDELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
+			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
+			.ODELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY_TYPE   		("DIFF_PHASE_DETECTOR"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
+			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
+			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
+			.SERDES_MODE   		("MASTER") 		// <NONE>, MASTER, SLAVE
+		)
+		iodelay_m (
+			.IDATAIN  		(rx_data_in_fix[i]), 	// data from primary IOB
+			.TOUT     		(), 			// tri-state signal to IOB
+			.DOUT     		(), 			// output data to IOB
+			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
+			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
+			.DATAOUT  		(ddly_m[i]), 		// Output data 1 to ILOGIC/ISERDES2
+			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
+			.IOCLK0   		(rxioclkp), 		// High speed clock for calibration
+			.IOCLK1   		(rxioclkn), 		// High speed clock for calibration
+			.CLK      		(gclk), 		// Fabric clock (GCLK) for control signals
+			.CAL      		(cal_data_master),	// Calibrate control signal
+			.INC      		(inc_data[i]), 		// Increment counter
+			.CE       		(ce_data[i]), 		// Clock Enable
+			.RST      		(rst_data),		// Reset delay line
+			.BUSY      		()	// output signal indicating sync circuit has finished / calibration has finished
+		);
+		
+
+		IODELAY2 #(
+			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
+			.IDELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
+			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
+			.ODELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY_TYPE   		("DIFF_PHASE_DETECTOR"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
+			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
+			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
+			.SERDES_MODE   		("SLAVE") 		// <NONE>, MASTER, SLAVE
+		)
+		iodelay_s (
+			.IDATAIN 		(rx_data_in_fix[i]), 	// data from primary IOB
+			.TOUT     		(), 			// tri-state signal to IOB
+			.DOUT     		(), 			// output data to IOB
+			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
+			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
+			.DATAOUT  		(ddly_s[i]), 		// Output data 1 to ILOGIC/ISERDES2
+			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
+			.IOCLK0   		(rxioclkp), 		// High speed clock for calibration
+			.IOCLK1   		(rxioclkn), 		// High speed clock for calibration
+			.CLK      		(gclk), 		// Fabric clock (GCLK) for control signals
+			.CAL      		(cal_data_slave),	// Calibrate control signal
+			.INC      		(inc_data[i]), 		// Increment counter
+			.CE       		(ce_data[i]), 		// Clock Enable
+			.RST      		(rst_data),		// Reset delay line
+			.BUSY      		(busy_data[i]) // output signal indicating sync circuit has finished / calibration has finished
+		);
+
 
 		wire dqs_r = (udqs_r | ldqs_r);
 
