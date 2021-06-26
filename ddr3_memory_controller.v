@@ -691,6 +691,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		
 		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
 
+		// See https://www.edaboard.com/threads/phase-detection-mechanism.398492/ for an
+		// understanding on how the dynamic phase calibration mechanism works
 		phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
 		pd_state_machine (
 			.use_phase_detector 	(use_phase_detector),
