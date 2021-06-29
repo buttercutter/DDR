@@ -693,9 +693,6 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// https://blog.elphel.com/2014/06/ddr3-memory-interface-on-xilinx-zynq-soc-free-software-compatible/
 		// Will use Micron built-in features (Write leveling, MPR_Read_function) to facilitate skew calibration
 		
-		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
-		// OSERDES -> ODDR2 (output DDR buffer) -> IOBUF (for inout) -> RAM
-		
 		// See https://www.edaboard.com/threads/phase-detection-mechanism.398492/ for an
 		// understanding on how the dynamic phase calibration mechanism works
 		phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
@@ -776,6 +773,9 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		);
 
 
+		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
+		// OSERDES -> ODDR2 (output DDR buffer) -> IOBUF (for inout) -> RAM
+		
 		wire dqs_r = (udqs_r | ldqs_r);	
 
 		// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
@@ -787,6 +787,15 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			dq_r_iserdes <= (dqs_r) ?  dq_r_q0: dq_r_q1;
 
 
+		// splits single 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') DDR signals
+		reg [DQ_BITWIDTH-1:0] dq_w_d0;
+		reg [DQ_BITWIDTH-1:0] dq_w_d1;
+		wire [DQ_BITWIDTH-1:0] dq_w_oserdes;
+
+		always @(dqs_w) dq_w_d0 <= dq_w_oserdes;
+		always @(dqs_n_w) dq_w_d1 <= dq_w_oserdes;
+		
+		
 		// why need IOSERDES primitives ?
 		// because you want a memory transaction rate much higher than the main clock frequency 
 		// and you don't want to require a very high main clock frequency
@@ -805,9 +814,6 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.data_in(dq_r_iserdes),
 			.data_out(data_from_ram)
 		);
-
-		wire [DQ_BITWIDTH-1:0] dq_w_oserdes;
-		assign dq_w = dq_w_oserdes;
 
 		oserdes #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
 		dq_oserdes
