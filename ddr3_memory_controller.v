@@ -694,7 +694,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// Will use Micron built-in features (Write leveling, MPR_Read_function) to facilitate skew calibration
 		
 		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
-
+		// OSERDES -> ODDR2 (output DDR buffer) -> IOBUF (for inout) -> RAM
+		
 		// See https://www.edaboard.com/threads/phase-detection-mechanism.398492/ for an
 		// understanding on how the dynamic phase calibration mechanism works
 		phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
@@ -775,34 +776,11 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		);
 
 
-		wire dqs_r = (udqs_r | ldqs_r);
+		wire dqs_r = (udqs_r | ldqs_r);	
 
-		// IODDR2 primitives are needed because the 'dq' signals are of double-data-rate
-		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=123
-		
-		// IDDR2: Input Double Data Rate Input Register with Set, Reset and Clock Enable.
-		// Spartan-6
-		// Xilinx HDL Libraries Guide, version 14.7
-
-		IDDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT_Q0(1'b0),  // Sets initial state of the Q0 output to 1'b0 or 1'b1
-			.INIT_Q1(1'b0),  // Sets initial state of the Q1 output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		IDDR2_inst(
-			.Q0(dq_r_q0),  // 1-bit output captured with C0 clock
-			.Q1(dq_r_q1),  // 1-bit output captured with C1 clock
-			.C0(dqs_r),  // 1-bit clock input
-			.C1(dqs_n_r),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D(dq_r),    // 1-bit DDR data input
-			.R(reset),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
-		);
-		// End of IDDR2_inst instantiation		
-
-		// combines the interleaving 'dq_r_q0', 'dq_r_q1' 2-bit signals into a single 1-bit signal
+		// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
+		wire [DQ_BITWIDTH-1:0] dq_r_q0;
+		wire [DQ_BITWIDTH-1:0] dq_r_q1;
 		reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
 		
 		always @(dq_r_q0, dq_r_q1, dqs_r)
@@ -827,29 +805,6 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.data_in(dq_r_iserdes),
 			.data_out(data_from_ram)
 		);
-
-
-		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
-		// Spartan-6
-		// Xilinx HDL Libraries Guide, version 14.7
-
-		ODDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		ODDR2_inst(
-			.Q(dq_w_q),  // 1-bit DDR output data
-			.C0(dqs_r),  // 1-bit clock input
-			.C1(dqs_n_r),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D0(dq_w_d1),    // 1-bit DDR data input (associated with C0)
-			.D1(dq_w_d0),    // 1-bit DDR data input (associated with C0)			
-			.R(reset),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
-		);
-		// End of ODDR2_inst instantiation		
-
 
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes;
 		assign dq_w = dq_w_oserdes;
@@ -1087,7 +1042,10 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 	genvar dq_index;  // to indicate the bit position of DQ signal
 
 	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
-	begin : dq_tristate_io
+	begin : dq_io
+
+		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES
+		// OSERDES -> ODDR2 (output DDR buffer) -> IOBUF (for inout) -> RAM
 
 		IOBUF IO_dq (
 			.IO(dq[dq_index]),
@@ -1096,6 +1054,54 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 					  (main_state == STATE_READ_DATA)),
 			.O(dq_r[dq_index])
 		);
+
+		
+		// IODDR2 primitives are needed because the 'dq' signals are of double-data-rate
+		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=123
+		
+		// IDDR2: Input Double Data Rate Input Register with Set, Reset and Clock Enable.
+		// Spartan-6
+		// Xilinx HDL Libraries Guide, version 14.7
+
+		IDDR2 #(
+			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.INIT_Q0(1'b0),  // Sets initial state of the Q0 output to 1'b0 or 1'b1
+			.INIT_Q1(1'b0),  // Sets initial state of the Q1 output to 1'b0 or 1'b1
+			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+		)
+		IDDR2_inst(
+			.Q0(dq_r_q0[dq_index]),  // 1-bit output captured with C0 clock
+			.Q1(dq_r_q1[dq_index]),  // 1-bit output captured with C1 clock
+			.C0(dqs_r),  // 1-bit clock input
+			.C1(dqs_n_r),  // 1-bit clock input
+			.CE(1'b1),  // 1-bit clock enable input
+			.D(dq_r[dq_index]),    // 1-bit DDR data input
+			.R(reset),    // 1-bit reset input
+			.S(1'b0)     // 1-bit set input
+		);
+		// End of IDDR2_inst instantiation	
+
+
+		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
+		// Spartan-6
+		// Xilinx HDL Libraries Guide, version 14.7
+
+		ODDR2 #(
+			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+		)
+		ODDR2_inst(
+			.Q(dq_w[dq_index]),  // 1-bit DDR output data
+			.C0(dqs_w),  // 1-bit clock input
+			.C1(dqs_n_w),  // 1-bit clock input
+			.CE(1'b1),  // 1-bit clock enable input
+			.D0(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C0)
+			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C0)			
+			.R(reset),    // 1-bit reset input
+			.S(1'b0)     // 1-bit set input
+		);
+		// End of ODDR2_inst instantiation					
 	end
 
 	endgenerate
