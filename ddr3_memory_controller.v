@@ -850,7 +850,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 		genvar data_index;
 		generate
-			for(data_index = 0; data_index < DQ_BITWIDTH; data_index = data_index + 1)
+			for(data_index = 0; data_index < (DQ_BITWIDTH*SERDES_RATIO); data_index = data_index + 1)
 			begin: data_to_ram_split_loop
 				
 				integer EVEN_RATIO = 2;
