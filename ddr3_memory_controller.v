@@ -788,13 +788,15 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			dq_r_iserdes <= (dqs_r) ?  dq_r_q0: dq_r_q1;
 
 
-		// splits single 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
+		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
+		// Check the explanation below for the need of two separate OSERDES
 		reg [DQ_BITWIDTH-1:0] dq_w_d0;
 		reg [DQ_BITWIDTH-1:0] dq_w_d1;
-		wire [DQ_BITWIDTH-1:0] dq_w_oserdes;
-
-		always @(posedge dqs_w)   dq_w_d0 <= dq_w_oserdes;
-		always @(posedge dqs_n_w) dq_w_d1 <= dq_w_oserdes;
+		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
+		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
+		
+		always @(posedge dqs_w)   dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge dqs_n_w) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
 		
 		// why need IOSERDES primitives ?
@@ -819,17 +821,82 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.data_out(data_from_ram)
 		);
 
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-		dq_oserdes
+
+		// There is need to use two separate OSERDES because ODDR2 expects its D0 and D1 inputs to be
+		// presented to it at a DDR clock rate of 303MHz (D0 at posedge of 303MHz, D1 at negedge of 303MHz),
+		// where 303MHz is the minimum DDR3 RAM working frequency.
+		// However, one single SDR OSERDES alone could not fulfill this data rate requiremen of ODDR2
+
+		// For example, a 8:1 DDR OSERDES which takes 8 inputs D0,D1,D2,D3,D4,D5,D6,D7 and output them serially
+		
+		// The values supplied by D0,D2,D4,D6 are clocked out on the rising edge
+		// The values supplied by D1,D3,D5,D7 are clocked out on the falling edge
+
+		// You can then create two 4:1 SDR OSERDES modules.
+
+		// One of the 2 modules will take D0,D2,D4,D6 inputs and output them serially. 
+		// You route its output to the D0 pin of the ODDR.
+
+		// The other will output D1,D3,D5,D7 serially. You route its output to the D1 pin of the ODDR.
+
+		// But this is only if you write your own OSERDES.
+
+		// The vendor-specific hardware OSERDES will have built-in DDR mode. 
+		// Even if you put it in SDR mode, it cannot be routed to ODDR because ODDR and OSERDES are two
+		// incarnations of the same OLOGIC block.
+		
+		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_0;
+		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_1;
+
+		genvar data_index;
+		generate
+			for(data_index = 0; data_index < DQ_BITWIDTH; data_index = data_index + 1)
+			begin: data_to_ram_split_loop
+				
+				integer EVEN_RATIO = 2;
+				
+				if((data_index % EVEN_RATIO) == 0)
+				begin
+					always @(posedge clk)
+					begin
+						data_in_oserdes_0[data_index >> 1] <= data_to_ram[data_index];
+					end
+				end
+				
+				else begin
+						
+					always @(posedge clk)
+					begin
+						data_in_oserdes_1[data_index >> 1] <= data_to_ram[data_index];
+					end
+				end
+			end
+		endgenerate
+
+		
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_oserdes_0
 		(
 			// slow clock domain
-			.data_in(data_to_ram),
+			.data_in(data_in_oserdes_0),
 			
 			// fast clock domain
 			.high_speed_clock(dqs_w),
-			.data_out(dq_w_oserdes)
+			.data_out(dq_w_oserdes_0)
 		);
 
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_oserdes_1
+		(
+			// slow clock domain
+			.data_in(data_in_oserdes_1),
+			
+			// fast clock domain
+			.high_speed_clock(dqs_n_w),
+			.data_out(dq_w_oserdes_1)
+		);
+		
+		
 		// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
 		// See https://forums.xilinx.com/t5/Implementation/Xilinx-ISE-implementation-stage-issues/m-p/1255587/highlight/true#M30717
 
