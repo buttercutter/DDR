@@ -685,9 +685,13 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 `else
 	`ifdef XILINX
 	
-		// bitslip and IODELAY phase shift
+		// bitslip and IODELAY phase shift delay calibration
 		// https://www.xilinx.com/support/documentation/application_notes/xapp1208-bitslip-logic.pdf#page=4
 		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=130
+		// https://www.xilinx.com/support/documentation/white_papers/wp249.pdf#page=5
+		// https://www.xilinx.com/support/documentation/ip_documentation/ultrascale_memory_ip/v1_4/pg150-ultrascale-memory-ip.pdf#page=361
+		// https://blog.elphel.com/2014/06/ddr3-memory-interface-on-xilinx-zynq-soc-free-software-compatible/
+		// Will use Micron built-in features (Write leveling, MPR_Read_function) to facilitate skew calibration
 		
 		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
 
@@ -799,7 +803,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// End of IDDR2_inst instantiation		
 
 		// combines the interleaving 'dq_r_q0', 'dq_r_q1' 2-bit signals into a single 1-bit signal
-		reg dq_r_iserdes;
+		reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
 		
 		always @(dq_r_q0, dq_r_q1, dqs_r)
 			dq_r_iserdes <= (dqs_r) ?  dq_r_q0: dq_r_q1;
@@ -824,12 +828,38 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.data_out(data_from_ram)
 		);
 
+
+		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
+		// Spartan-6
+		// Xilinx HDL Libraries Guide, version 14.7
+
+		ODDR2 #(
+			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+		)
+		ODDR2_inst(
+			.Q(dq_w_q),  // 1-bit DDR output data
+			.C0(dqs_r),  // 1-bit clock input
+			.C1(dqs_n_r),  // 1-bit clock input
+			.CE(1'b1),  // 1-bit clock enable input
+			.D0(dq_w_d1),    // 1-bit DDR data input (associated with C0)
+			.D1(dq_w_d0),    // 1-bit DDR data input (associated with C0)			
+			.R(reset),    // 1-bit reset input
+			.S(1'b0)     // 1-bit set input
+		);
+		// End of ODDR2_inst instantiation		
+
+
+		wire [DQ_BITWIDTH-1:0] dq_w_oserdes;
+		assign dq_w = dq_w_oserdes;
+
 		oserdes #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
 		dq_oserdes
 		(
 			.clock_in(dqs_w),
-			.data_in(dq_w_oserdes),
-			.data_out(data_to_ram)
+			.data_in(data_to_ram),
+			.data_out(dq_w_oserdes)
 		);
 
 		// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
