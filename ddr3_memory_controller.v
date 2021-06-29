@@ -695,6 +695,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		
 		// See https://www.edaboard.com/threads/phase-detection-mechanism.398492/ for an
 		// understanding on how the dynamic phase calibration mechanism works
+		
 		phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
 		pd_state_machine (
 			.use_phase_detector 	(use_phase_detector),
@@ -787,18 +788,18 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			dq_r_iserdes <= (dqs_r) ?  dq_r_q0: dq_r_q1;
 
 
-		// splits single 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') DDR signals
+		// splits single 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
 		reg [DQ_BITWIDTH-1:0] dq_w_d0;
 		reg [DQ_BITWIDTH-1:0] dq_w_d1;
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes;
 
-		always @(dqs_w) dq_w_d0 <= dq_w_oserdes;
-		always @(dqs_n_w) dq_w_d1 <= dq_w_oserdes;
+		always @(posedge dqs_w)   dq_w_d0 <= dq_w_oserdes;
+		always @(posedge dqs_n_w) dq_w_d1 <= dq_w_oserdes;
 		
 		
 		// why need IOSERDES primitives ?
 		// because you want a memory transaction rate much higher than the main clock frequency 
-		// and you don't want to require a very high main clock frequency
+		// but you don't want to require a very high main clock frequency
 		
 		// send a write of 8w bits to the memory controller, 
 		// which is similar to bundling multiple transactions into one wider one,
@@ -807,19 +808,25 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// This literally means SERDES_RATIO=8 
 		// localparam SERDES_RATIO = 8;
 
-		iserdes #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
 		dq_iserdes
 		(
-			.clock_in(dqs_r),
+			// fast clock domain
+			.high_speed_clock(dqs_r),
 			.data_in(dq_r_iserdes),
+			
+			// slow clock domain
 			.data_out(data_from_ram)
 		);
 
-		oserdes #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
 		dq_oserdes
 		(
-			.clock_in(dqs_w),
+			// slow clock domain
 			.data_in(data_to_ram),
+			
+			// fast clock domain
+			.high_speed_clock(dqs_w),
 			.data_out(dq_w_oserdes)
 		);
 
@@ -1103,7 +1110,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.C1(dqs_n_w),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C0)
-			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C0)			
+			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
