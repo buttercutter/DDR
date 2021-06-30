@@ -549,8 +549,11 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 
 `else
 
+	wire ck_90;
+	wire ck_180;
+	wire ck_270;
+
 	`ifdef XILINX
-		wire ck_180;
 	
 		pll pll_ddr
 		(	// Clock in ports
@@ -559,7 +562,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			// Clock out ports
 			.ck(ck),  // OUT 400MHz, 0 phase shift
 			.ck_90(ck_90),  // OUT 400MHz, 90 phase shift, for dq phase shifting purpose
-			.ck_180(ck_180),  // OUT 400MHz, 180 phase shift, 180 degree phase-shifted
+			.ck_180(ck_180),  // OUT 400MHz, 180 phase shift
+			.ck_270(ck_270),  // OUT 400MHz, 270 phase shift, for dq phase shifting purpose
 			
 			// Status and control signals
 			.reset(reset),  // IN
@@ -568,13 +572,13 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 	`endif
 
 	`ifdef USE_x16
-		assign ldqs_w = ck;
-		assign ldqs_n_w = ck_180;
-		assign udqs_w = ck;
-		assign udqs_n_w = ck_180;		
+		assign ldqs_w = ck_90;
+		assign ldqs_n_w = ck_270;
+		assign udqs_w = ck_90;
+		assign udqs_n_w = ck_270;		
 	`else
-		assign dqs_w = ck;
-		assign dqs_n_w = ck_180;
+		assign dqs_w = ck_90;
+		assign dqs_n_w = ck_270;
 	`endif
 
 `endif
@@ -795,8 +799,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
-		always @(posedge dqs_w)   dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-		always @(posedge dqs_n_w) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
+		always @(posedge ck)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck_180) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
 		
 		// why need IOSERDES primitives ?
@@ -825,7 +829,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// There is need to use two separate OSERDES because ODDR2 expects its D0 and D1 inputs to be
 		// presented to it at a DDR clock rate of 303MHz (D0 at posedge of 303MHz, D1 at negedge of 303MHz),
 		// where 303MHz is the minimum DDR3 RAM working frequency.
-		// However, one single SDR OSERDES alone could not fulfill this data rate requiremen of ODDR2
+		// However, one single SDR OSERDES alone could not fulfill this data rate requirement of ODDR2
 
 		// For example, a 8:1 DDR OSERDES which takes 8 inputs D0,D1,D2,D3,D4,D5,D6,D7 and output them serially
 		
@@ -857,7 +861,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 				
 				if((data_index % EVEN_RATIO) == 0)
 				begin
-					always @(posedge clk)
+					always @(*)
 					begin
 						data_in_oserdes_0[data_index >> 1] <= data_to_ram[data_index];
 					end
@@ -865,7 +869,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 				
 				else begin
 						
-					always @(posedge clk)
+					always @(*)
 					begin
 						data_in_oserdes_1[data_index >> 1] <= data_to_ram[data_index];
 					end
@@ -1173,8 +1177,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		)
 		ODDR2_inst(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
-			.C0(dqs_w),  // 1-bit clock input
-			.C1(dqs_n_w),  // 1-bit clock input
+			.C0(ck),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C0)
 			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C1)			
