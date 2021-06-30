@@ -857,7 +857,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			for(data_index = 0; data_index < (DQ_BITWIDTH*SERDES_RATIO); data_index = data_index + 1)
 			begin: data_to_ram_split_loop
 				
-				integer EVEN_RATIO = 2;
+				localparam EVEN_RATIO = 2;
 				
 				if((data_index % EVEN_RATIO) == 0)
 				begin

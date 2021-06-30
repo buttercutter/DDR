@@ -11,7 +11,7 @@ module serializer
 
 always @(posedge high_speed_clock)
 begin
-	data_out <= data_in[0 +: D)];
+	data_out <= data_in[0 +: D];
 end
 
 endmodule
