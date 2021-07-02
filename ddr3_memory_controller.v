@@ -698,8 +698,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		// Will use Micron built-in features (Write leveling, MPR_Read_function) to facilitate skew calibration
 		
 		// See https://www.edaboard.com/threads/phase-detection-mechanism.398492/ for an
-		// understanding on how the dynamic phase calibration mechanism works
-		
+		// understanding on how the dynamic(real-time) phase calibration mechanism works
+		/*
 		phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
 		pd_state_machine (
 			.use_phase_detector 	(use_phase_detector),
@@ -716,8 +716,11 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.inc			(inc_data),
 			.debug			(debug)
 		);
+		*/
 
-
+		// 90 degree phase-shifted which means READ DQS strobe is now at the center of incoming parallel DQ bits
+		wire delayed_dqs_r;
+		
 		IODELAY2 #(
 			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
 			.IDELAY_VALUE  		(0), 			// {0 ... 255}
@@ -727,54 +730,24 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.IDELAY_TYPE   		("DIFF_PHASE_DETECTOR"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
 			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
 			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
-			.SERDES_MODE   		("MASTER") 		// <NONE>, MASTER, SLAVE
+			.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
 		)
 		iodelay_m (
-			.IDATAIN  		(rx_data_in_fix[i]), 	// data from primary IOB
+			.IDATAIN  		(dqs_r), 	// data from primary IOB
 			.TOUT     		(), 			// tri-state signal to IOB
 			.DOUT     		(), 			// output data to IOB
 			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
 			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
-			.DATAOUT  		(ddly_m[i]), 		// Output data 1 to ILOGIC/ISERDES2
+			.DATAOUT  		(delayed_dqs_r), 		// Output data 1 to ILOGIC/ISERDES2
 			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
-			.IOCLK0   		(rxioclkp), 		// High speed clock for calibration
-			.IOCLK1   		(rxioclkn), 		// High speed clock for calibration
-			.CLK      		(gclk), 		// Fabric clock (GCLK) for control signals
-			.CAL      		(cal_data_master),	// Calibrate control signal
-			.INC      		(inc_data[i]), 		// Increment counter
-			.CE       		(ce_data[i]), 		// Clock Enable
-			.RST      		(rst_data),		// Reset delay line
+			.IOCLK0   		(ck), 		// High speed clock for calibration
+			.IOCLK1   		(ck_180), 		// High speed clock for calibration
+			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
+			.CAL      		(cal_data),	// Calibrate control signal
+			.INC      		(inc_data), 		// Increment counter
+			.CE       		(1'b1), 		// Clock Enable
+			.RST      		(reset),		// Reset delay line
 			.BUSY      		()	// output signal indicating sync circuit has finished / calibration has finished
-		);
-		
-
-		IODELAY2 #(
-			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
-			.IDELAY_VALUE  		(0), 			// {0 ... 255}
-			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
-			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
-			.ODELAY_VALUE  		(0), 			// {0 ... 255}
-			.IDELAY_TYPE   		("DIFF_PHASE_DETECTOR"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
-			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
-			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
-			.SERDES_MODE   		("SLAVE") 		// <NONE>, MASTER, SLAVE
-		)
-		iodelay_s (
-			.IDATAIN 		(rx_data_in_fix[i]), 	// data from primary IOB
-			.TOUT     		(), 			// tri-state signal to IOB
-			.DOUT     		(), 			// output data to IOB
-			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
-			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
-			.DATAOUT  		(ddly_s[i]), 		// Output data 1 to ILOGIC/ISERDES2
-			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
-			.IOCLK0   		(rxioclkp), 		// High speed clock for calibration
-			.IOCLK1   		(rxioclkn), 		// High speed clock for calibration
-			.CLK      		(gclk), 		// Fabric clock (GCLK) for control signals
-			.CAL      		(cal_data_slave),	// Calibrate control signal
-			.INC      		(inc_data[i]), 		// Increment counter
-			.CE       		(ce_data[i]), 		// Clock Enable
-			.RST      		(rst_data),		// Reset delay line
-			.BUSY      		(busy_data[i]) // output signal indicating sync circuit has finished / calibration has finished
 		);
 
 
@@ -788,8 +761,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		wire [DQ_BITWIDTH-1:0] dq_r_q1;
 		reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
 		
-		always @(dq_r_q0, dq_r_q1, dqs_r)
-			dq_r_iserdes <= (dqs_r) ?  dq_r_q0: dq_r_q1;
+		always @(dq_r_q0, dq_r_q1, delayed_dqs_r)
+			dq_r_iserdes <= (delayed_dqs_r) ?  dq_r_q0: dq_r_q1;
 
 
 		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
