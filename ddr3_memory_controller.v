@@ -271,12 +271,20 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 `ifndef USE_ILA
 	`ifndef MICRON_SIM
 		`ifndef XILINX
-		reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+			reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 		`else
-		reg [4:0] main_state;
+			reg [4:0] main_state;
 		`endif
 	`endif
 `endif
+
+`ifndef XILINX
+	reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
+`else
+	reg [4:0] previous_main_state;
+`endif
+
+always @(posedge clk) previous_main_state <= main_state;
 
 
 `ifndef USE_ILA
@@ -320,80 +328,92 @@ localparam STATE_INIT_MRS_0 = 19;
 
 `ifdef FORMAL
 
-// just to make the cover() spends lesser time to complete
-localparam TIME_INITIAL_RESET_ACTIVE = 2;
-localparam TIME_INITIAL_CK_INACTIVE = 2;
-localparam TIME_TZQINIT = 2;
-localparam TIME_RL = 2;
-localparam TIME_WL = 2;
-localparam TIME_TBURST = 2;
-localparam TIME_TXPR = 2;
-localparam TIME_TMRD = 2;
-localparam TIME_TMOD = 2;
-localparam TIME_TRFC = 2;
-localparam TIME_TREFI = 2;
+	// just to make the cover() spends lesser time to complete
+	localparam TIME_INITIAL_RESET_ACTIVE = 2;
+	localparam TIME_INITIAL_CK_INACTIVE = 2;
+	localparam TIME_TZQINIT = 2;
+	localparam TIME_RL = 2;
+	localparam TIME_WL = 2;
+	localparam TIME_TBURST = 2;
+	localparam TIME_TXPR = 2;
+	localparam TIME_TMRD = 2;
+	localparam TIME_TMOD = 2;
+	localparam TIME_TRFC = 2;
+	localparam TIME_TREFI = 2;
+	localparam TIME_TDLLK = 2;
 
 `else
+
+	`ifndef XILINX
+	
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+
+		`ifdef RAM_SIZE_1GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+
+		`elsif RAM_SIZE_2GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CK_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+
+		`elsif RAM_SIZE_4GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CK_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+		`endif
+
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
+		
+	`else
+			
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+
+		`ifdef RAM_SIZE_1GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+
+		`elsif RAM_SIZE_2GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 8;
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 9;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+
+		`elsif RAM_SIZE_4GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 13;
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 14;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+		`endif
+
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Maximum average periodic refresh
+
+	`endif
+
+	localparam TIME_TDLLK = 512;  // tDLLK = 512 clock cycles, DLL locking time
+	localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
+	localparam TIME_RL = 5;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
+	localparam TIME_WL = 5;  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
+	localparam TIME_TBURST = 4;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
+	localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
+	localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
+
+`endif
 
 `ifndef XILINX
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
-`ifdef RAM_SIZE_1GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
-
-`elsif RAM_SIZE_2GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CK_PERIOD);
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
-
-`elsif RAM_SIZE_4GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CK_PERIOD);
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
-`endif
-
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CK_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_PERIOD));  // Minimum 195ps, setup time
+	
 `else
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
-`ifdef RAM_SIZE_1GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
-
-`elsif RAM_SIZE_2GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 8;
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 9;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
-
-`elsif RAM_SIZE_4GB
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 13;
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 14;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
-`endif
-
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Maximum average periodic refresh
-`endif
-
-localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
-localparam TIME_RL = 5;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
-localparam TIME_WL = 5;  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
-localparam TIME_TBURST = 4;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
-localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
-localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
-
-`endif
-
-`ifndef XILINX
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_PERIOD));  // Minimum 195ps, setup time
-`else
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = 1;  // Minimum 195ps, setup time
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = 2;  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = 1;  // Minimum 195ps, setup time
+	
 `endif
 
 localparam TIME_TDAL = TIME_TWR + TIME_TRP;  // Auto precharge write recovery + precharge time
@@ -437,10 +457,10 @@ localparam AL = 2'b0;  // Additive latency disabled
 localparam DLL_EN = 1'b0;  // DLL is enabled
 
 // Mode register 3 (MR3) settings
-reg MPR_ENABLE;  // for use of state machine
+reg MPR_ENABLE;  // for use with finite state machine
 localparam MPR_EN = 1'b1;  // enables or disables Dataflow from MPR, in most cases it is a must to enable
 localparam MPR_READ_FUNCTION = 2'b0;  // Predefined data pattern for READ synchronization
-
+localparam MPR_BITWIDTH_COMBINED = 3;  // the three least-significant-bits of MR3
 
 localparam A10 = 10;  // address bit for auto-precharge option
 localparam A12 = 12;  // address bit for burst-chop option
@@ -1412,7 +1432,7 @@ begin
 		refresh_Queue <= 0;
 		postponed_refresh_timing_count <= 0;
 		refresh_timing_count <= 0;
-		MPR_ENABLE <= MPR_EN;
+		MPR_ENABLE <= 0;
 	end
 
 `ifdef HIGH_SPEED
@@ -1560,12 +1580,13 @@ begin
 	                        			
 				if(wait_count > TIME_TMRD-1)
 				begin
-					// prepare necessary parameters for next state				
+					// prepare necessary parameters for MR3 state				
 					main_state <= STATE_INIT_MRS_3;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
 					
 					// MPR Read function enabled
-					address <= {{11{1'b0}}, MPR_ENABLE, MPR_READ_FUNCTION};					
+					address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+								MPR_ENABLE, MPR_READ_FUNCTION};					
 					
 					wait_count <= 0;
 					
@@ -1593,61 +1614,75 @@ begin
 				cas_n <= 1;
 				we_n <= 1;	
 				
-				// finished MPR System Read Calibration, just returned from STATE_READ_DATA
+
 				if(MPR_ENABLE == 0)
 				begin
-					// this is the second MRS command, for switching to another Mode Register (MR1)
-					if(wait_count > TIME_TMRD+TIME_TMPRR-1) begin
-						// prepare necessary parameters for next state				
-						main_state <= STATE_INIT_MRS_1;
-						bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+				
+					// finished MPR System Read Calibration, just returned from STATE_READ_DATA
+					if(previous_main_state == STATE_READ_DATA)
+					begin
 
-						`ifdef USE_x16
-						
-							`ifdef RAM_SIZE_1GB
-								address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								
-							`elsif RAM_SIZE_2GB
-								address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								
-							`elsif RAM_SIZE_4GB
-								address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-							`endif
-						`else
+						// this is a MRS command, for turning off MPR System Read Calibration Mode
+						if(wait_count > TIME_TMPRR-1) begin
+							main_state <= STATE_IDLE;
+							wait_count <= 0;	
 							
-							`ifdef RAM_SIZE_1GB
-								address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								
-							`elsif RAM_SIZE_2GB
-								address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								
-							`elsif RAM_SIZE_4GB
-								address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-							`endif
-						`endif
-						
-						wait_count <= 0;
-						
-						// no more NOP command in next 'ck' cycle, transition to MR1 command
-						cs_n <= 0;
-						ras_n <= 0;
-						cas_n <= 0;
-						we_n <= 0;						
+							bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+											
+							// MRS command
+							cs_n <= 0;
+							ras_n <= 0;
+							cas_n <= 0;
+							we_n <= 0;	
+							
+							// MPR Read function disabled					
+							address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+										MPR_ENABLE, MPR_READ_FUNCTION};				
+						end
 					end
+					
+					// must fully initialize the DDR3 chip, right past the ZQCL before we can read the MPR.
+					// See Figure 48 on the DDR RAM initialization sequence
+					// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3599352/#msg3599352
+					else begin
+					
+						if(wait_count > TIME_TMRD-1) begin
+							// prepare necessary parameters for next MRS				
+							main_state <= STATE_INIT_MRS_1;
+							bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
 
-					// this is the first MRS command, for turning off MPR System Read Calibration Mode
-					else if(wait_count > TIME_TMPRR-1) begin
-						main_state <= STATE_INIT_MRS_3;
-						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
-										
-						// MRS command
-						cs_n <= 0;
-						ras_n <= 0;
-						cas_n <= 0;
-						we_n <= 0;	
-						
-						// MPR Read function disabled					
-						address <= {{11{1'b0}}, MPR_ENABLE, MPR_READ_FUNCTION};				
+							`ifdef USE_x16
+							
+								`ifdef RAM_SIZE_1GB
+									address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+									
+								`elsif RAM_SIZE_2GB
+									address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+									
+								`elsif RAM_SIZE_4GB
+									address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+								`endif
+							`else
+								
+								`ifdef RAM_SIZE_1GB
+									address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+									
+								`elsif RAM_SIZE_2GB
+									address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+									
+								`elsif RAM_SIZE_4GB
+									address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+								`endif
+							`endif
+							
+							wait_count <= 0;
+							
+							// no more NOP command in next 'ck' cycle, transition to MR1 command
+							cs_n <= 0;
+							ras_n <= 0;
+							cas_n <= 0;
+							we_n <= 0;						
+						end					
 					end
 				end
 				
@@ -1661,7 +1696,6 @@ begin
 					we_n <= 1;
 											
 					main_state <= STATE_READ_AP;
-					address[A10] <= 1;  // for auto-precharge
 					address[2:0] <= 0;  // required by spec, see Figure 59 or https://i.imgur.com/K1qrMME.png
 
 					/*
@@ -1821,6 +1855,7 @@ begin
 	
 				if(wait_count > TIME_TZQINIT-1)
 				begin
+					MPR_ENABLE <= MPR_EN;  // turns on MPR System Read Calibration
 					main_state <= STATE_IDLE;
 					wait_count <= 0;
 				end
@@ -1868,13 +1903,16 @@ begin
 	                wait_count <= 0;
 	            end
 	            
-	            else if (write_is_enabled | read_is_enabled)
+	            else if (write_is_enabled | read_is_enabled | MPR_ENABLE)
 	            begin
 	            	ck_en <= 1;
 	            	cs_n <= 0;
 	            	ras_n <= 0;
 	            	cas_n <= 1;
 	            	we_n <= 1;
+	            	
+					bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+	            		
 	                main_state <= STATE_ACTIVATE;
 	                
 	                wait_count <= 0;
@@ -1930,12 +1968,32 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 
+
+				// Note that tRAS > tRCD
+				if(wait_count > TIME_TRAS-1)
+				begin
+					if(MPR_ENABLE)  // MPR System Read Calibration
+					begin
+						// need to do PRECHARGE after ACTIVATE
+
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 0;
+						cas_n <= 1;
+						we_n <= 0;
+						address[A10] <= 0;
+			            main_state <= STATE_PRECHARGE;
+			            
+			            wait_count <= 0;				
+					end
+				end
+								
 				// auto-precharge (AP) is easier for now. In the end it will be manually precharging 
 				// (since many read/write commands may use the same row) but for now, simple is better	
 						
-				if(wait_count > TIME_TRCD-1)
+				else if(wait_count > TIME_TRCD-1)
 				begin
-					if(write_is_enabled)  // write operation has higher priority
+					if(write_is_enabled)  // write operation has higher priority during loopback test
 					begin					
 						// no more NOP command in next 'ck' cycle, transition to WRAP command
 						ck_en <= 1;
@@ -1965,8 +2023,10 @@ begin
 						ras_n <= 1;
 						cas_n <= 0;
 						we_n <= 1;
+						
 						address[A10] <= 1;
 						main_state <= STATE_READ_AP;
+						
 						wait_count <= 0;
 					end
 				end
@@ -1993,7 +2053,7 @@ begin
 						   		
 						   		1'b1,  // A12 : no burst-chop
 								i_user_data_address[A10+1], 
-								1'b1,  // A10 : use auto-precharge
+								1'b0,  // A10 : no auto-precharge
 								i_user_data_address[A10-1:0]
 							};
 				
@@ -2063,8 +2123,12 @@ begin
 						ras_n <= 1;
 						cas_n <= 0;
 						we_n <= 1;
-						address[A10] <= 1;
-						main_state <= STATE_READ_AP;
+						
+						// no auto-precharge such that the
+						// MPR System Read Calibration may not need to issue ACT command again to reopen banks
+						address[A10] <= 0;
+						main_state <= STATE_READ;
+						
 						wait_count <= 0;					
 					`else
 						main_state <= STATE_IDLE;
@@ -2085,7 +2149,34 @@ begin
 						
 			STATE_READ :
 			begin
-			
+				ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				cs_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;	
+				
+				address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								1'b0,  // A10 : no auto-precharge
+								i_user_data_address[A10-1:0]
+							};
+				
+				if(wait_count > TIME_RL-1)
+				begin
+					main_state <= STATE_READ_DATA;
+					wait_count <= 0;
+				end
+				
+				else begin
+					main_state <= STATE_READ;
+				end				
 			end
 					
 			STATE_READ_AP :
@@ -2128,12 +2219,9 @@ begin
 			
 				if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
 				begin
-					if(MPR_ENABLE)  // MPR System Read Calibration mode
-						main_state <= STATE_INIT_MRS_3;  // go back to finish off the initialization sequence
+					main_state <= STATE_IDLE;
 					
-					else main_state <= STATE_IDLE;
-					
-					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished
+					//MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished
 					
 					wait_count <= 0;
 				end
@@ -2161,7 +2249,7 @@ begin
 				address[A10] <= 0;
 				
 				if(wait_count > TIME_TRP-1)
-				begin
+				begin		
 					main_state <= STATE_REFRESH;
 					wait_count <= 0;
 					
@@ -2170,7 +2258,7 @@ begin
 					cs_n <= 0;
 					ras_n <= 0;
 					cas_n <= 0;
-					we_n <= 1;					
+					we_n <= 1;	
 				end
 				
 				else begin
@@ -2208,8 +2296,29 @@ begin
 				
 				if(wait_count > TIME_TRFC-1)
 				begin
-					main_state <= STATE_IDLE;
-					wait_count <= 0;
+					if(MPR_ENABLE)  // MPR System Read Calibration has the highest priority
+					begin
+						// prepare necessary parameters for next state				
+						main_state <= STATE_INIT_MRS_3;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+						
+						// MPR Read function enabled
+						address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+									MPR_ENABLE, MPR_READ_FUNCTION};					
+						
+						wait_count <= 0;
+						
+						// no more NOP command in next 'ck' cycle, transition to MR3 command
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;					
+					end
+					
+					else begin				
+						main_state <= STATE_IDLE;
+						wait_count <= 0;
+					end
 				end
 				
 				else begin

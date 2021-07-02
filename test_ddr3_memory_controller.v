@@ -304,6 +304,7 @@ reg done_writing, done_reading;
 	assign done = (done_writing & done_reading);  // finish a data loopback transaction
 
 	localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 8;  // only 8 pieces of data are used during data loopback integrity test
+	localparam STARTING_VALUE_OF_TEST_DATA = 5;  // starts from 5
 
 	`ifdef HIGH_SPEED
 	genvar data_write_index;
@@ -317,7 +318,7 @@ reg done_writing, done_reading;
 				if(reset) 
 				begin
 					i_user_data_address <= 0;
-					test_data <= 0;
+					test_data <= STARTING_VALUE_OF_TEST_DATA;
 					`ifdef HIGH_SPEED
 						data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
 					`else
@@ -358,9 +359,9 @@ reg done_writing, done_reading;
 					`endif
 					
 					test_data <= test_data + 1;
-					write_enable <= (test_data < (NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
-					read_enable <= (test_data >= (NUM_OF_TEST_DATA-1));  // starts the readback operation
-					done_writing <= (test_data >= (NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
+					write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
+					read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // starts the readback operation
+					done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
 					done_reading <= 0;
 				end
 				
@@ -381,9 +382,10 @@ reg done_writing, done_reading;
 					done_writing <= done_writing;
 					
 					`ifdef USE_x16			
-					if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >= (NUM_OF_TEST_DATA-1))
+					if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >=
+					 									 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
 					`else
-					if(data_from_ram[0 +: DQ_BITWIDTH] >= (NUM_OF_TEST_DATA-1))
+					if(data_from_ram[0 +: DQ_BITWIDTH] >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
 					`endif			
 					begin
 						done_reading <= 1;
