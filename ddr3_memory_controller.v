@@ -401,6 +401,7 @@ localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time betwee
 localparam TIME_TRPST = 1;  // this is for read post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
 localparam TIME_TWPRE = 1;  // this is for write pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
 localparam TIME_TWPST = 1;  // this is for write post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
+localparam TIME_TMPRR = 1;  // this is for MPR System Read Calibration.  It is the time between MULTIPURPOSE REGISTER READ burst end until mode register set for multipurpose register exit
 
 
 localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
@@ -434,6 +435,11 @@ localparam ODS_2 = 1'b1;
 localparam ODS = {ODS_5, ODS_2};  // Output drive strength set at 34 ohm
 localparam AL = 2'b0;  // Additive latency disabled
 localparam DLL_EN = 1'b0;  // DLL is enabled
+
+// Mode register 3 (MR3) settings
+reg MPR_ENABLE;  // for use of state machine
+localparam MPR_EN = 1'b1;  // enables or disables Dataflow from MPR, in most cases it is a must to enable
+localparam MPR_READ_FUNCTION = 2'b0;  // Predefined data pattern for READ synchronization
 
 
 localparam A10 = 10;  // address bit for auto-precharge option
@@ -727,7 +733,7 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
 			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
 			.ODELAY_VALUE  		(0), 			// {0 ... 255}
-			.IDELAY_TYPE   		("DIFF_PHASE_DETECTOR"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
+			.IDELAY_TYPE   		("VARIABLE_FROM_HALF_MAX"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
 			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
 			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
 			.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
@@ -751,8 +757,8 @@ localparam HIGH_REFRESH_QUEUE_THRESHOLD = 4;
 		);
 
 
-		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES		
-		// OSERDES -> ODDR2 (output DDR buffer) -> IOBUF (for inout) -> RAM
+		// RAM -> IOBUF (for inout) -> IDELAY (DQS Centering) -> IDDR2 (input DDR buffer) -> ISERDES		
+		// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
 		
 		wire dqs_r = (udqs_r | ldqs_r);	
 
@@ -1406,6 +1412,7 @@ begin
 		refresh_Queue <= 0;
 		postponed_refresh_timing_count <= 0;
 		refresh_timing_count <= 0;
+		MPR_ENABLE <= MPR_EN;
 	end
 
 `ifdef HIGH_SPEED
@@ -1556,7 +1563,9 @@ begin
 					// prepare necessary parameters for next state				
 					main_state <= STATE_INIT_MRS_3;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
-					address <= 0;  // MPR disabled					
+					
+					// MPR Read function enabled
+					address <= {{11{1'b0}}, MPR_ENABLE, MPR_READ_FUNCTION};					
 					
 					wait_count <= 0;
 					
@@ -1584,51 +1593,89 @@ begin
 				cas_n <= 1;
 				we_n <= 1;	
 				
-				// MPR disabled
-				address <= 0;
-				
-				if(wait_count > TIME_TMRD-1)
+				// finished MPR System Read Calibration, just returned from STATE_READ_DATA
+				if(MPR_ENABLE == 0)
 				begin
-					// prepare necessary parameters for next state				
-					main_state <= STATE_INIT_MRS_1;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+					// this is the second MRS command, for switching to another Mode Register (MR1)
+					if(wait_count > TIME_TMRD+TIME_TMPRR-1) begin
+						// prepare necessary parameters for next state				
+						main_state <= STATE_INIT_MRS_1;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
 
-					`ifdef USE_x16
-					
-						`ifdef RAM_SIZE_1GB
-							address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-							
-						`elsif RAM_SIZE_2GB
-							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-							
-						`elsif RAM_SIZE_4GB
-							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-						`endif
-					`else
+						`ifdef USE_x16
 						
-						`ifdef RAM_SIZE_1GB
-							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							`ifdef RAM_SIZE_1GB
+								address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+								
+							`elsif RAM_SIZE_2GB
+								address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+								
+							`elsif RAM_SIZE_4GB
+								address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							`endif
+						`else
 							
-						`elsif RAM_SIZE_2GB
-							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-							
-						`elsif RAM_SIZE_4GB
-							address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							`ifdef RAM_SIZE_1GB
+								address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+								
+							`elsif RAM_SIZE_2GB
+								address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+								
+							`elsif RAM_SIZE_4GB
+								address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							`endif
 						`endif
-					`endif
-					
-					wait_count <= 0;
-					
-					// no more NOP command in next 'ck' cycle, transition to MR1 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;						
+						
+						wait_count <= 0;
+						
+						// no more NOP command in next 'ck' cycle, transition to MR1 command
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;						
+					end
+
+					// this is the first MRS command, for turning off MPR System Read Calibration Mode
+					else if(wait_count > TIME_TMPRR-1) begin
+						main_state <= STATE_INIT_MRS_3;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+										
+						// MRS command
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;	
+						
+						// MPR Read function disabled					
+						address <= {{11{1'b0}}, MPR_ENABLE, MPR_READ_FUNCTION};				
+					end
 				end
 				
-				else begin
-					main_state <= STATE_INIT_MRS_3;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+				else if(wait_count > TIME_TMOD-1) begin
+					// MPR System READ calibration is a must for all Micron DDR RAM, 
+					// so transitions to RDAP command in next state
+					ck_en <= 1;
+					cs_n <= 0;			
+					ras_n <= 1;
+					cas_n <= 0;
+					we_n <= 1;
+											
+					main_state <= STATE_READ_AP;
+					address[A10] <= 1;  // for auto-precharge
+					address[2:0] <= 0;  // required by spec, see Figure 59 or https://i.imgur.com/K1qrMME.png
+
+					/*
+					• A[1:0] must be set to 00 as the burst order is fixed per nibble.
+					• A2 selects the burst order: BL8, A2 is set to 0, and the burst order is fixed to 0, 1, 2, 3, 4, 5, 6, 7.
+					• A[9:3] are “Don’t Care.”
+					• A10 is “Don’t Care.”
+					• A11 is “Don’t Care.”
+					• A12: Selects burst chop mode on-the-fly, if enabled within MR0.
+					• A13 is a “Don’t Care”
+					• BA[2:0] are “Don’t Care.”
+					*/
+					
+					wait_count <= 0;
 				end		
 			end
 			
@@ -2081,7 +2128,13 @@ begin
 			
 				if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
 				begin
-					main_state <= STATE_IDLE;
+					if(MPR_ENABLE)  // MPR System Read Calibration mode
+						main_state <= STATE_INIT_MRS_3;  // go back to finish off the initialization sequence
+					
+					else main_state <= STATE_IDLE;
+					
+					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished
+					
 					wait_count <= 0;
 				end
 
