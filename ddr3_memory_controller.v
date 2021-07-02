@@ -1981,7 +1981,7 @@ begin
 						ras_n <= 0;
 						cas_n <= 1;
 						we_n <= 0;
-						address[A10] <= 0;
+						address[A10] <= 1;  // precharge ALL banks
 			            main_state <= STATE_PRECHARGE;
 			            
 			            wait_count <= 0;				
