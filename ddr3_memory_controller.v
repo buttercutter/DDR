@@ -284,8 +284,6 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 	reg [4:0] previous_main_state;
 `endif
 
-always @(posedge clk) previous_main_state <= main_state;
-
 
 `ifndef USE_ILA
 	`ifndef XILINX
@@ -457,7 +455,7 @@ localparam AL = 2'b0;  // Additive latency disabled
 localparam DLL_EN = 1'b0;  // DLL is enabled
 
 // Mode register 3 (MR3) settings
-reg MPR_ENABLE, MPR_is_enabled;  // for use with finite state machine
+reg MPR_ENABLE;  // for use with finite state machine
 localparam MPR_EN = 1'b1;  // enables or disables Dataflow from MPR, in most cases it is a must to enable
 localparam MPR_READ_FUNCTION = 2'b0;  // Predefined data pattern for READ synchronization
 localparam MPR_BITWIDTH_COMBINED = 3;  // the three least-significant-bits of MR3
@@ -1421,6 +1419,7 @@ begin
 	if(reset) 
 	begin
 		main_state <= STATE_RESET;
+		previous_main_state <= STATE_RESET;
 		ck_en <= 0;
 		cs_n <= 1;			
 		ras_n <= 1;
@@ -1433,7 +1432,6 @@ begin
 		postponed_refresh_timing_count <= 0;
 		refresh_timing_count <= 0;
 		MPR_ENABLE <= 0;
-		MPR_is_enabled <= 0;
 	end
 
 `ifdef HIGH_SPEED
@@ -1458,6 +1456,7 @@ begin
 		if(read_enable) read_is_enabled <= 1;
 	
 		wait_count <= wait_count + 1;
+		previous_main_state <= main_state;
 
 		if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
 			
@@ -1623,23 +1622,20 @@ begin
 					if(previous_main_state == STATE_READ_DATA)
 					begin
 
+						main_state <= STATE_IDLE;
+						wait_count <= 0;	
+						
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+										
 						// this is a MRS command, for turning off MPR System Read Calibration Mode
-						if(wait_count > TIME_TMPRR-1) begin
-							main_state <= STATE_IDLE;
-							wait_count <= 0;	
-							
-							bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
-											
-							// MRS command
-							cs_n <= 0;
-							ras_n <= 0;
-							cas_n <= 0;
-							we_n <= 0;	
-							
-							// MPR Read function disabled					
-							address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
-										MPR_ENABLE, MPR_READ_FUNCTION};				
-						end
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;	
+						
+						// MPR Read function disabled					
+						address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+									MPR_ENABLE, MPR_READ_FUNCTION};										
 					end
 					
 					// must fully initialize the DDR3 chip, right past the ZQCL before we can read the MPR.
@@ -1687,6 +1683,8 @@ begin
 					end
 				end
 				
+				// Issues READ command at tMOD after MRS command is issued
+				// See Figure 59 or https://i.imgur.com/K1qrMME.png 
 				else if(wait_count > TIME_TMOD-1) begin
 					// MPR System READ calibration is a must for all Micron DDR RAM, 
 					// so transitions to RDAP command in next state
@@ -1889,7 +1887,7 @@ begin
 				end	
 
 
-				if ((~MPR_is_enabled && MPR_ENABLE) ||
+				if ((MPR_ENABLE) ||
 	                (extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request) ||
 	            	((user_desired_extra_read_or_write_cycles == 0) & it_is_time_to_do_refresh_now))
 	            begin
@@ -1904,8 +1902,6 @@ begin
 	                main_state <= STATE_PRECHARGE;
 	                
 	                wait_count <= 0;
-	                
-	                MPR_is_enabled <= 1;
 	            end
 	            
 	            else if (write_is_enabled | read_is_enabled)
@@ -2201,27 +2197,43 @@ begin
 				// For read, we get the unshifted DQS from the RAM and have to phase-shift it ourselves before 
 				// using it as a clock strobe signal to sample (or capture) DQ signal
 			
-				if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
+				if(wait_count > (TIME_TBURST + TIME_TRPST + TIME_TMPRR)-1)
 				begin
-					if(MPR_is_enabled) main_state <= STATE_INIT_MRS_3;
-					
-					else main_state <= STATE_IDLE;
-					
-					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished
-					MPR_is_enabled <= 0;
-					
-					wait_count <= 0;
+					if(MPR_ENABLE)
+					begin
+						main_state <= STATE_INIT_MRS_3;
+						
+						// no more NOP command in next 'ck' cycle, transition to MR3 command
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;	
+						
+						MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished			
+						
+						wait_count <= 0;				
+					end	
 				end
 
+				else if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
+				begin
+					if(MPR_ENABLE == 0)  // MPR System Read Calibration is already done previously
+					begin
+						main_state <= STATE_IDLE;
+						
+						// NOP command in next 'ck' cycle, transition to IDLE command
+						cs_n <= 0;
+						ras_n <= 1;
+						cas_n <= 1;
+						we_n <= 1;								
+					end		
+				end
+				
 				else if(wait_count > TIME_TBURST-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					read_is_enabled <= 0;
-				end
-								
-				else begin
-					main_state <= STATE_READ_DATA;
-				end					
+				end			
 			end
 						
 			STATE_PRECHARGE :
@@ -2237,7 +2249,7 @@ begin
 				
 				if(wait_count > TIME_TRP-1)
 				begin
-					if(MPR_is_enabled)  // MPR System Read Calibration has higher priority
+					if(MPR_ENABLE)  // MPR System Read Calibration has higher priority
 					begin
 						// prepare necessary parameters for next state				
 						main_state <= STATE_INIT_MRS_3;
