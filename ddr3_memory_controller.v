@@ -245,7 +245,7 @@ end
 localparam MRS = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (~we_n);
 localparam REF = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (we_n);
 localparam PRE = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (cas_n) & (~we_n) & (~A10);
-localparam PREA = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (~cas_n) & (~we_n) & (A10);
+localparam PREA = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (cas_n) & (~we_n) & (A10);
 localparam ACT = (previous_clk_en) & (ck_en) & (~cs_n) & (~ras_n) & (cas_n) & (we_n);
 localparam WR = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (~we_n) & (~A10);
 localparam WRS4 = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (~cas_n) & (~we_n) & (~A12) & (~A10);
@@ -457,7 +457,7 @@ localparam AL = 2'b0;  // Additive latency disabled
 localparam DLL_EN = 1'b0;  // DLL is enabled
 
 // Mode register 3 (MR3) settings
-reg MPR_ENABLE;  // for use with finite state machine
+reg MPR_ENABLE, MPR_is_enabled;  // for use with finite state machine
 localparam MPR_EN = 1'b1;  // enables or disables Dataflow from MPR, in most cases it is a must to enable
 localparam MPR_READ_FUNCTION = 2'b0;  // Predefined data pattern for READ synchronization
 localparam MPR_BITWIDTH_COMBINED = 3;  // the three least-significant-bits of MR3
@@ -1433,6 +1433,7 @@ begin
 		postponed_refresh_timing_count <= 0;
 		refresh_timing_count <= 0;
 		MPR_ENABLE <= 0;
+		MPR_is_enabled <= 0;
 	end
 
 `ifdef HIGH_SPEED
@@ -1886,8 +1887,10 @@ begin
 				begin
 					refresh_Queue <= user_desired_extra_read_or_write_cycles;
 				end	
-				
-	            if ((extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request) ||
+
+
+				if ((~MPR_is_enabled && MPR_ENABLE) ||
+	                (extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request) ||
 	            	((user_desired_extra_read_or_write_cycles == 0) & it_is_time_to_do_refresh_now))
 	            begin
 					// need to do PRECHARGE before REFRESH, see tRP
@@ -1901,9 +1904,11 @@ begin
 	                main_state <= STATE_PRECHARGE;
 	                
 	                wait_count <= 0;
+	                
+	                MPR_is_enabled <= 1;
 	            end
 	            
-	            else if (write_is_enabled | read_is_enabled | MPR_ENABLE)
+	            else if (write_is_enabled | read_is_enabled)
 	            begin
 	            	ck_en <= 1;
 	            	cs_n <= 0;
@@ -1911,9 +1916,7 @@ begin
 	            	cas_n <= 1;
 	            	we_n <= 1;
 	            	
-	            	if(MPR_ENABLE) bank_address <= 0;
-	            	
-					else bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+	            	bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 	            		
 	                main_state <= STATE_ACTIVATE;
 	                
@@ -1970,70 +1973,47 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 
-
-				// Note that tRAS > tRCD
-				if(wait_count > TIME_TRAS-1)
-				begin
-					if(MPR_ENABLE)  // MPR System Read Calibration
-					begin
-						// need to do PRECHARGE after ACTIVATE
-
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 0;
-						cas_n <= 1;
-						we_n <= 0;
-						address[A10] <= 1;  // precharge ALL banks
-			            main_state <= STATE_PRECHARGE;
-			            
-			            wait_count <= 0;				
-					end
-				end
-								
+												
 				// auto-precharge (AP) is easier for now. In the end it will be manually precharging 
 				// (since many read/write commands may use the same row) but for now, simple is better	
 						
-				else if(wait_count > TIME_TRCD-1)
+				if(wait_count > TIME_TRCD-1)
 				begin
-					// allow MPR System Read Calibration process to proceed first before user data loopback test
-					if(MPR_ENABLE == 0)
-					begin
-						if(write_is_enabled)  // write operation has higher priority during loopback test
-						begin					
-							// no more NOP command in next 'ck' cycle, transition to WRAP command
-							ck_en <= 1;
-							cs_n <= 0;			
-							ras_n <= 1;
-							cas_n <= 0;
-							we_n <= 0;
-							
-							`ifdef LOOPBACK
-								// for data loopback, auto-precharge will close the bank, 
-								// which means read operation could not proceeed without reopening the bank
-								address[A10] <= 0;
-								main_state <= STATE_WRITE;
-							`else
-								address[A10] <= 1;
-								main_state <= STATE_WRITE_AP;
-							`endif
-							
-							wait_count <= 0;
-						end
-							
-						else if(read_is_enabled) 
-						begin
-							// no more NOP command in next 'ck' cycle, transition to RDAP command
-							ck_en <= 1;
-							cs_n <= 0;			
-							ras_n <= 1;
-							cas_n <= 0;
-							we_n <= 1;
-							
+					if(write_is_enabled)  // write operation has higher priority during loopback test
+					begin					
+						// no more NOP command in next 'ck' cycle, transition to WRAP command
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 1;
+						cas_n <= 0;
+						we_n <= 0;
+						
+						`ifdef LOOPBACK
+							// for data loopback, auto-precharge will close the bank, 
+							// which means read operation could not proceeed without reopening the bank
+							address[A10] <= 0;
+							main_state <= STATE_WRITE;
+						`else
 							address[A10] <= 1;
-							main_state <= STATE_READ_AP;
-							
-							wait_count <= 0;
-						end
+							main_state <= STATE_WRITE_AP;
+						`endif
+						
+						wait_count <= 0;
+					end
+						
+					else if(read_is_enabled) 
+					begin
+						// no more NOP command in next 'ck' cycle, transition to RDAP command
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 1;
+						cas_n <= 0;
+						we_n <= 1;
+						
+						address[A10] <= 1;
+						main_state <= STATE_READ_AP;
+						
+						wait_count <= 0;
 					end
 				end
 				
@@ -2223,9 +2203,12 @@ begin
 			
 				if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
 				begin
-					main_state <= STATE_IDLE;
+					if(MPR_is_enabled) main_state <= STATE_INIT_MRS_3;
 					
-					//MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished
+					else main_state <= STATE_IDLE;
+					
+					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished
+					MPR_is_enabled <= 0;
 					
 					wait_count <= 0;
 				end
@@ -2247,22 +2230,43 @@ begin
 
 				ck_en <= 1;
 				cs_n <= 0;			
-				ras_n <= 1;
-				cas_n <= 0;
+				ras_n <= 0;
+				cas_n <= 1;
 				we_n <= 0;
-				address[A10] <= 0;
+				address[A10] <= 1;  // precharge ALL banks
 				
 				if(wait_count > TIME_TRP-1)
-				begin		
-					main_state <= STATE_REFRESH;
-					wait_count <= 0;
+				begin
+					if(MPR_is_enabled)  // MPR System Read Calibration has higher priority
+					begin
+						// prepare necessary parameters for next state				
+						main_state <= STATE_INIT_MRS_3;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+						
+						// MPR Read function enabled
+						address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+									MPR_ENABLE, MPR_READ_FUNCTION};					
+						
+						wait_count <= 0;
+						
+						// no more NOP command in next 'ck' cycle, transition to MR3 command
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;					
+					end
 					
-					// no more NOP command in next 'ck' cycle, transition to REF command
-					ck_en <= 1;
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 1;	
+					else begin					
+						main_state <= STATE_REFRESH;
+						wait_count <= 0;
+						
+						// no more NOP command in next 'ck' cycle, transition to REF command
+						ck_en <= 1;
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 1;
+					end
 				end
 				
 				else begin
@@ -2299,30 +2303,9 @@ begin
 					refresh_Queue <= refresh_Queue - 1;  // a countdown trigger for precharge/refresh operation
 				
 				if(wait_count > TIME_TRFC-1)
-				begin
-					if(MPR_ENABLE)  // MPR System Read Calibration has the highest priority
-					begin
-						// prepare necessary parameters for next state				
-						main_state <= STATE_INIT_MRS_3;
-						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
-						
-						// MPR Read function enabled
-						address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
-									MPR_ENABLE, MPR_READ_FUNCTION};					
-						
-						wait_count <= 0;
-						
-						// no more NOP command in next 'ck' cycle, transition to MR3 command
-						cs_n <= 0;
-						ras_n <= 0;
-						cas_n <= 0;
-						we_n <= 0;					
-					end
-					
-					else begin				
-						main_state <= STATE_IDLE;
-						wait_count <= 0;
-					end
+				begin			
+					main_state <= STATE_IDLE;
+					wait_count <= 0;
 				end
 				
 				else begin
