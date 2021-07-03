@@ -1911,7 +1911,9 @@ begin
 	            	cas_n <= 1;
 	            	we_n <= 1;
 	            	
-					bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+	            	if(MPR_ENABLE) bank_address <= 0;
+	            	
+					else bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 	            		
 	                main_state <= STATE_ACTIVATE;
 	                
@@ -1993,41 +1995,45 @@ begin
 						
 				else if(wait_count > TIME_TRCD-1)
 				begin
-					if(write_is_enabled)  // write operation has higher priority during loopback test
-					begin					
-						// no more NOP command in next 'ck' cycle, transition to WRAP command
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 0;
-						we_n <= 0;
-						
-						`ifdef LOOPBACK
-							// for data loopback, auto-precharge will close the bank, 
-							// which means read operation could not proceeed without reopening the bank
-							address[A10] <= 0;
-							main_state <= STATE_WRITE;
-						`else
-							address[A10] <= 1;
-							main_state <= STATE_WRITE_AP;
-						`endif
-						
-						wait_count <= 0;
-					end
-						
-					else if(read_is_enabled) 
+					// allow MPR System Read Calibration process to proceed first before user data loopback test
+					if(MPR_ENABLE == 0)
 					begin
-						// no more NOP command in next 'ck' cycle, transition to RDAP command
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 0;
-						we_n <= 1;
-						
-						address[A10] <= 1;
-						main_state <= STATE_READ_AP;
-						
-						wait_count <= 0;
+						if(write_is_enabled)  // write operation has higher priority during loopback test
+						begin					
+							// no more NOP command in next 'ck' cycle, transition to WRAP command
+							ck_en <= 1;
+							cs_n <= 0;			
+							ras_n <= 1;
+							cas_n <= 0;
+							we_n <= 0;
+							
+							`ifdef LOOPBACK
+								// for data loopback, auto-precharge will close the bank, 
+								// which means read operation could not proceeed without reopening the bank
+								address[A10] <= 0;
+								main_state <= STATE_WRITE;
+							`else
+								address[A10] <= 1;
+								main_state <= STATE_WRITE_AP;
+							`endif
+							
+							wait_count <= 0;
+						end
+							
+						else if(read_is_enabled) 
+						begin
+							// no more NOP command in next 'ck' cycle, transition to RDAP command
+							ck_en <= 1;
+							cs_n <= 0;			
+							ras_n <= 1;
+							cas_n <= 0;
+							we_n <= 1;
+							
+							address[A10] <= 1;
+							main_state <= STATE_READ_AP;
+							
+							wait_count <= 0;
+						end
 					end
 				end
 				
@@ -2124,10 +2130,8 @@ begin
 						cas_n <= 0;
 						we_n <= 1;
 						
-						// no auto-precharge such that the
-						// MPR System Read Calibration may not need to issue ACT command again to reopen banks
-						address[A10] <= 0;
-						main_state <= STATE_READ;
+						address[A10] <= 1;
+						main_state <= STATE_READ_AP;
 						
 						wait_count <= 0;					
 					`else
