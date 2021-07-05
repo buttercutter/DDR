@@ -747,6 +747,13 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// 90 degree phase-shifted which means READ DQS strobe is now at the center of incoming parallel DQ bits
 		wire delayed_dqs_r;
 		
+		// See https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=73
+		// Once BUSY is Low, the new delay value is operational.
+		wire idelay_is_busy;
+		reg idelay_is_busy_previously;
+		
+		always @(posedge clk) idelay_is_busy_previously <= idelay_is_busy;
+		
 		IODELAY2 #(
 			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
 			.IDELAY_VALUE  		(0), 			// {0 ... 255}
@@ -772,8 +779,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.CAL      		(cal_data),	// Calibrate control signal
 			.INC      		(inc_data), 		// Increment counter
 			.CE       		(1'b1), 		// Clock Enable
-			.RST      		(reset),		// Reset delay line
-			.BUSY      		()	// output signal indicating sync circuit has finished / calibration has finished
+			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
+			.BUSY      		(idelay_is_busy)	// output signal indicating sync circuit has finished / calibration has finished
 		);
 
 
@@ -1127,8 +1134,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
 	begin : dq_io
 
-		// RAM -> IOBUF (for inout)  -> IDDR2 (input DDR buffer) -> ISERDES
-		// OSERDES -> ODDR2 (output DDR buffer) -> IOBUF (for inout) -> RAM
+		// RAM -> IOBUF (for inout) -> IDELAY (DQS Centering) -> IDDR2 (input DDR buffer) -> ISERDES		
+		// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
 
 		IOBUF IO_dq (
 			.IO(dq[dq_index]),
