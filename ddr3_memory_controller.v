@@ -777,12 +777,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
 			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
 			.ODELAY_VALUE  		(0), 			// {0 ... 255}
-			.IDELAY_TYPE   		("VARIABLE_FROM_HALF_MAX"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
+			.IDELAY_TYPE   		("VARIABLE_FROM_ZERO"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
 			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
 			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
 			.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
 		)
-		iodelay_m (
+		iodelay_dqs_r (
 			.IDATAIN  		(dqs_r), 	// data from primary IOB
 			.TOUT     		(), 			// tri-state signal to IOB
 			.DOUT     		(), 			// output data to IOB
@@ -1178,7 +1178,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.INIT_Q1(1'b0),  // Sets initial state of the Q1 output to 1'b0 or 1'b1
 			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
-		IDDR2_inst(
+		IDDR2_dq_r(
 			.Q0(dq_r_q0[dq_index]),  // 1-bit output captured with C0 clock
 			.Q1(dq_r_q1[dq_index]),  // 1-bit output captured with C1 clock
 			.C0(dqs_r),  // 1-bit clock input
@@ -1200,7 +1200,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
-		ODDR2_inst(
+		ODDR2_dq_w(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
 			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
@@ -1233,7 +1233,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
 			.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
 		)
-		iodelay_inst (
+		iodelay_dq_r (
 			.IDATAIN  		(dq_r[dq_index]), 	// data from primary IOB
 			.TOUT     		(), 			// tri-state signal to IOB
 			.DOUT     		(), 			// output data to IOB
