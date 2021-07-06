@@ -754,6 +754,23 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		
 		always @(posedge clk) idelay_is_busy_previously <= idelay_is_busy;
 		
+		
+		reg idelay_inc_dqs_r;
+		reg idelay_counter_enable;
+		
+		// IODELAY2 primitive requires some initial hardware startup or warmup time
+		localparam IODELAY_STARTUP_BITWIDTH = 12;  
+		reg [IODELAY_STARTUP_BITWIDTH-1:0] iodelay_startup_counter;
+		
+		always @(posedge clk) iodelay_startup_counter <= iodelay_startup_counter + 1;
+		
+		// xilinx demo example only needs iodelay_startup_counter[IODELAY_STARTUP_BITWIDTH-1]
+		// See https://github.com/promach/DDR/blob/main/phase_detector.v#L135-L137
+		// It is only static calibration as of now,
+		// will implement dynamic (real-time) phase calibration as project progresses
+		wire idelay_cal_dqs_r = &iodelay_startup_counter;  // Wait for IODELAY to be available
+				
+		
 		IODELAY2 #(
 			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
 			.IDELAY_VALUE  		(0), 			// {0 ... 255}
@@ -776,9 +793,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.IOCLK0   		(ck), 		// High speed clock for calibration
 			.IOCLK1   		(ck_180), 		// High speed clock for calibration
 			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
-			.CAL      		(cal_data),	// Calibrate control signal
-			.INC      		(inc_data), 		// Increment counter
-			.CE       		(1'b1), 		// Clock Enable
+			.CAL      		(idelay_cal_dqs_r),	// Calibrate control signal
+			.INC      		(idelay_inc_dqs_r), 		// Increment counter
+			.CE       		(idelay_counter_enable), 		// Enable counter increment/decrement
 			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
 			.BUSY      		(idelay_is_busy)	// output signal indicating sync circuit has finished / calibration has finished
 		);
