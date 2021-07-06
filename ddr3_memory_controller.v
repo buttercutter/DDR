@@ -1181,8 +1181,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		IDDR2_dq_r(
 			.Q0(dq_r_q0[dq_index]),  // 1-bit output captured with C0 clock
 			.Q1(dq_r_q1[dq_index]),  // 1-bit output captured with C1 clock
-			.C0(dqs_r),  // 1-bit clock input
-			.C1(dqs_n_r),  // 1-bit clock input
+			.C0(ck),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D(delayed_dq_r[dq_index]),    // 1-bit DDR data input
 			.R(reset),    // 1-bit reset input
