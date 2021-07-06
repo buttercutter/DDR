@@ -1145,6 +1145,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	`endif
 
+	wire [DQ_BITWIDTH-1:0] delayed_dq_r;
+
 	generate
 	genvar dq_index;  // to indicate the bit position of DQ signal
 
@@ -1182,7 +1184,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.C0(dqs_r),  // 1-bit clock input
 			.C1(dqs_n_r),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D(dq_r[dq_index]),    // 1-bit DDR data input
+			.D(delayed_dq_r[dq_index]),    // 1-bit DDR data input
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
@@ -1208,7 +1210,56 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
-		// End of ODDR2_inst instantiation					
+		// End of ODDR2_inst instantiation
+		
+
+		// See https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=51
+		// xilinx specs says "Only possible when the two BUFGs are common for both input and output" or similar
+		// This means that the input and output clocks must be the same
+		// Or, the read sampling clock and the write transmitter clock must be the same (denoted as ck_90)
+		// In other words, while you read the MPR_Read_function test calibration pattern from DDR3 chip, 
+		// you shift DQS to be in phase with the clock and maintain it that way. 
+		// You know how big is the shift, so you know how much you need to shift DQ to move it to the point
+		// where the sampling clock will be centred in the DQ bit.
+				
+		IODELAY2 #(
+			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
+			.IDELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
+			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
+			.ODELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY_TYPE   		("VARIABLE_FROM_HALF_MAX"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
+			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
+			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
+			.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
+		)
+		iodelay_inst (
+			.IDATAIN  		(dq_r[dq_index]), 	// data from primary IOB
+			.TOUT     		(), 			// tri-state signal to IOB
+			.DOUT     		(), 			// output data to IOB
+			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
+			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
+			.DATAOUT  		(delayed_dq_r[dq_index]), 		// Output data 1 to ILOGIC/ISERDES2
+			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
+			.IOCLK0   		(ck), 		// High speed clock for calibration
+			.IOCLK1   		(ck_180), 		// High speed clock for calibration
+			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
+			
+			// Note that my read clock is parallel for all DQ bits as well as the DQS.  
+			// I do not have any individual tuning skew adjustments on any of the DQ pins.  
+			// Everything is sampled and transmitted in parallel.
+			// In other words, the parallel DQ bits group is assumed to be length-matched
+			// So, all DQ bits will experience the exact same delay value (similar CAL, INC signals)
+			// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3601621/#msg3601621
+			// Might need to change this calibration decision in later part of project for further improvement
+			.CAL      		(idelay_cal_dq_r),	// Calibrate control signal
+			.INC      		(idelay_inc_dq_r), 		// Increment counter
+			
+			.CE       		(idelay_counter_enable), 		// Enable counter increment/decrement
+			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
+			.BUSY      		(idelay_is_busy)	// output signal indicating sync circuit has finished / calibration has finished
+		);
+									
 	end
 
 	endgenerate
