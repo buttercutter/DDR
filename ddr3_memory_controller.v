@@ -1490,8 +1490,18 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 `endif
 
 
-// will switch to using always @(posedge clk90_slow) in later stage of project
+`ifdef HIGH_SPEED
+	// for phase-shifting incoming read DQS strobe with respect to 'ck' signal
+	localparam JITTER_MARGIN_FOR_DQS_SAMPLING = 2;
+	reg dqs_delay_sampling_margin;
+`endif
+
+
+`ifdef HIGH_SPEED
+always @(posedge ck)
+`else
 always @(posedge clk)
+`endif
 begin
 	if(reset) 
 	begin
@@ -1510,20 +1520,23 @@ begin
 		refresh_timing_count <= 0;
 		MPR_ENABLE <= 0;
 		MPR_Read_had_finished <= 0;
+		
+		// such that the first phase delay calibration iteration does not abort
+		dqs_delay_sampling_margin <= JITTER_MARGIN_FOR_DQS_SAMPLING; 
 	end
 
 `ifdef HIGH_SPEED
 	else
 `else
 	// DDR signals are 90 degrees phase-shifted in advance
-	// with reference to outgoing 'ck' (clk_slow) signal to DDR RAM
+	// with reference to outgoing 'clk' (clk_slow) signal to DDR RAM
 	// such that all outgoing DDR signals are sampled in the middle of during posedge(ck)
 	// For more info, see the initialization sequence : https://i.imgur.com/JClPQ6G.png
 	
 	// since clocked always block only updates the new data at the next clock cycle, 
 	// clk90_slow_posedge is used instead of clk180_slow_posedge to produce a new data 
-	// that is 180 degree phase-shifted, for which the data will be sampled in the middle by 'clk_slow' ('ck')
-	// Since DIVIDE_RATIO=4, so in half clock period for 'clk' signal, there are 2 'clk' cycles
+	// that is 180 degree phase-shifted, for which the data will be sampled in the middle by 'clk_slow' ('clk')
+	// Since DIVIDE_RATIO=4, so in half clock period for fast 'ck' signal, there are 2 slow 'clk' cycles
 	// Therefore, clk90_slow_posedge is 1 'clk' cycle in advance/early with comparison to clk180_slow_posedge
 	// The purpose of doing so is to have larger setup and hold timing margin for positive edge of clk_slow,
 	// while still obeying DDR3 datasheet specifications
@@ -2314,7 +2327,52 @@ begin
 				begin
 					main_state <= STATE_READ_DATA;
 					read_is_enabled <= 0;
-				end			
+				end
+				
+				`ifdef HIGH_SPEED
+				else begin
+					main_state <= STATE_READ_DATA;
+
+					/*
+					Your DQS IO logic is clocked by a clock. You need to align DQS to this clock. 
+					If you sample DQS with the rising edge of the clock, you can get different responses:
+
+					1. If you get always '0' which means that the clock rising edge already happened, 
+					   but DQS rising edge didn't. DQS needs to be moved earlier by decreasing DQS delay.
+
+					2. If you get always '1' which means that the clock rising edge happens after DQS edge. 
+					   Therefore, DQS's delay must be increased.
+
+					3. If you're somewhere in the middle (in the jitter zone) then DQS and clock are aligned.
+
+					Of course, you don't need DQS data, you only need DQ data. Therefore you adjust DQ delays
+					the same as DQS - every time you increase DQS delay, you also increase DQ delay as well.
+					Every time you decrease DQS delay you decrease DQ delay. This way, if DQS shifts, you shift
+					the DQ sampling point to follow DQS.
+					*/
+										
+					if(MPR_ENABLE)
+					begin
+						// samples the delayed version of dqs_r for continous feedback to IDELAY2 primitive
+						if(~delayed_dqs_r)
+						begin
+							idelay_inc_dqs_r <= 0;  // 1st case : decrements delay value
+							dqs_delay_sampling_margin <= dqs_delay_sampling_margin - 1;
+						end
+							
+						else begin
+							idelay_inc_dqs_r <= 1;  // 2nd case : increments delay value
+							dqs_delay_sampling_margin <= dqs_delay_sampling_margin + 1;
+						end
+						
+						// see 3rd case
+						if(dqs_delay_sampling_margin < JITTER_MARGIN_FOR_DQS_SAMPLING)
+							idelay_counter_enable <= 0;  // disables delay feedback process, calibration is done
+							
+						else idelay_counter_enable <= 1;  // enables delay feedback process						
+					end
+				end
+				`endif
 			end
 						
 			STATE_PRECHARGE :
