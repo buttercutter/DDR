@@ -627,6 +627,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	`endif
 `endif
 
+
 `ifndef HIGH_SPEED
 	reg dqs_is_at_high_previously;
 	reg dqs_is_at_low_previously;
@@ -744,7 +745,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 		*/
 
-		// 90 degree phase-shifted which means READ DQS strobe is now at the center of incoming parallel DQ bits
+		// for phase shift alignment between READ DQS strobe and 'ck' signal
 		wire delayed_dqs_r;
 		
 		// See https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=73
@@ -806,14 +807,6 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		
 		wire dqs_r = (udqs_r | ldqs_r);	
 
-		// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
-		wire [DQ_BITWIDTH-1:0] dq_r_q0;
-		wire [DQ_BITWIDTH-1:0] dq_r_q1;
-		reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
-		
-		always @(dq_r_q0, dq_r_q1, delayed_dqs_r)
-			dq_r_iserdes <= (delayed_dqs_r) ?  dq_r_q0: dq_r_q1;
-
 
 		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
 		// Check the explanation below for the need of two separate OSERDES
@@ -837,17 +830,74 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// This literally means SERDES_RATIO=8 
 		// localparam SERDES_RATIO = 8;
 
-		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-		dq_iserdes
+		localparam EVEN_RATIO = 2;
+
+		// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
+		wire [DQ_BITWIDTH-1:0] dq_r_q0;
+		wire [DQ_BITWIDTH-1:0] dq_r_q1;
+		//reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
+		
+		// The following way of combining dq_r_q0 and dq_r_q1 back into a single signal will not work
+		// for high DDR3 RAM frequency.  Besides, never use clock-related signal for combinational logic
+		// See the rationale for having two separate deserializer module to handle this instead
+		//always @(dq_r_q0, dq_r_q1, delayed_dqs_r)
+		//	dq_r_iserdes <= (delayed_dqs_r) ?  dq_r_q0: dq_r_q1;
+		
+
+		// if you want to build your own serdeses feeding from IDDR, you cannot clump dq_r_q0 and dq_r_q1 back
+		// into a single signal and feed this signal to your single serdes. 
+		// You will need to build two separate serdeses - one for dq_r_q0, and another one for dq_r_q1.
+
+		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
+		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
+
+		genvar data_index_iserdes;
+		generate
+			for(data_index_iserdes = 0; data_index_iserdes < (DQ_BITWIDTH*SERDES_RATIO); 
+				data_index_iserdes = data_index_iserdes + 1)
+			begin: data_from_ram_combine_loop
+				
+				if((data_index_iserdes % EVEN_RATIO) == 0)
+				begin
+					always @(*)
+					begin
+						data_from_ram[data_index_iserdes] <= data_in_oserdes_0[data_index_iserdes >> 1];
+					end
+				end
+				
+				else begin
+						
+					always @(*)
+					begin
+						data_from_ram[data_index_iserdes] <= data_in_oserdes_1[data_index_iserdes >> 1];
+					end
+				end
+			end
+		endgenerate
+		
+
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_iserdes_0
 		(
 			// fast clock domain
-			.high_speed_clock(dqs_r),
-			.data_in(dq_r_iserdes),
+			.high_speed_clock(ck),
+			.data_in(dq_r_q0),
 			
 			// slow clock domain
-			.data_out(data_from_ram)
+			.data_out(data_out_iserdes_0)
 		);
 
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_iserdes_1
+		(
+			// fast clock domain
+			.high_speed_clock(ck_180),
+			.data_in(dq_r_q1),
+			
+			// slow clock domain
+			.data_out(data_out_iserdes_1)
+		);
+		
 
 		// There is need to use two separate OSERDES because ODDR2 expects its D0 and D1 inputs to be
 		// presented to it at a DDR clock rate of 303MHz (D0 at posedge of 303MHz, D1 at negedge of 303MHz),
@@ -875,18 +925,17 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_0;
 		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_1;
 
-		genvar data_index;
+		genvar data_index_oserdes;
 		generate
-			for(data_index = 0; data_index < (DQ_BITWIDTH*SERDES_RATIO); data_index = data_index + 1)
+			for(data_index_oserdes = 0; data_index_oserdes < (DQ_BITWIDTH*SERDES_RATIO); 
+				data_index_oserdes = data_index_oserdes + 1)
 			begin: data_to_ram_split_loop
 				
-				localparam EVEN_RATIO = 2;
-				
-				if((data_index % EVEN_RATIO) == 0)
+				if((data_index_oserdes % EVEN_RATIO) == 0)
 				begin
 					always @(*)
 					begin
-						data_in_oserdes_0[data_index >> 1] <= data_to_ram[data_index];
+						data_in_oserdes_0[data_index_oserdes >> 1] <= data_to_ram[data_index_oserdes];
 					end
 				end
 				
@@ -894,7 +943,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 						
 					always @(*)
 					begin
-						data_in_oserdes_1[data_index >> 1] <= data_to_ram[data_index];
+						data_in_oserdes_1[data_index_oserdes >> 1] <= data_to_ram[data_index_oserdes];
 					end
 				end
 			end
@@ -908,7 +957,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_0),
 			
 			// fast clock domain
-			.high_speed_clock(dqs_w),
+			.high_speed_clock(ck),
 			.data_out(dq_w_oserdes_0)
 		);
 
@@ -919,7 +968,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_1),
 			
 			// fast clock domain
-			.high_speed_clock(dqs_n_w),
+			.high_speed_clock(ck_180),
 			.data_out(dq_w_oserdes_1)
 		);
 		
