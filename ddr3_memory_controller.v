@@ -127,7 +127,7 @@ module ddr3_memory_controller
 	input [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address,  // the DDR memory address for which the user wants to write/read the data
 	`ifdef HIGH_SPEED
 		input [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram,  // data for which the user wants to write to DDR
-		output [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
+		output reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
 	`else
 		input [DQ_BITWIDTH-1:0] data_to_ram,  // data for which the user wants to write to DDR
 		output reg [DQ_BITWIDTH-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
@@ -805,7 +805,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// RAM -> IOBUF (for inout) -> IDELAY (DQS Centering) -> IDDR2 (input DDR buffer) -> ISERDES		
 		// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
 		
-		wire dqs_r = (udqs_r | ldqs_r);	
+		assign dqs_r = (udqs_r | ldqs_r);	
 
 
 		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
@@ -1306,7 +1306,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			
 			.CE       		(idelay_counter_enable), 		// Enable counter increment/decrement
 			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
-			.BUSY      		(idelay_is_busy)	// output signal indicating sync circuit has finished / calibration has finished
+			.BUSY      		()	// output signal indicating sync circuit has finished / calibration has finished
 		);
 									
 	end
