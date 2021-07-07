@@ -1194,7 +1194,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	`endif
 
+	wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 	wire [DQ_BITWIDTH-1:0] delayed_dq_r;
+		
 
 	generate
 	genvar dq_index;  // to indicate the bit position of DQ signal
@@ -1208,11 +1210,37 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		IOBUF IO_dq (
 			.IO(dq[dq_index]),
 			.I(dq_w[dq_index]),
-			.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(dq_iobuf_enable[dq_index]),
 			.O(dq_r[dq_index])
 		);
 
+
+		// As for why 'dq_iobuf_enable' signal is implemented using ODDR2 primitive,
+		// see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
+
+		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
+		// Spartan-6
+		// Xilinx HDL Libraries Guide, version 14.7
+
+		ODDR2 #(
+			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+		)
+		ODDR2_dq_iobuf_en(
+			.Q(dq_iobuf_enable[dq_index]),  // 1-bit DDR output data
+			.C0(ck),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
+			.CE(1'b1),  // 1-bit clock enable input
+			.D0(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),    // 1-bit DDR data input (associated with C0)
+			.D1(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
+					  (main_state == STATE_READ_DATA)),    // 1-bit DDR data input (associated with C1)			
+			.R(reset),    // 1-bit reset input
+			.S(1'b0)     // 1-bit set input
+		);
+		// End of ODDR2_inst instantiation
+	
 		
 		// IODDR2 primitives are needed because the 'dq' signals are of double-data-rate
 		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=123
