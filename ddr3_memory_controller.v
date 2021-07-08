@@ -1232,9 +1232,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
+			.D0(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 					  (main_state == STATE_READ_DATA)),    // 1-bit DDR data input (associated with C0)
-			.D1(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
+			.D1(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
 					  (main_state == STATE_READ_DATA)),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
@@ -1598,8 +1598,10 @@ begin
 		MPR_ENABLE <= 0;
 		MPR_Read_had_finished <= 0;
 		
-		// such that the first phase delay calibration iteration does not abort
-		dqs_delay_sampling_margin <= JITTER_MARGIN_FOR_DQS_SAMPLING; 
+		`ifdef HIGH_SPEED
+			// such that the first phase delay calibration iteration does not abort
+			dqs_delay_sampling_margin <= JITTER_MARGIN_FOR_DQS_SAMPLING;
+		`endif
 	end
 
 `ifdef HIGH_SPEED
@@ -2316,7 +2318,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > TIME_RL-1)
+				if(wait_count > (TIME_RL-TIME_TRPRE)-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
@@ -2348,7 +2350,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > TIME_RL-1)
+				if(wait_count > (TIME_RL-TIME_TRPRE)-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
