@@ -575,8 +575,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 `else
 
-	wire ck_out;
-	wire ck_90, ck_out_90;
+	wire ck_out, ck_obuf;
+	wire ck_90;
 	wire ck_180;
 	wire ck_270;
 
@@ -596,21 +596,36 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.reset(reset),  // IN
 			.locked(locked)  // OUT
 		);
+
+
+		// There is need for OBUF because if otherwise, the output of ODDR2_ck_out would be connected to 
+		// FPGA fabric which is not allowed
+
+		OBUF #(
+			.DRIVE(12),  // Specify the output drive strength
+			.IOSTANDARD("DEFAULT"),  // Specify the output I/O standard
+			.SLEW("FAST")  // Specify the output slew rate
+		)
+		OBUF_ck (
+			.O(ck),  // Buffer output (connect directly to top-level port)
+			.I(ck_obuf)   // Buffer input
+		);
 		
-		// As for why 'ck' and 'ck_90' signals are implemented using ODDR2 primitive,
-		// see https://forums.xilinx.com/t5/Other-FPGA-Architecture/Place-1198-Error-Route-cause-and-possible-solution/m-p/408489/highlight/true#M34528
 
 		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
 		// Spartan-6
 		// Xilinx HDL Libraries Guide, version 14.7
 
+		// As for why 'ck' signal is implemented using ODDR2 primitive,
+		// see https://forums.xilinx.com/t5/Other-FPGA-Architecture/Place-1198-Error-Route-cause-and-possible-solution/m-p/408489/highlight/true#M34528
+		
 		ODDR2 #(
 			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_ck_out(
-			.Q(ck),  // 1-bit DDR output data
+			.Q(ck_obuf),  // 1-bit DDR output data
 			.C0(ck_out),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
@@ -619,36 +634,112 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
+
 		
-		ODDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		ODDR2_ck_out_90(
-			.Q(ck_out_90),  // 1-bit DDR output data
-			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D0(1'b1),    // 1-bit DDR data input (associated with C0)
-			.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
-			.R(1'b0),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
-		);		
-		// End of ODDR2_inst instantiation
-				
-	`endif
+		// The following DQS signals are of double-data-rate signals
+		
+		`ifdef USE_x16
+		
+			ODDR2 #(
+				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_ldqs_w(
+				.Q(ldqs_w),  // 1-bit DDR output data
+				.C0(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
 
-	`ifdef USE_x16
-		assign ldqs_w = ck_out_90;
-		assign ldqs_n_w = ck_270;
-		assign udqs_w = ck_out_90;
-		assign udqs_n_w = ck_270;		
-	`else
-		assign dqs_w = ck_out_90;
-		assign dqs_n_w = ck_270;
-	`endif
+			ODDR2 #(
+				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_udqs_w(
+				.Q(udqs_w),  // 1-bit DDR output data
+				.C0(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
+			
+			ODDR2 #(
+				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_ldqs_n_w(
+				.Q(ldqs_n_w),  // 1-bit DDR output data
+				.C0(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
 
+			ODDR2 #(
+				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_udqs_n_w(
+				.Q(udqs_n_w),  // 1-bit DDR output data
+				.C0(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
+
+		`else
+		
+			ODDR2 #(
+				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_dqs_w(
+				.Q(dqs_w),  // 1-bit DDR output data
+				.C0(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
+			
+			ODDR2 #(
+				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_dqs_n_w(
+				.Q(dqs_n_w),  // 1-bit DDR output data
+				.C0(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);		
+		
+		`endif
+	`endif
 `endif
 
 
@@ -1245,12 +1336,12 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_ldqs_iobuf_en(
 			.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
-			.R(reset),    // 1-bit reset input
+			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
 
@@ -1261,12 +1352,12 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_ldqs_n_iobuf_en(
 			.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_270),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
-			.R(reset),    // 1-bit reset input
+			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
 		
@@ -1277,12 +1368,12 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_udqs_iobuf_en(
 			.Q(udqs_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
-			.R(reset),    // 1-bit reset input
+			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
 
@@ -1293,12 +1384,12 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_udqs_n_iobuf_en(
 			.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_270),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
-			.R(reset),    // 1-bit reset input
+			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
 			
