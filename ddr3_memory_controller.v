@@ -21,7 +21,7 @@
 	`ifndef MICRON_SIM
 	
 		// for internal logic analyzer
-		`define USE_ILA 1
+		//`define USE_ILA 1
 		
 		// for lattice ECP5 FPGA
 		//`define LATTICE 1
@@ -1191,7 +1191,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 
 	wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 	wire [DQ_BITWIDTH-1:0] delayed_dq_r;
-	wire [DQ_BITWIDTH-1:0] delayed_dq_w;
+	//wire [DQ_BITWIDTH-1:0] delayed_dq_w;
 		
 
 	generate
@@ -1205,7 +1205,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 
 		IOBUF IO_dq (
 			.IO(dq[dq_index]),
-			.I(delayed_dq_w[dq_index]),  // already phase-shifted by 90 degrees
+			.I(dq_w[dq_index]),  // already phase-shifted by 90 degrees
 			.T(dq_iobuf_enable[dq_index]),
 			.O(dq_r[dq_index])  // not phase-shifted by 90 degrees yet
 		);
@@ -1333,6 +1333,11 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		);
 
 
+		/*
+		The following ODELAY for dq_w is not used.
+		Reason: The output of ODDR2 primitive needs to connect to the I port of IOBUF primitive 
+				by bypassing ODELAY in order to avoid ERROR:PACK 2530 error from ISE tool
+		
 		// Initially the RAM controller uses ck_90 to drive DQ bits directly to IOBUF without using ODELAY.
 		// However, there is some underlying xilinx spartan-6 hardware limitations where this is not possible.
 		// The output from ODDR2 primitive can only be routed to ILOGIC, IODELAY, and IOB
@@ -1380,7 +1385,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
 			.BUSY      		()	// output signal indicating sync circuit has finished / calibration has finished
 		);
-									
+		*/						
 	end
 
 	endgenerate

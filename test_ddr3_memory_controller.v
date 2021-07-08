@@ -12,7 +12,7 @@
 	`ifndef MICRON_SIM
 	
 		// for internal logic analyzer
-		`define USE_ILA 1
+		//`define USE_ILA 1
 		
 		// for lattice ECP5 FPGA
 		//`define LATTICE 1
@@ -36,7 +36,7 @@
 	`ifndef FORMAL
 		`ifndef MICRON_SIM	
 			// data loopback requires ILA capability to check data integrity
-			`define USE_ILA 1
+			//`define USE_ILA 1
 		`endif
 	`endif
 `endif
