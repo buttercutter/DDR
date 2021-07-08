@@ -1055,6 +1055,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 `endif
 
 
+wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE) && 
+							 ((main_state == STATE_READ) || (main_state == STATE_READ_AP))) || 
+					  		 (main_state == STATE_READ_DATA);
+
+wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) && 
+		    				  ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP))) || 
+							  (main_state == STATE_WRITE_DATA);
+
 `ifdef LATTICE
 
 	// look for BB primitive in this lattice document :
@@ -1069,16 +1077,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		TRELLIS_IO BB_dqs (
 			.B(dqs),
 			.I(dqs_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(dqs_r)
 		);
 
 		TRELLIS_IO BB_dqs_n (
 			.B(dqs_n),
 			.I(dqs_n_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(dqs_n_r)
 		);
 
@@ -1087,32 +1093,28 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		TRELLIS_IO BB_ldqs (
 			.B(ldqs),
 			.I(ldqs_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(ldqs_r)
 		);
 
 		TRELLIS_IO BB_ldqs_n (
 			.B(ldqs_n),
 			.I(ldqs_n_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(ldqs_n_r)
 		);
 
 		TRELLIS_IO BB_udqs (
 			.B(udqs),
 			.I(udqs_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(udqs_r)
 		);
 
 		TRELLIS_IO BB_udqs_n (
 			.B(udqs_n),
 			.I(udqs_n_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(udqs_n_r)
 		);
 	`endif
@@ -1126,8 +1128,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		TRELLIS_IO BB_dq (
 			.B(dq[dq_index]),
 			.I(dq_w[dq_index]),
-			.T(((wait_count > TIME_RL) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(dq_r[dq_index])
 		);
 	end
@@ -1145,16 +1146,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		IOBUF IO_dqs (
 			.IO(dqs),
 			.I(dqs_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(dqs_r)
 		);
 
 		IOBUF IO_dqs_n (
 			.IO(dqs_n),
 			.I(dqs_n_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(dqs_n_r)
 		);
 
@@ -1163,32 +1162,28 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		IOBUF IO_ldqs (
 			.IO(ldqs),
 			.I(ldqs_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(ldqs_r)
 		);
 
 		IOBUF IO_ldqs_n (
 			.IO(ldqs_n),
 			.I(ldqs_n_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(ldqs_n_r)
 		);
 
 		IOBUF IO_udqs (
 			.IO(udqs),
 			.I(udqs_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(udqs_r)
 		);
 
 		IOBUF IO_udqs_n (
 			.IO(udqs_n),
 			.I(udqs_n_w),
-			.T(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),
+			.T(data_read_is_ongoing),
 			.O(udqs_n_r)
 		);
 
@@ -1196,6 +1191,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 	wire [DQ_BITWIDTH-1:0] delayed_dq_r;
+	wire [DQ_BITWIDTH-1:0] delayed_dq_w;
 		
 
 	generate
@@ -1209,9 +1205,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 		IOBUF IO_dq (
 			.IO(dq[dq_index]),
-			.I(dq_w[dq_index]),
+			.I(delayed_dq_w[dq_index]),  // already phase-shifted by 90 degrees
 			.T(dq_iobuf_enable[dq_index]),
-			.O(dq_r[dq_index])
+			.O(dq_r[dq_index])  // not phase-shifted by 90 degrees yet
 		);
 
 
@@ -1232,10 +1228,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),    // 1-bit DDR data input (associated with C0)
-			.D1(((wait_count > TIME_RL-TIME_TRPRE) && (main_state == STATE_READ_AP)) || 
-					  (main_state == STATE_READ_DATA)),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
@@ -1293,11 +1287,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// See https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=51
 		// xilinx specs says "Only possible when the two BUFGs are common for both input and output" or similar
 		// This means that the input and output clocks must be the same
-		// Or, the read sampling clock and the write transmitter clock must be the same (denoted as ck_90)
+		// Or, the read sampling clock and the write transmitter clock must be the same (denoted as ck)
 		// In other words, while you read the MPR_Read_function test calibration pattern from DDR3 chip, 
 		// you shift DQS to be in phase with the clock and maintain it that way. 
 		// You know how big is the shift, so you know how much you need to shift DQ to move it to the point
 		// where the sampling clock will be centred in the DQ bit.
+		// Note: "VARIABLE_FROM_HALF_MAX" is used to emulate 90 degrees phase shift.
 				
 		IODELAY2 #(
 			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
@@ -1329,8 +1324,57 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			// So, all DQ bits will experience the exact same delay value (similar CAL, INC signals)
 			// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3601621/#msg3601621
 			// Might need to change this calibration decision in later part of project for further improvement
-			.CAL      		(idelay_cal_dq_r),	// Calibrate control signal
-			.INC      		(idelay_inc_dq_r), 		// Increment counter
+			.CAL      		(idelay_cal_dqs_r),	// Calibrate control signal
+			.INC      		(idelay_inc_dqs_r), 		// Increment counter
+			
+			.CE       		(idelay_counter_enable), 		// Enable counter increment/decrement
+			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
+			.BUSY      		()	// output signal indicating sync circuit has finished / calibration has finished
+		);
+
+
+		// Initially the RAM controller uses ck_90 to drive DQ bits directly to IOBUF without using ODELAY.
+		// However, there is some underlying xilinx spartan-6 hardware limitations where this is not possible.
+		// The output from ODDR2 primitive can only be routed to ILOGIC, IODELAY, and IOB
+
+		// the IODELAY2 primitives for DQ bits could not be shared between read and write operations
+		// because if they are to be shared, they would be some combinational logic to select between 
+		// read and write operations which is not helpful at all for read operations.
+		// Note that for read pipeline, IDELAY is used before ISERDES, which means any extra logic for input of
+		// IDELAY will slow things down significantly until the read operations might fail to calibrate delay
+
+		IODELAY2 #(
+			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
+			.IDELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
+			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
+			.ODELAY_VALUE  		(0), 			// {0 ... 255}
+			.IDELAY_TYPE   		("VARIABLE_FROM_HALF_MAX"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
+			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
+			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
+			.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
+		)
+		iodelay_dq_w (
+			.IDATAIN  		(dq_w[dq_index]), 	// data from primary IOB
+			.TOUT     		(), 			// tri-state signal to IOB
+			.DOUT     		(), 			// output data to IOB
+			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
+			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
+			.DATAOUT  		(delayed_dq_w[dq_index]), 		// Output data 1 to ILOGIC/ISERDES2
+			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
+			.IOCLK0   		(ck), 		// High speed clock for calibration
+			.IOCLK1   		(ck_180), 		// High speed clock for calibration
+			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
+			
+			// Note that my read clock is parallel for all DQ bits as well as the DQS.  
+			// I do not have any individual tuning skew adjustments on any of the DQ pins.  
+			// Everything is sampled and transmitted in parallel.
+			// In other words, the parallel DQ bits group is assumed to be length-matched
+			// So, all DQ bits will experience the exact same delay value (similar CAL, INC signals)
+			// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3601621/#msg3601621
+			// Might need to change this calibration decision in later part of project for further improvement
+			.CAL      		(idelay_cal_dqs_r),	// Calibrate control signal
+			.INC      		(idelay_inc_dqs_r), 		// Increment counter
 			
 			.CE       		(idelay_counter_enable), 		// Enable counter increment/decrement
 			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
@@ -1476,9 +1520,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	always @(posedge clk)
 	begin
-		if(((wait_count > TIME_WL-TIME_TWPRE) && 
-		    ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_AP))) || 
-				  (main_state == STATE_WRITE_DATA))
+		if(data_write_is_ongoing)
 		begin
 			assert(dqs == dqs_w);
 		end
@@ -1488,9 +1530,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	always @(posedge clk)
 	begin
-		if(((wait_count > TIME_WL-TIME_TWPRE) && 
-		    ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_AP))) || 
-				  (main_state == STATE_WRITE_DATA))
+		if(data_write_is_ongoing)
 		begin
 			assert(dqs_n == dqs_n_w);
 		end
@@ -1500,9 +1540,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	always @(posedge clk)
 	begin
-		if(((wait_count > TIME_WL) && 
-		    ((main_state == STATE_WRITE_AP) || (main_state == STATE_WRITE_AP))) || 
-				  (main_state == STATE_WRITE_DATA))
+		if(data_write_is_ongoing)
 		begin
 			assert(dq == dq_w);
 		end
