@@ -148,7 +148,7 @@ module ddr3_memory_controller
 	// these are to be fed into external DDR3 memory
 	output reg [ADDRESS_BITWIDTH-1:0] address,
 	output reg [BANK_ADDRESS_BITWIDTH-1:0] bank_address,
-	output ck, // CK
+	output ck_obuf, // CK
 	output ck_n, // CK#
 	output reg ck_en, // CKE
 	output reg cs_n, // chip select signal
@@ -575,7 +575,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 `else
 
-	wire ck_out, ck_obuf;
+	wire ck, ck_out;
 	wire ck_90;
 	wire ck_180;
 	wire ck_270;
@@ -587,7 +587,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.ck(ck_out),  // OUT 400MHz, 0 phase shift
+			.ck(ck),  // OUT 400MHz, 0 phase shift
 			.ck_90(ck_90),  // OUT 400MHz, 90 phase shift, for dq phase shifting purpose
 			.ck_180(ck_180),  // OUT 400MHz, 180 phase shift
 			.ck_270(ck_270),  // OUT 400MHz, 270 phase shift, for dq phase shifting purpose
@@ -603,12 +603,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 		OBUF #(
 			.DRIVE(12),  // Specify the output drive strength
-			.IOSTANDARD("DEFAULT"),  // Specify the output I/O standard
-			.SLEW("FAST")  // Specify the output slew rate
+			.IOSTANDARD("LVCMOS25"),  // Specify the output I/O standard
+			.SLEW("SLOW")  // Specify the output slew rate
 		)
 		OBUF_ck (
-			.O(ck),  // Buffer output (connect directly to top-level port)
-			.I(ck_obuf)   // Buffer input
+			.O(ck_obuf),  // Buffer output (connect directly to top-level port)
+			.I(ck_out)   // Buffer input
 		);
 		
 
@@ -625,8 +625,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_ck_out(
-			.Q(ck_obuf),  // 1-bit DDR output data
-			.C0(ck_out),  // 1-bit clock input
+			.Q(ck_out),  // 1-bit DDR output data
+			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(1'b1),    // 1-bit DDR data input (associated with C0)
@@ -636,7 +636,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 
 		
-		// The following DQS signals are of double-data-rate signals
+		// The following DQS signals are not of double-data-rate signals,
+		// but they are connected to T port of IOBUF where its I port is fed in with double-data-rate signals,
+		// thus the purpose of having the following ODDR2 primitives
 		
 		`ifdef USE_x16
 		

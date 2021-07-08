@@ -519,7 +519,7 @@ ddr3_control
 	// these are to be fed into external DDR3 memory
 	.address(address),
 	.bank_address(bank_address),
-	.ck(ck), // CK
+	.ck_obuf(ck), // CK
 	.ck_n(ck_n), // CK#
 	.ck_en(ck_en), // CKE
 	.cs_n(cs_n), // chip select signal
