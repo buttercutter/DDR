@@ -3,15 +3,16 @@ A simple DDR3 memory controller for [Micron DDR3 RAM](https://www.micron.com/pro
 
 TODO:
 1. Implement own serdes block and understand how [bitslip](https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=82) and [dynamic phase alignment](https://www.xilinx.com/support/documentation/white_papers/wp249.pdf#page=5) handle [signals skew relative to clocks/strobes](https://www.xilinx.com/support/documentation/ip_documentation/ultrascale_memory_ip/v1_4/pg150-ultrascale-memory-ip.pdf#page=361)
-2. Implement more functionalities since the current verilog code does not yet support Additive Latency (AL), write-leveling mode, self-refresh mode, issuing of multiple consecutive `ACT` commands, standalone precharge (non-`AP`) command
+2. Implement more functionalities since the current verilog code does not yet support Additive Latency (AL), write-leveling mode, self-refresh mode, issuing of multiple consecutive `ACT` commands
 3. Implement [Type-III digital PLL described in Floyd Gardner book: Phaselock Techniques, 3rd Edition](https://www.reddit.com/r/AskElectronics/comments/9i7g9j/loop_stability_of_type_3_digital_pll/) for high-speed application and `DQS` phase-shift purpose
 4. Investigate high-speed DDR PHY IO as described in reference \[1\], [2], [3], [4], [5], [6]
 5. Design my own DDR3 FPGA board
 
 Notes on Modelsim simulation for Micron DDR3 memory simulation model:
-1. Creates a working directory named as `ddr3` and copies `ddr3.v`, `ddr3_memory_controller.v`, `test_ddr3_memory_controller.v`, `2048Mb_ddr3_parameters.vh`
-2. `vsim -gui work._2048Mb_ddr3_parameters_vh_unit work.ddr3 work.ddr3_memory_controller work.ddr3_memory_controller_v_unit work.test_ddr3_memory_controller`
-3. Inside Modelsim, open `vsim.wlf` file and then `add wave -r *`
+1. Creates a working directory named as `ddr3` and copies `ddr3_memory_controller.v`, `test_ddr3_memory_controller.v`, `2048Mb_ddr3_parameters.vh`, `ddr3.v`
+2. Issues command : `vsim -gui work._2048Mb_ddr3_parameters_vh_unit work.ddr3 work.ddr3_memory_controller work.ddr3_memory_controller_v_unit work.test_ddr3_memory_controller`
+3. Issues command : `source modelsim_wave.do` followed by `run 710us`
+4. To restart simulation from timestep zero, just issue command : `restart`
 
 ![modelsim_waveform](./micron_simulation_model_waveform.png)
 
