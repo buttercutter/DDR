@@ -511,16 +511,24 @@ ddr3_control
 	.data_to_ram(data_to_ram),  // data for which the user wants to write to DDR RAM
 	.data_from_ram(data_from_ram),  // the requested data from DDR RAM after read operation
 	.user_desired_extra_read_or_write_cycles(user_desired_extra_read_or_write_cycles),  // for the purpose of postponing refresh commands
+	
 	`ifndef HIGH_SPEED
-	.clk_slow_posedge(clk_slow_posedge),  // for dq phase shifting purpose
-	.clk180_slow_posedge(clk180_slow_posedge),  // for dq phase shifting purpose
+		.clk_slow_posedge(clk_slow_posedge),  // for dq phase shifting purpose
+		.clk180_slow_posedge(clk180_slow_posedge),  // for dq phase shifting purpose
 	`endif
 	
 	// these are to be fed into external DDR3 memory
 	.address(address),
 	.bank_address(bank_address),
-	.ck_obuf(ck), // CK
-	.ck_n(ck_n), // CK#
+	
+	`ifdef HIGH_SPEED
+		.ck_obuf(ck), // CK
+		.ck_n_obuf(ck_n), // CK#
+	`else
+		.ck(ck), // CK
+		.ck_n(ck_n), // CK#	
+	`endif
+	
 	.ck_en(ck_en), // CKE
 	.cs_n(cs_n), // chip select signal
 	.odt(odt), // on-die termination

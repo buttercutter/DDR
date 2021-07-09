@@ -148,8 +148,15 @@ module ddr3_memory_controller
 	// these are to be fed into external DDR3 memory
 	output reg [ADDRESS_BITWIDTH-1:0] address,
 	output reg [BANK_ADDRESS_BITWIDTH-1:0] bank_address,
-	output ck_obuf, // CK
-	output ck_n, // CK#
+	
+	`ifdef HIGH_SPEED
+		output ck_obuf,  // CK
+		output ck_n_obuf, // CK#		
+	`else
+		output ck,  // CK
+		output ck_n, // CK#
+	`endif
+	
 	output reg ck_en, // CKE
 	output reg cs_n, // chip select signal
 	output reg odt, // on-die termination
@@ -577,7 +584,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	wire ck, ck_out;
 	wire ck_90;
-	wire ck_180;
+	wire ck_180, ck_180_out;
 	wire ck_270;
 
 	`ifdef XILINX
@@ -610,13 +617,23 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.O(ck_obuf),  // Buffer output (connect directly to top-level port)
 			.I(ck_out)   // Buffer input
 		);
-		
+
+		OBUF #(
+			.DRIVE(12),  // Specify the output drive strength
+			.IOSTANDARD("LVCMOS25"),  // Specify the output I/O standard
+			.SLEW("SLOW")  // Specify the output slew rate
+		)
+		OBUF_ck_n (
+			.O(ck_n_obuf),  // Buffer output (connect directly to top-level port)
+			.I(ck_180_out)   // Buffer input
+		);
+				
 
 		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
 		// Spartan-6
 		// Xilinx HDL Libraries Guide, version 14.7
 
-		// As for why 'ck' signal is implemented using ODDR2 primitive,
+		// As for why 'ck' and 'ck_180' signals are implemented using ODDR2 primitive,
 		// see https://forums.xilinx.com/t5/Other-FPGA-Architecture/Place-1198-Error-Route-cause-and-possible-solution/m-p/408489/highlight/true#M34528
 		
 		ODDR2 #(
@@ -635,6 +652,22 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.S(1'b0)     // 1-bit set input
 		);
 
+		ODDR2 #(
+			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+		)
+		ODDR2_ck_180_out(
+			.Q(ck_180_out),  // 1-bit DDR output data
+			.C0(ck_180),  // 1-bit clock input
+			.C1(ck),  // 1-bit clock input
+			.CE(1'b1),  // 1-bit clock enable input
+			.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+			.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+			.R(1'b0),    // 1-bit reset input
+			.S(1'b0)     // 1-bit set input
+		);
+		
 		
 		// The following DQS signals are not of double-data-rate signals,
 		// but they are connected to T port of IOBUF where its I port is fed in with double-data-rate signals,
