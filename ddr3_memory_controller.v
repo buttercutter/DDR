@@ -996,7 +996,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 				begin
 					always @(*)
 					begin
-						data_from_ram[data_index_iserdes] <= data_in_oserdes_0[data_index_iserdes >> 1];
+						data_from_ram[data_index_iserdes] <= data_out_iserdes_0[data_index_iserdes >> 1];
 					end
 				end
 				
@@ -1004,7 +1004,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 						
 					always @(*)
 					begin
-						data_from_ram[data_index_iserdes] <= data_in_oserdes_1[data_index_iserdes >> 1];
+						data_from_ram[data_index_iserdes] <= data_out_iserdes_1[data_index_iserdes >> 1];
 					end
 				end
 			end
