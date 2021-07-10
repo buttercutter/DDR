@@ -18,6 +18,7 @@ add wave -noupdate -radix hexadecimal /test_ddr3_memory_controller/ddr3_control/
 add wave -noupdate /test_ddr3_memory_controller/ddr3_control/ldm
 add wave -noupdate /test_ddr3_memory_controller/ddr3_control/udm
 add wave -noupdate -radix unsigned /test_ddr3_memory_controller/ddr3_control/main_state
+add wave -noupdate -radix hexadecimal /test_ddr3_memory_controller/data_to_ram
 add wave -noupdate -radix hexadecimal /test_ddr3_memory_controller/data_from_ram
 add wave -noupdate /test_ddr3_memory_controller/read_enable
 add wave -noupdate /test_ddr3_memory_controller/done_reading
