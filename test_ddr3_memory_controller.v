@@ -277,6 +277,7 @@ assign user_desired_extra_read_or_write_cycles = MAX_NUM_OF_REFRESH_COMMANDS_POS
 wire clk_slow_posedge;  // for dq phase shifting purpose
 wire clk180_slow_posedge;  // for dq phase shifting purpose
 `else
+wire ck_internal;
 wire ck_90;  // for dq phase shifting purpose
 `endif
 
@@ -312,8 +313,11 @@ reg done_writing, done_reading;
 		for(data_write_index = 0; data_write_index < SERDES_RATIO;
 			data_write_index = data_write_index + 1)
 		begin: data_write_loop
-	`endif			
+		
+			always @(posedge ck_internal)  // fast ck signal without OBUF primitive
+	`else			
 			always @(posedge clk)
+	`endif
 			begin
 				if(reset) 
 				begin
@@ -522,11 +526,12 @@ ddr3_control
 	.bank_address(bank_address),
 	
 	`ifdef HIGH_SPEED
-		.ck_obuf(ck), // CK
-		.ck_n_obuf(ck_n), // CK#
+		.ck(ck_internal), // CK for internal FPGA fabric, without OBUF primitive
+		.ck_obuf(ck), // CK for IO pin
+		.ck_n_obuf(ck_n), // CK# for IO pin
 	`else
-		.ck(ck), // CK
-		.ck_n(ck_n), // CK#	
+		.ck(ck), // CK for internal FPGA fabric
+		.ck_n(ck_n), // CK#	for internal FPGA fabric
 	`endif
 	
 	.ck_en(ck_en), // CKE
@@ -539,9 +544,7 @@ ddr3_control
 	
 	.dq(dq), // Data input/output
 
-`ifdef MICRON_SIM
 	.main_state(main_state),
-`endif
 	
 `ifdef USE_ILA
 	.dq_w(dq_w),
@@ -550,7 +553,6 @@ ddr3_control
 	.high_Priority_Refresh_Request(high_Priority_Refresh_Request),
 	.write_is_enabled(write_is_enabled),
 	.read_is_enabled(read_is_enabled),
-	.main_state(main_state),
 	.wait_count(wait_count),
 	.refresh_Queue(refresh_Queue),
 	.dqs_counter(dqs_counter),
