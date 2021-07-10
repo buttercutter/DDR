@@ -150,9 +150,8 @@ module ddr3_memory_controller
 	output reg [BANK_ADDRESS_BITWIDTH-1:0] bank_address,
 	
 	`ifdef HIGH_SPEED
-		output ck,  // CK for internal FPGA fabric, without OBUF primitive
-		output ck_obuf,  // CK for IO pin
-		output ck_n_obuf, // CK# for IO pin
+		output ck_obuf,  // CK
+		output ck_n_obuf, // CK#		
 	`else
 		output ck,  // CK
 		output ck_n, // CK#
@@ -168,10 +167,8 @@ module ddr3_memory_controller
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
 
-`ifndef XILINX
+`ifdef MICRON_SIM
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
-`else	
-	output reg [4:0] main_state,
 `endif
 	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
@@ -187,10 +184,12 @@ module ddr3_memory_controller
 	output reg read_is_enabled,
 	
 	`ifndef XILINX
+	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
 	output reg [$clog2(MAX_TIMING)-1:0] wait_count,
 	output reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue,
 	output reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter,
 	`else
+	output reg [4:0] main_state,
 	output reg [14:0] wait_count,
 	output reg [3:0] refresh_Queue,
 	output reg [1:0] dqs_counter,
@@ -275,6 +274,16 @@ localparam ZQCL = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~we_n) & (~A10);
 */
 
+
+`ifndef USE_ILA
+	`ifndef MICRON_SIM
+		`ifndef XILINX
+			reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+		`else
+			reg [4:0] main_state;
+		`endif
+	`endif
+`endif
 
 `ifndef XILINX
 	reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
@@ -2826,3 +2835,4 @@ begin
 end
 
 endmodule
+
