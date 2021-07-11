@@ -601,7 +601,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.SLEW("SLOW")  // Specify the output slew rate
 		)
 		OBUF_ck (
-			.O(ck_obuf),  // Buffer output (connect directly to top-level port)
+			.O(ck_obuf),  // Buffer output (connect directly to FPGA I/O pad)
 			.I(ck_out)   // Buffer input
 		);
 
@@ -611,7 +611,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.SLEW("SLOW")  // Specify the output slew rate
 		)
 		OBUF_ck_n (
-			.O(ck_n_obuf),  // Buffer output (connect directly to top-level port)
+			.O(ck_n_obuf),  // Buffer output (connect directly to FPGA I/O pad)
 			.I(ck_180_out)   // Buffer input
 		);
 				
@@ -959,7 +959,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
 		
 		//assign dqs_r = (udqs_r | ldqs_r);	
-		assign dqs_r = udqs_r;
+		assign dqs_r = udqs_r;  // iodelay input must come directly from IO pad, no FPGA fabric in between
 
 		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
 		// Check the explanation below for the need of two separate OSERDES
