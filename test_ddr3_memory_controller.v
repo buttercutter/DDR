@@ -160,19 +160,18 @@ localparam MAX_TIMING = 152068;  // just for initial development stage, will ref
 localparam STATE_WRITE_DATA = 8;
 localparam STATE_READ_DATA = 11;
 
+`ifndef XILINX
+	wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+`else
+	wire [4:0] main_state;
+`endif
+		
+
 // for STATE_IDLE transition into STATE_REFRESH
 parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
 
 `ifndef MICRON_SIM
 	assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
-	
-	`ifndef USE_ILA
-		`ifndef XILINX
-			wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-		`else
-			wire [4:0] main_state;
-		`endif
-	`endif
 `else
 
 	wire done;  // finished DDR write and read operations in loopback mechaism
@@ -217,8 +216,6 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 		`endif
 		wire [DQS_BITWIDTH-1:0] tdqs_n;
 	`endif
-
-	wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 
 `endif
 
@@ -427,7 +424,7 @@ reg done_writing, done_reading;
 	wire dqs_falling_edge;
 		
 	`ifdef XILINX
-		wire [4:0] main_state;
+		//wire [4:0] main_state;
 		wire [14:0] wait_count;
 		wire [3:0] refresh_Queue;
 		wire [1:0] dqs_counter;
@@ -495,7 +492,7 @@ reg done_writing, done_reading;
 		
 		localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 		
-		wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+		//wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 		wire [$clog2(MAX_TIMING)-1:0] wait_count;
 		wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
 		wire [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
@@ -555,9 +552,7 @@ ddr3_control
 	
 	.dq(dq), // Data input/output
 
-`ifdef MICRON_SIM
 	.main_state(main_state),
-`endif
 	
 `ifdef USE_ILA
 	.dq_w(dq_w),
@@ -566,7 +561,6 @@ ddr3_control
 	.high_Priority_Refresh_Request(high_Priority_Refresh_Request),
 	.write_is_enabled(write_is_enabled),
 	.read_is_enabled(read_is_enabled),
-	.main_state(main_state),
 	.wait_count(wait_count),
 	.refresh_Queue(refresh_Queue),
 	.dqs_counter(dqs_counter),

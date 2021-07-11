@@ -164,8 +164,10 @@ module ddr3_memory_controller
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
 
-`ifdef MICRON_SIM
+`ifndef XILINX
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
+`else
+	output reg [4:0] main_state,
 `endif
 	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
@@ -181,12 +183,10 @@ module ddr3_memory_controller
 	output reg read_is_enabled,
 	
 	`ifndef XILINX
-	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
 	output reg [$clog2(MAX_TIMING)-1:0] wait_count,
 	output reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue,
 	output reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter,
 	`else
-	output reg [4:0] main_state,
 	output reg [14:0] wait_count,
 	output reg [3:0] refresh_Queue,
 	output reg [1:0] dqs_counter,
@@ -271,16 +271,6 @@ localparam ZQCL = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~we_n) & (~A10);
 */
 
-
-`ifndef USE_ILA
-	`ifndef MICRON_SIM
-		`ifndef XILINX
-			reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-		`else
-			reg [4:0] main_state;
-		`endif
-	`endif
-`endif
 
 `ifndef XILINX
 	reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
@@ -970,8 +960,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// RAM -> IOBUF (for inout) -> IDELAY (DQS Centering) -> IDDR2 (input DDR buffer) -> ISERDES		
 		// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
 		
-		assign dqs_r = (udqs_r | ldqs_r);	
-
+		//assign dqs_r = (udqs_r | ldqs_r);	
+		assign dqs_r = udqs_r;
 
 		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
 		// Check the explanation below for the need of two separate OSERDES
