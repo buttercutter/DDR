@@ -16,7 +16,7 @@ Notes on Modelsim simulation for Micron DDR3 memory simulation model:
 
 ![modelsim_waveform](./micron_simulation_model_waveform.png)
 
-Credit: [@Morin](https://github.com/MartinGeisse), [@Greg](https://github.com/gregdavill/), [@BrianHG and @NorthGuy](https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/) for their helpful technical help and explanation
+Credit: [@Elphel](https://blog.elphel.com/2014/06/ddr3-memory-interface-on-xilinx-zynq-soc-free-software-compatible/), [@Morin](https://github.com/MartinGeisse), [@Greg](https://github.com/gregdavill/), [@BrianHG and @NorthGuy](https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/) for their helpful technical help and explanation
 
 Reference:
 
