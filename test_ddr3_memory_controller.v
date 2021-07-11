@@ -58,8 +58,8 @@ module test_ddr3_memory_controller
 		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 				
 		// host clock period in ns
-		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
-		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
+		parameter CK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
+		parameter CLK_PERIOD = (CK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
@@ -242,8 +242,11 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 		resetn_sim <= 1'b1;
 		@(posedge clk_sim);
 
-		resetn_sim <= 1'b0;  // asserts master reset signal
-		
+		resetn_sim <= 1'b0;  // asserts master reset signal for at least 10ns (requirement by Xilinx PLL IP core)
+
+		// 10ns divides by 3.3ns = 4 clk_sim cycles
+		@(posedge clk_sim);
+		@(posedge clk_sim);		
 		@(posedge clk_sim);
 		@(posedge clk_sim);
 		
