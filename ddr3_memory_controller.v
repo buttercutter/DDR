@@ -8,6 +8,7 @@
 
 
 `define MICRON_SIM 1  // micron simulation model
+`define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
 
 `define USE_x16 1
 
@@ -48,25 +49,21 @@ localparam MAX_TIMING = 152068;  // just for initial development stage, will ref
 `define LOOPBACK 1
 
 
-`ifdef MICRON_SIM
-	localparam PERIOD_MARGIN = 10;  // 10ps margin
-	localparam MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN;  // 3300ps which is defined by Micron simulation model
-	localparam PICO_TO_NANO_CONVERSION_FACTOR = 1000;  // 1ns = 1000ps
-`endif
-
-
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
 #(
-	`ifndef HIGH_SPEED
-		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
-	`else
+	`ifdef HIGH_SPEED
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
 		parameter SERDES_RATIO = 8,
 	`endif
 	
-	`ifdef MICRON_SIM
+	`ifdef TESTBENCH
+		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+		parameter PERIOD_MARGIN = 10,  // 10ps margin
+		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model
+		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
+				
 		// host clock period in ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
 		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
@@ -1851,6 +1848,7 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 	// for phase-shifting incoming read DQS strobe with respect to 'ck' signal
 	localparam JITTER_MARGIN_FOR_DQS_SAMPLING = 2;
 	reg dqs_delay_sampling_margin;
+	reg previous_delayed_dqs_r;
 `endif
 
 
@@ -1865,10 +1863,17 @@ begin
 		main_state <= STATE_RESET;
 		previous_main_state <= STATE_RESET;
 		ck_en <= 0;
+		
+		// low-level signals (except reset_n) are asserted high initially
 		cs_n <= 1;			
 		ras_n <= 1;
 		cas_n <= 1;
 		we_n <= 1;
+		
+		// 200 us is required before RST_N goes inactive.
+		// CKE must be maintained inactive for 10 ns before RST_N goes inactive.
+		reset_n <= 0;
+		
 		address <= 0;
 		bank_address <= 0;
 		wait_count <= 0;
@@ -1908,6 +1913,10 @@ begin
 		wait_count <= wait_count + 1;
 		previous_main_state <= main_state;
 
+		`ifdef HIGH_SPEED
+			previous_delayed_dqs_r <= delayed_dqs_r;
+		`endif
+		
 		if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
 			
 		else postponed_refresh_timing_count <= postponed_refresh_timing_count + 1;
@@ -2713,13 +2722,14 @@ begin
 					if(MPR_ENABLE)
 					begin
 						// samples the delayed version of dqs_r for continous feedback to IDELAY2 primitive
-						if(~delayed_dqs_r)
+						if(~delayed_dqs_r & ~previous_delayed_dqs_r)
 						begin
 							idelay_inc_dqs_r <= 0;  // 1st case : decrements delay value
 							dqs_delay_sampling_margin <= dqs_delay_sampling_margin - 1;
 						end
 							
-						else begin
+						else if(delayed_dqs_r & previous_delayed_dqs_r)
+						begin
 							idelay_inc_dqs_r <= 1;  // 2nd case : increments delay value
 							dqs_delay_sampling_margin <= dqs_delay_sampling_margin + 1;
 						end

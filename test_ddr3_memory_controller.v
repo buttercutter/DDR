@@ -1,4 +1,5 @@
 `define MICRON_SIM 1  // micron simulation model
+`define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
 
 `define USE_x16 1
 
@@ -42,24 +43,20 @@
 `endif
 
 
-`ifdef MICRON_SIM
-	localparam PERIOD_MARGIN = 10;  // 10ps margin
-	localparam MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN;  // 3300ps which is defined by Micron simulation model
-	localparam PICO_TO_NANO_CONVERSION_FACTOR = 1000;  // 1ns = 1000ps
-`endif
-
-
 module test_ddr3_memory_controller
 #(
-	`ifndef HIGH_SPEED
-		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
-	`else
+	`ifdef HIGH_SPEED
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
-		parameter integer SERDES_RATIO = 8,
+		parameter SERDES_RATIO = 8,
 	`endif
 	
-	`ifdef MICRON_SIM
+	`ifdef TESTBENCH
+		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+		parameter PERIOD_MARGIN = 10,  // 10ps margin
+		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model
+		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
+				
 		// host clock period in ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
 		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
@@ -223,32 +220,36 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 
 	wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 
+`endif
+
+`ifdef TESTBENCH
 	// Micron simulation model is using `timescale 1ps / 1ps
 	// duration for each bit = 1 * timescale = 1 * 1ps  = 1ps
+	// but the following coding is also for Xilinx ISIM simulator
 
 	localparam RESET_TIMING = 200_000_000;  // 200us
 	localparam STOP_TIMING =  900_000_000;  // 900us
 
-	// clock and reset signals generation for Micron simulation testbench
-	reg clk;
-	reg resetn;
+	// clock and reset signals generation for simulation testbench
+	reg clk_sim;
+	reg resetn_sim;
 
 	initial begin
 		$dumpfile("ddr3.vcd");
 		$dumpvars(0, test_ddr3_memory_controller);
 		
-		clk <= 1'b0;
-		resetn <= 1'b1;
-		@(posedge clk);
+		clk_sim <= 1'b0;
+		resetn_sim <= 1'b1;
+		@(posedge clk_sim);
 
-		resetn <= 1'b0;  // asserts master reset signal
+		resetn_sim <= 1'b0;  // asserts master reset signal
 		
-		@(posedge clk);
-		@(posedge clk);
+		@(posedge clk_sim);
+		@(posedge clk_sim);
 		
-		resetn <= 1'b1;  // releases master reset signal
+		resetn_sim <= 1'b1;  // releases master reset signal
 		
-		repeat(STOP_TIMING/CLK_PERIOD) @(posedge clk);  // minimum runtime
+		repeat(STOP_TIMING/CLK_PERIOD) @(posedge clk_sim);  // minimum runtime
 		
 		$stop;
 	end
@@ -256,10 +257,13 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 	// note that sensitive list is omitted in always block
 	// therefore always-block run forever
 	// clock period = 3.3 ns , frequency = 303 MHz
-	always #((CLK_PERIOD*PICO_TO_NANO_CONVERSION_FACTOR)/2) clk = ~clk;  // clock edge transition every half clock cycle period
+	always #((CLK_PERIOD*PICO_TO_NANO_CONVERSION_FACTOR)/2) clk_sim = ~clk_sim;  // clock edge transition every half clock cycle period
+
+	wire reset = ~resetn_sim;  // just for convenience of verilog syntax
+`else
+	wire reset = ~resetn;  // just for convenience of verilog syntax
 `endif
 
-wire reset = ~resetn;  // just for convenience of verilog syntax
 
 `ifndef XILINX
 	wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles;  // for the purpose of postponing refresh commands
@@ -312,8 +316,12 @@ reg done_writing, done_reading;
 		for(data_write_index = 0; data_write_index < SERDES_RATIO;
 			data_write_index = data_write_index + 1)
 		begin: data_write_loop
-	`endif			
+	`endif
+		`ifdef TESTBENCH			
+			always @(posedge clk_sim)
+		`else
 			always @(posedge clk)
+		`endif
 			begin
 				if(reset) 
 				begin
@@ -503,8 +511,13 @@ ddr3_memory_controller
 ddr3_control
 (
 	// these are FPGA internal signals
-	.clk(clk),
-	.reset(reset),
+	`ifdef TESTBENCH
+		.clk(clk_sim),
+	`else
+		.clk(clk),
+	`endif
+	
+	.reset(reset),  // reset for entire system
 	.write_enable(write_enable),  // write to DDR memory
 	.read_enable(read_enable),  // read from DDR memory
 	.i_user_data_address(i_user_data_address),  // the DDR memory address for which the user wants to write/read the data
@@ -535,7 +548,7 @@ ddr3_control
 	.ras_n(ras_n), // RAS#
 	.cas_n(cas_n), // CAS#
 	.we_n(we_n), // WE#
-	.reset_n(reset_n),
+	.reset_n(reset_n),  // reset only for RAM
 	
 	.dq(dq), // Data input/output
 
