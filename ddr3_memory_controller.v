@@ -656,9 +656,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 		
 		
-		// The following DQS signals are not of double-data-rate signals,
-		// but they are connected to T port of IOBUF where its I port is fed in with double-data-rate signals,
-		// thus the purpose of having the following ODDR2 primitives
+		// DQS signals are of double-data-rate signals
 		
 		`ifdef USE_x16
 		
@@ -1350,7 +1348,10 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 
 
 		// see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
-		
+		// 'data_read_is_ongoing' signal is not of double-data-rate signals,
+		// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
+		// thus the purpose of having the following ODDR2 primitives
+				
 		ODDR2 #(
 			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
