@@ -951,8 +951,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
 			.DATAOUT  		(delayed_dqs_r), 		// Output data 1 to ILOGIC/ISERDES2
 			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
-			.IOCLK0   		(ck), 		// High speed clock for calibration
-			.IOCLK1   		(ck_180), 		// High speed clock for calibration
+			.IOCLK0   		(ck_90), 		// High speed clock for calibration
+			.IOCLK1   		(ck_270), 		// High speed clock for calibration
 			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
 			.CAL      		(idelay_cal_dqs_r),	// Calibrate control signal
 			.INC      		(idelay_inc_dqs_r), 		// Increment counter
