@@ -1842,6 +1842,14 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 	reg previous_delayed_dqs_r;
 `endif
 
+reg need_to_assert_reset;
+
+always @(posedge clk)  // ck is only turned on after clk is turned on
+begin
+	if(reset) need_to_assert_reset <= 1;
+	
+	else if(locked) need_to_assert_reset <= 0;
+end
 
 `ifdef HIGH_SPEED
 always @(posedge ck)
@@ -1849,908 +1857,193 @@ always @(posedge ck)
 always @(posedge clk)
 `endif
 begin
-	if(reset) 
+	`ifdef XILINX
+	if(locked)
 	begin
-		main_state <= STATE_RESET;
-		previous_main_state <= STATE_RESET;
-		ck_en <= 0;
+	`endif
 		
-		// low-level signals (except reset_n) are asserted high initially
-		cs_n <= 1;			
-		ras_n <= 1;
-		cas_n <= 1;
-		we_n <= 1;
-		
-		// 200 us is required before RST_N goes inactive.
-		// CKE must be maintained inactive for 10 ns before RST_N goes inactive.
-		reset_n <= 0;
-		
-		address <= 0;
-		bank_address <= 0;
-		wait_count <= 0;
-		refresh_Queue <= 0;
-		postponed_refresh_timing_count <= 0;
-		refresh_timing_count <= 0;
-		MPR_ENABLE <= 0;
-		MPR_Read_had_finished <= 0;
-		
-		`ifdef HIGH_SPEED
-			// such that the first phase delay calibration iteration does not abort
-			dqs_delay_sampling_margin <= JITTER_MARGIN_FOR_DQS_SAMPLING;
-		`endif
-	end
-
-`ifdef HIGH_SPEED
-	else
-`else
-	// DDR signals are 90 degrees phase-shifted in advance
-	// with reference to outgoing 'clk' (clk_slow) signal to DDR RAM
-	// such that all outgoing DDR signals are sampled in the middle of during posedge(ck)
-	// For more info, see the initialization sequence : https://i.imgur.com/JClPQ6G.png
-	
-	// since clocked always block only updates the new data at the next clock cycle, 
-	// clk90_slow_posedge is used instead of clk180_slow_posedge to produce a new data 
-	// that is 180 degree phase-shifted, for which the data will be sampled in the middle by 'clk_slow' ('clk')
-	// Since DIVIDE_RATIO=4, so in half clock period for fast 'ck' signal, there are 2 slow 'clk' cycles
-	// Therefore, clk90_slow_posedge is 1 'clk' cycle in advance/early with comparison to clk180_slow_posedge
-	// The purpose of doing so is to have larger setup and hold timing margin for positive edge of clk_slow,
-	// while still obeying DDR3 datasheet specifications
-	else if(clk90_slow_posedge)  // generates new data at 180 degrees before positive edge of clk_slow
-`endif
-	begin
-		if(write_enable) write_is_enabled <= 1;
-		if(read_enable) read_is_enabled <= 1;
-	
-		wait_count <= wait_count + 1;
-		previous_main_state <= main_state;
-
-		`ifdef HIGH_SPEED
-			previous_delayed_dqs_r <= delayed_dqs_r;
-		`endif
-		
-		if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
+		if(need_to_assert_reset) 
+		begin
+			main_state <= STATE_RESET;
+			previous_main_state <= STATE_RESET;
+			ck_en <= 0;
 			
-		else postponed_refresh_timing_count <= postponed_refresh_timing_count + 1;
-
-		if(it_is_time_to_do_refresh_now) refresh_timing_count <= 0;
+			// low-level signals (except reset_n) are asserted high initially
+			cs_n <= 1;			
+			ras_n <= 1;
+			cas_n <= 1;
+			we_n <= 1;
 			
-		else refresh_timing_count <= refresh_timing_count + 1;
+			// 200 us is required before RST_N goes inactive.
+			// CKE must be maintained inactive for 10 ns before RST_N goes inactive.
+			reset_n <= 0;
+			
+			address <= 0;
+			bank_address <= 0;
+			wait_count <= 0;
+			refresh_Queue <= 0;
+			postponed_refresh_timing_count <= 0;
+			refresh_timing_count <= 0;
+			MPR_ENABLE <= 0;
+			MPR_Read_had_finished <= 0;
+			
+			`ifdef HIGH_SPEED
+				// such that the first phase delay calibration iteration does not abort
+				dqs_delay_sampling_margin <= JITTER_MARGIN_FOR_DQS_SAMPLING;
+			`endif
+		end
 
-
-		// defaults the command signals high & only pulse low for the 1 clock when need to issue a command.
-		cs_n <= 1;			
-		ras_n <= 1;
-		cas_n <= 1;
-		we_n <= 1;
+	`ifdef HIGH_SPEED
+		else
+	`else
+		// DDR signals are 90 degrees phase-shifted in advance
+		// with reference to outgoing 'clk' (clk_slow) signal to DDR RAM
+		// such that all outgoing DDR signals are sampled in the middle of during posedge(ck)
+		// For more info, see the initialization sequence : https://i.imgur.com/JClPQ6G.png
 		
-						
-		// https://i.imgur.com/VUdYasX.png
-		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
-		case(main_state)
+		// since clocked always block only updates the new data at the next clock cycle, 
+		// clk90_slow_posedge is used instead of clk180_slow_posedge to produce a new data 
+		// that is 180 degree phase-shifted, for which the data will be sampled in the middle by 'clk_slow' ('clk')
+		// Since DIVIDE_RATIO=4, so in half clock period for fast 'ck' signal, there are 2 slow 'clk' cycles
+		// Therefore, clk90_slow_posedge is 1 'clk' cycle in advance/early with comparison to clk180_slow_posedge
+		// The purpose of doing so is to have larger setup and hold timing margin for positive edge of clk_slow,
+		// while still obeying DDR3 datasheet specifications
+		else if(clk90_slow_posedge)  // generates new data at 180 degrees before positive edge of clk_slow
+	`endif
+		begin
+			if(write_enable) write_is_enabled <= 1;
+			if(read_enable) read_is_enabled <= 1;
 		
-			// reset active, wait for 200us, reset inactive, wait for 500us, CKE=1, 
-			// then, wait for tXPR = 10ns + tRFC = 10ns + 110ns (tRFC of 1GB memory = 110ns), 
-			// Then the MRS commands begin.
+			wait_count <= wait_count + 1;
+			previous_main_state <= main_state;
+
+			`ifdef HIGH_SPEED
+				previous_delayed_dqs_r <= delayed_dqs_r;
+			`endif
 			
-			STATE_RESET :  // https://i.imgur.com/ePuqhsY.png
-			begin
-				ck_en <= 0;
+			if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
+				
+			else postponed_refresh_timing_count <= postponed_refresh_timing_count + 1;
+
+			if(it_is_time_to_do_refresh_now) refresh_timing_count <= 0;
+				
+			else refresh_timing_count <= refresh_timing_count + 1;
+
+
+			// defaults the command signals high & only pulse low for the 1 clock when need to issue a command.
+			cs_n <= 1;			
+			ras_n <= 1;
+			cas_n <= 1;
+			we_n <= 1;
 			
-				if(wait_count > TIME_INITIAL_RESET_ACTIVE-1)
+							
+			// https://i.imgur.com/VUdYasX.png
+			// See https://www.systemverilog.io/ddr4-initialization-and-calibration
+			case(main_state)
+			
+				// reset active, wait for 200us, reset inactive, wait for 500us, CKE=1, 
+				// then, wait for tXPR = 10ns + tRFC = 10ns + 110ns (tRFC of 1GB memory = 110ns), 
+				// Then the MRS commands begin.
+				
+				STATE_RESET :  // https://i.imgur.com/ePuqhsY.png
 				begin
-					reset_n <= 1;  // reset inactive
-					main_state <= STATE_RESET_FINISH;
-					wait_count <= 0;
-				end
+					ck_en <= 0;
 				
-				else begin
-					reset_n <= 0;  // reset active
-					main_state <= STATE_RESET;
-				end
-			end
-			
-			STATE_RESET_FINISH :
-			begin
-				// ODT must be driven LOW at least tIS prior to CKE being registered HIGH.
-				// For tIS, see https://i.imgur.com/kiJI0pY.png or 
-				// the section "Command and Address Setup, Hold, and Derating" inside
-				// https://media-www.micron.com/-/media/client/global/documents/products/data-sheet/dram/ddr3/2gb_ddr3_sdram.pdf#page=99
-				// as well as the JESD79-3F DDR3 SDRAM Standard which adds further derating which means
-				// another 25 ps to account for the earlier reference point
-				
-				odt <= 0;  // tIs = 195ps (170ps+25ps) , this does not affect anything at low speed testing mode
-				
-				if(wait_count > TIME_INITIAL_CK_INACTIVE-1)
-				begin
-					ck_en <= 1;  // CK active
-					main_state <= STATE_INIT_CLOCK_ENABLE;
-					wait_count <= 0;
-				end
-
-				else if(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1)  // setup timing of 'ck_en' with respect to 'ck'
-				begin
-					ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
-					main_state <= STATE_RESET_FINISH;
-					
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 1;				
-				end
-						
-				else begin
-					if(ck_en) ck_en <= 1;  // continue to be active after first transition to active logic high
-					
-					else ck_en <= 0;  // CK inactive
-			
-					main_state <= STATE_RESET_FINISH;
-				end			
-			end
-			
-			STATE_INIT_CLOCK_ENABLE :
-			begin
-				ck_en <= 1;  // CK active
-
-				// The clock must be present and valid for at least 10ns (and a minimum of five clocks)			
-				if(wait_count > TIME_TXPR-1)
-				begin
-					// prepare necessary parameters for next state
-					main_state <= STATE_INIT_MRS_2;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
-		            address <= 0;  // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled					
-					
-					wait_count <= 0;
-					
-					// no more NOP command in next 'ck' cycle, transition to MR2 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;					
-				end
-				
-				else begin
-					main_state <= STATE_INIT_CLOCK_ENABLE;
-				end				
-			end
-			
-			STATE_INIT_MRS_2 :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-
-	            // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled
-	            address <= 0;
-	                        			
-				if(wait_count > TIME_TMRD-1)
-				begin
-					// prepare necessary parameters for MR3 state				
-					main_state <= STATE_INIT_MRS_3;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
-					
-					// MPR Read function enabled
-					address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
-								MPR_ENABLE, MPR_READ_FUNCTION};					
-					
-					wait_count <= 0;
-					
-					// no more NOP command in next 'ck' cycle, transition to MR3 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;						
-				end
-				
-				else begin
-					main_state <= STATE_INIT_MRS_2;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
-				end		
-			end
-
-			STATE_INIT_MRS_3 :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-				
-
-				if(MPR_ENABLE == 0)
-				begin
-				
-					// finished MPR System Read Calibration, just returned from STATE_READ_DATA
-					if((previous_main_state == STATE_READ_DATA) || MPR_Read_had_finished)
+					if(wait_count > TIME_INITIAL_RESET_ACTIVE-1)
 					begin
-						MPR_Read_had_finished <= 1;
-					
-						if(wait_count > TIME_TMOD-1) begin
-							main_state <= STATE_IDLE;
-							
-							// NOP command in next 'ck' cycle, transition to IDLE command
-							cs_n <= 0;
-							ras_n <= 1;
-							cas_n <= 1;
-							we_n <= 1;								
-							
-							wait_count <= 0;
-							
-							MPR_Read_had_finished <= 0;
-						end								
+						reset_n <= 1;  // reset inactive
+						main_state <= STATE_RESET_FINISH;
+						wait_count <= 0;
 					end
 					
-					// must fully initialize the DDR3 chip, right past the ZQCL before we can read the MPR.
-					// See Figure 48 on the DDR RAM initialization sequence
-					// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3599352/#msg3599352
 					else begin
-					
-						if(wait_count > TIME_TMRD-1) begin
-							// prepare necessary parameters for next MRS				
-							main_state <= STATE_INIT_MRS_1;
-							bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
-
-							`ifdef USE_x16
-							
-								`ifdef RAM_SIZE_1GB
-									address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_2GB
-									address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_4GB
-									address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								`endif
-							`else
-								
-								`ifdef RAM_SIZE_1GB
-									address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_2GB
-									address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_4GB
-									address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								`endif
-							`endif
-							
-							wait_count <= 0;
-							
-							// no more NOP command in next 'ck' cycle, transition to MR1 command
-							cs_n <= 0;
-							ras_n <= 0;
-							cas_n <= 0;
-							we_n <= 0;						
-						end					
+						reset_n <= 0;  // reset active
+						main_state <= STATE_RESET;
 					end
 				end
 				
-				// Issues READ command at tMOD after MRS command is issued
-				// See Figure 59 or https://i.imgur.com/K1qrMME.png 
-				else if(wait_count > TIME_TMOD-1) begin
-					// MPR System READ calibration is a must for all Micron DDR RAM, 
-					// so transitions to RDAP command in next state
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 1;
-					cas_n <= 0;
-					we_n <= 1;
-											
-					main_state <= STATE_READ_AP;
-					address[2:0] <= 0;  // required by spec, see Figure 59 or https://i.imgur.com/K1qrMME.png
-
-					/*
-					• A[1:0] must be set to 00 as the burst order is fixed per nibble.
-					• A2 selects the burst order: BL8, A2 is set to 0, and the burst order is fixed to 0, 1, 2, 3, 4, 5, 6, 7.
-					• A[9:3] are “Don’t Care.”
-					• A10 is “Don’t Care.”
-					• A11 is “Don’t Care.”
-					• A12: Selects burst chop mode on-the-fly, if enabled within MR0.
-					• A13 is a “Don’t Care”
-					• BA[2:0] are “Don’t Care.”
-					*/
+				STATE_RESET_FINISH :
+				begin
+					// ODT must be driven LOW at least tIS prior to CKE being registered HIGH.
+					// For tIS, see https://i.imgur.com/kiJI0pY.png or 
+					// the section "Command and Address Setup, Hold, and Derating" inside
+					// https://media-www.micron.com/-/media/client/global/documents/products/data-sheet/dram/ddr3/2gb_ddr3_sdram.pdf#page=99
+					// as well as the JESD79-3F DDR3 SDRAM Standard which adds further derating which means
+					// another 25 ps to account for the earlier reference point
 					
-					wait_count <= 0;
-				end		
-			end
-			
-			STATE_INIT_MRS_1 :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-
-				// enable DLL; 34ohm output driver; no additive latency (AL); write leveling disabled;
-	            // termination resistors disabled; TDQS disabled; output enabled
-	            // Note: Write leveling : See https://i.imgur.com/mKY1Sra.png
-	            // Note: AL can be used somehow to save a few cycles when you ACTIVATE multiple banks
-	            //       interleaved, but since this is really high-end optimisation, 
-	            //       it is set to value of 0 for now.
-	            // 		 See https://blog.csdn.net/xingqingly/article/details/48997879 and
-	            //       https://application-notes.digchip.com/024/24-19971.pdf for more context on AL
-	            // address <= {1'b0, MR1, 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-	                        			
-				if(wait_count > TIME_TMRD-1)
-				begin
-					// prepare necessary parameters for next state				
-					main_state <= STATE_INIT_MRS_0;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
-
-					`ifdef USE_x16
+					odt <= 0;  // tIs = 195ps (170ps+25ps) , this does not affect anything at low speed testing mode
 					
-						`ifdef RAM_SIZE_1GB
-							address <= {PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
-							
-						`elsif RAM_SIZE_2GB
-							address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
-							
-						`elsif RAM_SIZE_4GB
-							address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
-						`endif
-					`else
-						
-						`ifdef RAM_SIZE_1GB
-							address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
-							
-						`elsif RAM_SIZE_2GB
-							address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
-							
-						`elsif RAM_SIZE_4GB
-							address <= {MR0[0], 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
-						`endif
-					`endif
-							
-					wait_count <= 0;
-					
-					// no more NOP command in next 'ck' cycle, transition to MR0 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;						
-				end
-				
-				else begin
-					main_state <= STATE_INIT_MRS_1;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
-				end	
-			end
-
-			STATE_INIT_MRS_0 :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-
-	            // fixed burst length 8; sequential burst; CL=5; DLL reset yes
-	            // write recovery=5; precharge PD: DLL on
-	            
-	            // write recovery: WR(cycles) = roundup ( tWR (ns)/ tCK (ns) )
-	            // tWR sets the number of clock cycles between the completion of a valid write operation and
-	            // before an active bank can be precharged
-	            
-	            // DLL reset: see https://www.issi.com/WW/pdf/EN-I002-Clock%20Consideration_QUAD&DDR2.pdf
-	            // when initialising the RAM for the first time, the memory controller's clock outputs are
-	            // usually disabled, so the RAM is "running" at 0 Hz (it's not running)
-	            // after enabling the clock outputs, the DLL in the RAM needs to "lock" to the clock signal. 
-	            // A DLL reset "unlocks" the DLL, so that it can lock again to the current clock speed.
-	            // If you enable "DLL reset" in MR0, then you must wait for tDLLK before using any functions 
-	            // that require the DLL (read commands or ODT synchronous operations)
-	            // The DLL is used to generate DQS.  For read commands, the DRAM drives DQ and DQS pins, and 
-	            // uses the DLL to maintain a 90 degrees phase shift between DQ and DQS
-	            // tDLLK (512) cycles of clock input are required to lock the DLL.
-	            
-	            // CL=5 is not supported with the DLL disabled according to the Micron spec.
-	            // The Micron spec says something about DQSCK "starting earlier" with the DLL off and 
-	            // this seems to mean that we actually have CL=4 when CL=5 is configured.  
-	            // See https://i.imgur.com/iuS45ld.png where tDQSCK starts AL + CL - 1 cycles 
-	            // after the READ command. 
-
-				//address <= {1'b0, MR0, 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
-				//			READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
-				
-				if(wait_count > TIME_TMOD-1)
-				begin
-					main_state <= STATE_ZQ_CALIBRATION;
-					wait_count <= 0;
-					
-					// no more NOP command in next 'ck' cycle, transition to ZQCL command
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 0;	
-					address[A10] <= 1;					
-				end
-				
-				else begin
-					main_state <= STATE_INIT_MRS_0;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
-				end				
-			end
-			
-			STATE_ZQ_CALIBRATION :  // https://i.imgur.com/n4VU0MF.png
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ZQCL command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-	
-				if(wait_count > TIME_TZQINIT-1)
-				begin
-					MPR_ENABLE <= MPR_EN;  // turns on MPR System Read Calibration
-					main_state <= STATE_IDLE;
-					wait_count <= 0;
-				end
-				
-				else begin
-					main_state <= STATE_ZQ_CALIBRATION;
-				end					
-			end
-			
-			STATE_IDLE :
-			begin
-				// for simplicity, idle state coding will only transit to STATE_ACTIVATE and STATE_REFRESH
-				// will implement state transition to STATE_WRITE_LEVELLING and STATE_SELF_REFRESH later
-			
-				// Rationale behind the priority encoder logic coding below:
-				// We can queue (or postpone) up to maximum 8 REFRESH commands inside the RAM. 
-				// If 8 are queued, there's a high priority request. 
-				// If 4-7 are queued, there's a low-priority request.
-				// If 0-3 are queued, no more are needed (both request signals are false).
-				// So READ/WRITE normally go first and refreshes are done while no READ/WRITE are pending, 
-				// unless there is a danger that the queue underflows, 
-				// in which case it becomes a high-priority request and READ/WRITE have to wait.  
-				// So, in summary, it is to overcome the performance penalty due to refresh lockout at the 
-				// higher densities
-				
-				if((refresh_Queue == 0) && 
-				   (user_desired_extra_read_or_write_cycles <= MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED))
-				begin
-					refresh_Queue <= user_desired_extra_read_or_write_cycles;
-				end	
-
-
-				if ((MPR_ENABLE) ||
-	                (extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request) ||
-	            	((user_desired_extra_read_or_write_cycles == 0) & it_is_time_to_do_refresh_now))
-	            begin
-					// need to do PRECHARGE before REFRESH, see tRP
-
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 0;
-					cas_n <= 1;
-					we_n <= 0;
-					address[A10] <= 0;
-	                main_state <= STATE_PRECHARGE;
-	                
-	                wait_count <= 0;
-	            end
-	            
-	            else if (write_is_enabled | read_is_enabled)
-	            begin
-	            	ck_en <= 1;
-	            	cs_n <= 0;
-	            	ras_n <= 0;
-	            	cas_n <= 1;
-	            	we_n <= 1;
-	            	
-	            	bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
-	            		
-	                main_state <= STATE_ACTIVATE;
-	                
-	                wait_count <= 0;
-	            end
-	            
-	            else if (low_Priority_Refresh_Request)
-	            begin
-					// need to do PRECHARGE before REFRESH, see tRP
-
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 0;
-					cas_n <= 1;
-					we_n <= 0;
-					address[A10] <= 0;
-	                main_state <= STATE_PRECHARGE;
-	                
-	                wait_count <= 0;
-				end
-				
-				else main_state <= STATE_IDLE;
-				
-			end
-			
-			STATE_ACTIVATE :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-				
-				// need to make sure that 'i_user_data_address' remains unchanged for at least tRRD
-				// because according to the definition of tRAS and tRC, it is legal within the same bank, 
-				// to issue either ACTIVATE or REFRESH when bank is idle, and PRECHARGE when a row is open
-				// So, we have to keep track of what state each bank is in and which row is currently active
-				
-				// will implement multiple consecutive ACT commands (TIME_RRD) in later stage of project
-				// However, tRRD mentioned "Time ACT to ACT, different banks, no PRE between" ?
-				
-				bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
-				
-				address <= 	// column address
-						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		
-						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
-								1'b1,  // use auto-precharge, but it is don't care in this state
-								i_user_data_address[A10-1:0]
-							};
-
-												
-				// auto-precharge (AP) is easier for now. In the end it will be manually precharging 
-				// (since many read/write commands may use the same row) but for now, simple is better	
-						
-				if(wait_count > TIME_TRCD-1)
-				begin
-					if(write_is_enabled)  // write operation has higher priority during loopback test
-					begin					
-						// no more NOP command in next 'ck' cycle, transition to WRAP command
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 0;
-						we_n <= 0;
-						
-						`ifdef LOOPBACK
-							// for data loopback, auto-precharge will close the bank, 
-							// which means read operation could not proceeed without reopening the bank
-							address[A10] <= 0;
-							main_state <= STATE_WRITE;
-						`else
-							address[A10] <= 1;
-							main_state <= STATE_WRITE_AP;
-						`endif
-						
-						wait_count <= 0;
-					end
-						
-					else if(read_is_enabled) 
+					if(wait_count > TIME_INITIAL_CK_INACTIVE-1)
 					begin
-						// no more NOP command in next 'ck' cycle, transition to RDAP command
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 0;
-						we_n <= 1;
-						
-						address[A10] <= 1;
-						main_state <= STATE_READ_AP;
-						
+						ck_en <= 1;  // CK active
+						main_state <= STATE_INIT_CLOCK_ENABLE;
 						wait_count <= 0;
 					end
-				end
-				
-				else begin
-					main_state <= STATE_ACTIVATE;
-				end				
-			end
-						
-			STATE_WRITE :
-			begin
-				ck_en <= 1;
 
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;
-				
-				address <= 	// column address
-						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		
-						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
-								1'b0,  // A10 : no auto-precharge
-								i_user_data_address[A10-1:0]
-							};
-				
-				if(wait_count > (TIME_WL-TIME_TWPRE)-1)
-				begin
-					main_state <= STATE_WRITE_DATA;
-					wait_count <= 0;
-				end
-				
-				else begin
-					main_state <= STATE_WRITE;
-				end							
-			end
-						
-			STATE_WRITE_AP :
-			begin
-				// https://www.systemverilog.io/understanding-ddr4-timing-parameters#write
-				// will implement multiple consecutive WRITE commands (TIME_TCCD) in later stage of project
-			
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-								
-				address <= 	// column address
-						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		
-						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
-								1'b1,  // A10 : use auto-precharge
-								i_user_data_address[A10-1:0]
-							};
-				
-				if(wait_count > (TIME_WL-TIME_TWPRE)-1)
-				begin
-					main_state <= STATE_WRITE_DATA;
-					wait_count <= 0;
-				end
-				
-				else begin
-					main_state <= STATE_WRITE_AP;
-				end		
-			end
-			
-			STATE_WRITE_DATA :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;				
-							
-				if(wait_count > (TIME_TBURST+TIME_TDAL)-1)
-				begin
-					`ifdef LOOPBACK
-						// no more NOP command in next 'ck' cycle, transition to RDAP command
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 0;
-						we_n <= 1;
-						
-						address[A10] <= 1;
-						main_state <= STATE_READ_AP;
-						
-						wait_count <= 0;					
-					`else
-						main_state <= STATE_IDLE;
-						wait_count <= 0;
-					`endif
-				end
-
-				else if(wait_count > TIME_TBURST-1)
-				begin
-					main_state <= STATE_WRITE_DATA;
-					write_is_enabled <= 0;
-				end
-								
-				else begin
-					main_state <= STATE_WRITE_DATA;
-				end					
-			end
-						
-			STATE_READ :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-				
-				address <= 	// column address
-						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		
-						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
-								1'b0,  // A10 : no auto-precharge
-								i_user_data_address[A10-1:0]
-							};
-				
-				if(wait_count > (TIME_RL-TIME_TRPRE)-1)
-				begin
-					main_state <= STATE_READ_DATA;
-					wait_count <= 0;
-				end
-				
-				else begin
-					main_state <= STATE_READ;
-				end				
-			end
-					
-			STATE_READ_AP :
-			begin
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-				
-				address <= 	// column address
-						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		
-						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
-								1'b1,  // A10 : use auto-precharge
-								i_user_data_address[A10-1:0]
-							};
-				
-				if(wait_count > (TIME_RL-TIME_TRPRE)-1)
-				begin
-					main_state <= STATE_READ_DATA;
-					wait_count <= 0;
-				end
-				
-				else begin
-					main_state <= STATE_READ_AP;
-				end						
-			end
-
-			STATE_READ_DATA :
-			begin
-				// See https://patents.google.com/patent/US7911857B1/en for pre-amble detection circuit
-				// For read, we get the unshifted DQS from the RAM and have to phase-shift it ourselves before 
-				// using it as a clock strobe signal to sample (or capture) DQ signal
-			
-				if(wait_count > (TIME_TBURST + TIME_TRPST + TIME_TMPRR)-1)
-				begin
-
-					main_state <= STATE_INIT_MRS_3;
-					
-					// MPR_ENABLE is already set to ZERO in the next-IF block
-					// MPR Read function disabled					
-					address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
-								MPR_ENABLE, MPR_READ_FUNCTION};	
-														
-					// no more NOP command in next 'ck' cycle, transition to MR3 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;				
-					
-					wait_count <= 0;				
-				end
-
-				else if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
-				begin
-					if(MPR_ENABLE == 0)  // MPR System Read Calibration is already done previously
+					else if(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1)  // setup timing of 'ck_en' with respect to 'ck'
 					begin
-						main_state <= STATE_IDLE;
+						ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
+						main_state <= STATE_RESET_FINISH;
 						
-						// NOP command in next 'ck' cycle, transition to IDLE command
+						// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 						cs_n <= 0;
 						ras_n <= 1;
 						cas_n <= 1;
-						we_n <= 1;								
+						we_n <= 1;				
+					end
+							
+					else begin
+						if(ck_en) ck_en <= 1;  // continue to be active after first transition to active logic high
+						
+						else ck_en <= 0;  // CK inactive
+				
+						main_state <= STATE_RESET_FINISH;
+					end			
+				end
+				
+				STATE_INIT_CLOCK_ENABLE :
+				begin
+					ck_en <= 1;  // CK active
+
+					// The clock must be present and valid for at least 10ns (and a minimum of five clocks)			
+					if(wait_count > TIME_TXPR-1)
+					begin
+						// prepare necessary parameters for next state
+						main_state <= STATE_INIT_MRS_2;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
+				        address <= 0;  // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled					
+						
+						wait_count <= 0;
+						
+						// no more NOP command in next 'ck' cycle, transition to MR2 command
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;					
 					end
 					
-					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished		
+					else begin
+						main_state <= STATE_INIT_CLOCK_ENABLE;
+					end				
 				end
 				
-				else if(wait_count > TIME_TBURST-1)
+				STATE_INIT_MRS_2 :
 				begin
-					main_state <= STATE_READ_DATA;
-					read_is_enabled <= 0;
-				end
-				
-				`ifdef HIGH_SPEED
-				else begin
-					main_state <= STATE_READ_DATA;
+					ck_en <= 1;
 
-					/*
-					Your DQS IO logic is clocked by a clock. You need to align DQS to this clock. 
-					If you sample DQS with the rising edge of the clock, you can get different responses:
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating MRS command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
 
-					1. If you get always '0' which means that the clock rising edge already happened, 
-					   but DQS rising edge didn't. DQS needs to be moved earlier by decreasing DQS delay.
-
-					2. If you get always '1' which means that the clock rising edge happens after DQS edge. 
-					   Therefore, DQS's delay must be increased.
-
-					3. If you're somewhere in the middle (in the jitter zone) then DQS and clock are aligned.
-
-					Of course, you don't need DQS data, you only need DQ data. Therefore you adjust DQ delays
-					the same as DQS - every time you increase DQS delay, you also increase DQ delay as well.
-					Every time you decrease DQS delay you decrease DQ delay. This way, if DQS shifts, you shift
-					the DQ sampling point to follow DQS.
-					*/
-										
-					if(MPR_ENABLE)
+			        // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled
+			        address <= 0;
+			                    			
+					if(wait_count > TIME_TMRD-1)
 					begin
-						// samples the delayed version of dqs_r for continous feedback to IDELAY2 primitive
-						if(~delayed_dqs_r & ~previous_delayed_dqs_r)
-						begin
-							idelay_inc_dqs_r <= 0;  // 1st case : decrements delay value
-							dqs_delay_sampling_margin <= dqs_delay_sampling_margin - 1;
-						end
-							
-						else if(delayed_dqs_r & previous_delayed_dqs_r)
-						begin
-							idelay_inc_dqs_r <= 1;  // 2nd case : increments delay value
-							dqs_delay_sampling_margin <= dqs_delay_sampling_margin + 1;
-						end
-						
-						// see 3rd case
-						if(dqs_delay_sampling_margin < JITTER_MARGIN_FOR_DQS_SAMPLING)
-							idelay_counter_enable <= 0;  // disables delay feedback process, calibration is done
-							
-						else idelay_counter_enable <= 1;  // enables delay feedback process						
-					end
-				end
-				`endif
-			end
-						
-			STATE_PRECHARGE :
-			begin
-				// need to do PRECHARGE before REFRESH, see tRP
-
-				ck_en <= 1;
-				cs_n <= 0;			
-				ras_n <= 0;
-				cas_n <= 1;
-				we_n <= 0;
-				address[A10] <= 1;  // precharge ALL banks
-				
-				if(wait_count > TIME_TRP-1)
-				begin
-					if(MPR_ENABLE)  // MPR System Read Calibration has higher priority
-					begin
-						// prepare necessary parameters for next state				
+						// prepare necessary parameters for MR3 state				
 						main_state <= STATE_INIT_MRS_3;
 						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
 						
@@ -2764,75 +2057,799 @@ begin
 						cs_n <= 0;
 						ras_n <= 0;
 						cas_n <= 0;
-						we_n <= 0;					
+						we_n <= 0;						
 					end
 					
-					else begin					
-						main_state <= STATE_REFRESH;
+					else begin
+						main_state <= STATE_INIT_MRS_2;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
+					end		
+				end
+
+				STATE_INIT_MRS_3 :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating MRS command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+					
+
+					if(MPR_ENABLE == 0)
+					begin
+					
+						// finished MPR System Read Calibration, just returned from STATE_READ_DATA
+						if((previous_main_state == STATE_READ_DATA) || MPR_Read_had_finished)
+						begin
+							MPR_Read_had_finished <= 1;
+						
+							if(wait_count > TIME_TMOD-1) begin
+								main_state <= STATE_IDLE;
+								
+								// NOP command in next 'ck' cycle, transition to IDLE command
+								cs_n <= 0;
+								ras_n <= 1;
+								cas_n <= 1;
+								we_n <= 1;								
+								
+								wait_count <= 0;
+								
+								MPR_Read_had_finished <= 0;
+							end								
+						end
+						
+						// must fully initialize the DDR3 chip, right past the ZQCL before we can read the MPR.
+						// See Figure 48 on the DDR RAM initialization sequence
+						// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3599352/#msg3599352
+						else begin
+						
+							if(wait_count > TIME_TMRD-1) begin
+								// prepare necessary parameters for next MRS				
+								main_state <= STATE_INIT_MRS_1;
+								bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+
+								`ifdef USE_x16
+								
+									`ifdef RAM_SIZE_1GB
+										address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+										
+									`elsif RAM_SIZE_2GB
+										address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+										
+									`elsif RAM_SIZE_4GB
+										address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+									`endif
+								`else
+									
+									`ifdef RAM_SIZE_1GB
+										address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+										
+									`elsif RAM_SIZE_2GB
+										address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+										
+									`elsif RAM_SIZE_4GB
+										address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+									`endif
+								`endif
+								
+								wait_count <= 0;
+								
+								// no more NOP command in next 'ck' cycle, transition to MR1 command
+								cs_n <= 0;
+								ras_n <= 0;
+								cas_n <= 0;
+								we_n <= 0;						
+							end					
+						end
+					end
+					
+					// Issues READ command at tMOD after MRS command is issued
+					// See Figure 59 or https://i.imgur.com/K1qrMME.png 
+					else if(wait_count > TIME_TMOD-1) begin
+						// MPR System READ calibration is a must for all Micron DDR RAM, 
+						// so transitions to RDAP command in next state
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 1;
+						cas_n <= 0;
+						we_n <= 1;
+												
+						main_state <= STATE_READ_AP;
+						address[2:0] <= 0;  // required by spec, see Figure 59 or https://i.imgur.com/K1qrMME.png
+
+						/*
+						• A[1:0] must be set to 00 as the burst order is fixed per nibble.
+						• A2 selects the burst order: BL8, A2 is set to 0, and the burst order is fixed to 0, 1, 2, 3, 4, 5, 6, 7.
+						• A[9:3] are “Don’t Care.”
+						• A10 is “Don’t Care.”
+						• A11 is “Don’t Care.”
+						• A12: Selects burst chop mode on-the-fly, if enabled within MR0.
+						• A13 is a “Don’t Care”
+						• BA[2:0] are “Don’t Care.”
+						*/
+						
+						wait_count <= 0;
+					end		
+				end
+				
+				STATE_INIT_MRS_1 :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating MRS command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+
+					// enable DLL; 34ohm output driver; no additive latency (AL); write leveling disabled;
+			        // termination resistors disabled; TDQS disabled; output enabled
+			        // Note: Write leveling : See https://i.imgur.com/mKY1Sra.png
+			        // Note: AL can be used somehow to save a few cycles when you ACTIVATE multiple banks
+			        //       interleaved, but since this is really high-end optimisation, 
+			        //       it is set to value of 0 for now.
+			        // 		 See https://blog.csdn.net/xingqingly/article/details/48997879 and
+			        //       https://application-notes.digchip.com/024/24-19971.pdf for more context on AL
+			        // address <= {1'b0, MR1, 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+			                    			
+					if(wait_count > TIME_TMRD-1)
+					begin
+						// prepare necessary parameters for next state				
+						main_state <= STATE_INIT_MRS_0;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
+
+						`ifdef USE_x16
+						
+							`ifdef RAM_SIZE_1GB
+								address <= {PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+										READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+								
+							`elsif RAM_SIZE_2GB
+								address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+										READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+								
+							`elsif RAM_SIZE_4GB
+								address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+										READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+							`endif
+						`else
+							
+							`ifdef RAM_SIZE_1GB
+								address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+										READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+								
+							`elsif RAM_SIZE_2GB
+								address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+										READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+								
+							`elsif RAM_SIZE_4GB
+								address <= {MR0[0], 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+										READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+							`endif
+						`endif
+								
 						wait_count <= 0;
 						
-						// no more NOP command in next 'ck' cycle, transition to REF command
-						ck_en <= 1;
+						// no more NOP command in next 'ck' cycle, transition to MR0 command
 						cs_n <= 0;
 						ras_n <= 0;
 						cas_n <= 0;
-						we_n <= 1;
+						we_n <= 0;						
+					end
+					
+					else begin
+						main_state <= STATE_INIT_MRS_1;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+					end	
+				end
+
+				STATE_INIT_MRS_0 :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating MRS command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+
+			        // fixed burst length 8; sequential burst; CL=5; DLL reset yes
+			        // write recovery=5; precharge PD: DLL on
+			        
+			        // write recovery: WR(cycles) = roundup ( tWR (ns)/ tCK (ns) )
+			        // tWR sets the number of clock cycles between the completion of a valid write operation and
+			        // before an active bank can be precharged
+			        
+			        // DLL reset: see https://www.issi.com/WW/pdf/EN-I002-Clock%20Consideration_QUAD&DDR2.pdf
+			        // when initialising the RAM for the first time, the memory controller's clock outputs are
+			        // usually disabled, so the RAM is "running" at 0 Hz (it's not running)
+			        // after enabling the clock outputs, the DLL in the RAM needs to "lock" to the clock signal. 
+			        // A DLL reset "unlocks" the DLL, so that it can lock again to the current clock speed.
+			        // If you enable "DLL reset" in MR0, then you must wait for tDLLK before using any functions 
+			        // that require the DLL (read commands or ODT synchronous operations)
+			        // The DLL is used to generate DQS.  For read commands, the DRAM drives DQ and DQS pins, and 
+			        // uses the DLL to maintain a 90 degrees phase shift between DQ and DQS
+			        // tDLLK (512) cycles of clock input are required to lock the DLL.
+			        
+			        // CL=5 is not supported with the DLL disabled according to the Micron spec.
+			        // The Micron spec says something about DQSCK "starting earlier" with the DLL off and 
+			        // this seems to mean that we actually have CL=4 when CL=5 is configured.  
+			        // See https://i.imgur.com/iuS45ld.png where tDQSCK starts AL + CL - 1 cycles 
+			        // after the READ command. 
+
+					//address <= {1'b0, MR0, 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+					//			READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
+					
+					if(wait_count > TIME_TMOD-1)
+					begin
+						main_state <= STATE_ZQ_CALIBRATION;
+						wait_count <= 0;
+						
+						// no more NOP command in next 'ck' cycle, transition to ZQCL command
+						cs_n <= 0;
+						ras_n <= 1;
+						cas_n <= 1;
+						we_n <= 0;	
+						address[A10] <= 1;					
+					end
+					
+					else begin
+						main_state <= STATE_INIT_MRS_0;
+						bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
+					end				
+				end
+				
+				STATE_ZQ_CALIBRATION :  // https://i.imgur.com/n4VU0MF.png
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ZQCL command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+		
+					if(wait_count > TIME_TZQINIT-1)
+					begin
+						MPR_ENABLE <= MPR_EN;  // turns on MPR System Read Calibration
+						main_state <= STATE_IDLE;
+						wait_count <= 0;
+					end
+					
+					else begin
+						main_state <= STATE_ZQ_CALIBRATION;
+					end					
+				end
+				
+				STATE_IDLE :
+				begin
+					// for simplicity, idle state coding will only transit to STATE_ACTIVATE and STATE_REFRESH
+					// will implement state transition to STATE_WRITE_LEVELLING and STATE_SELF_REFRESH later
+				
+					// Rationale behind the priority encoder logic coding below:
+					// We can queue (or postpone) up to maximum 8 REFRESH commands inside the RAM. 
+					// If 8 are queued, there's a high priority request. 
+					// If 4-7 are queued, there's a low-priority request.
+					// If 0-3 are queued, no more are needed (both request signals are false).
+					// So READ/WRITE normally go first and refreshes are done while no READ/WRITE are pending, 
+					// unless there is a danger that the queue underflows, 
+					// in which case it becomes a high-priority request and READ/WRITE have to wait.  
+					// So, in summary, it is to overcome the performance penalty due to refresh lockout at the 
+					// higher densities
+					
+					if((refresh_Queue == 0) && 
+					   (user_desired_extra_read_or_write_cycles <= MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED))
+					begin
+						refresh_Queue <= user_desired_extra_read_or_write_cycles;
+					end	
+
+
+					if ((MPR_ENABLE) ||
+			            (extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request) ||
+			        	((user_desired_extra_read_or_write_cycles == 0) & it_is_time_to_do_refresh_now))
+			        begin
+						// need to do PRECHARGE before REFRESH, see tRP
+
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 0;
+						cas_n <= 1;
+						we_n <= 0;
+						address[A10] <= 0;
+			            main_state <= STATE_PRECHARGE;
+			            
+			            wait_count <= 0;
+			        end
+			        
+			        else if (write_is_enabled | read_is_enabled)
+			        begin
+			        	ck_en <= 1;
+			        	cs_n <= 0;
+			        	ras_n <= 0;
+			        	cas_n <= 1;
+			        	we_n <= 1;
+			        	
+			        	bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+			        		
+			            main_state <= STATE_ACTIVATE;
+			            
+			            wait_count <= 0;
+			        end
+			        
+			        else if (low_Priority_Refresh_Request)
+			        begin
+						// need to do PRECHARGE before REFRESH, see tRP
+
+						ck_en <= 1;
+						cs_n <= 0;			
+						ras_n <= 0;
+						cas_n <= 1;
+						we_n <= 0;
+						address[A10] <= 0;
+			            main_state <= STATE_PRECHARGE;
+			            
+			            wait_count <= 0;
+					end
+					
+					else main_state <= STATE_IDLE;
+					
+				end
+				
+				STATE_ACTIVATE :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+					
+					// need to make sure that 'i_user_data_address' remains unchanged for at least tRRD
+					// because according to the definition of tRAS and tRC, it is legal within the same bank, 
+					// to issue either ACTIVATE or REFRESH when bank is idle, and PRECHARGE when a row is open
+					// So, we have to keep track of what state each bank is in and which row is currently active
+					
+					// will implement multiple consecutive ACT commands (TIME_RRD) in later stage of project
+					// However, tRRD mentioned "Time ACT to ACT, different banks, no PRE between" ?
+					
+					bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+					
+					address <= 	// column address
+							   	{
+							   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+							   		
+							   		1'b1,  // A12 : no burst-chop
+									i_user_data_address[A10+1], 
+									1'b1,  // use auto-precharge, but it is don't care in this state
+									i_user_data_address[A10-1:0]
+								};
+
+													
+					// auto-precharge (AP) is easier for now. In the end it will be manually precharging 
+					// (since many read/write commands may use the same row) but for now, simple is better	
+							
+					if(wait_count > TIME_TRCD-1)
+					begin
+						if(write_is_enabled)  // write operation has higher priority during loopback test
+						begin					
+							// no more NOP command in next 'ck' cycle, transition to WRAP command
+							ck_en <= 1;
+							cs_n <= 0;			
+							ras_n <= 1;
+							cas_n <= 0;
+							we_n <= 0;
+							
+							`ifdef LOOPBACK
+								// for data loopback, auto-precharge will close the bank, 
+								// which means read operation could not proceeed without reopening the bank
+								address[A10] <= 0;
+								main_state <= STATE_WRITE;
+							`else
+								address[A10] <= 1;
+								main_state <= STATE_WRITE_AP;
+							`endif
+							
+							wait_count <= 0;
+						end
+							
+						else if(read_is_enabled) 
+						begin
+							// no more NOP command in next 'ck' cycle, transition to RDAP command
+							ck_en <= 1;
+							cs_n <= 0;			
+							ras_n <= 1;
+							cas_n <= 0;
+							we_n <= 1;
+							
+							address[A10] <= 1;
+							main_state <= STATE_READ_AP;
+							
+							wait_count <= 0;
+						end
+					end
+					
+					else begin
+						main_state <= STATE_ACTIVATE;
+					end				
+				end
+							
+				STATE_WRITE :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;
+					
+					address <= 	// column address
+							   	{
+							   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+							   		
+							   		1'b1,  // A12 : no burst-chop
+									i_user_data_address[A10+1], 
+									1'b0,  // A10 : no auto-precharge
+									i_user_data_address[A10-1:0]
+								};
+					
+					if(wait_count > (TIME_WL-TIME_TWPRE)-1)
+					begin
+						main_state <= STATE_WRITE_DATA;
+						wait_count <= 0;
+					end
+					
+					else begin
+						main_state <= STATE_WRITE;
+					end							
+				end
+							
+				STATE_WRITE_AP :
+				begin
+					// https://www.systemverilog.io/understanding-ddr4-timing-parameters#write
+					// will implement multiple consecutive WRITE commands (TIME_TCCD) in later stage of project
+				
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+									
+					address <= 	// column address
+							   	{
+							   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+							   		
+							   		1'b1,  // A12 : no burst-chop
+									i_user_data_address[A10+1], 
+									1'b1,  // A10 : use auto-precharge
+									i_user_data_address[A10-1:0]
+								};
+					
+					if(wait_count > (TIME_WL-TIME_TWPRE)-1)
+					begin
+						main_state <= STATE_WRITE_DATA;
+						wait_count <= 0;
+					end
+					
+					else begin
+						main_state <= STATE_WRITE_AP;
+					end		
+				end
+				
+				STATE_WRITE_DATA :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;				
+								
+					if(wait_count > (TIME_TBURST+TIME_TDAL)-1)
+					begin
+						`ifdef LOOPBACK
+							// no more NOP command in next 'ck' cycle, transition to RDAP command
+							ck_en <= 1;
+							cs_n <= 0;			
+							ras_n <= 1;
+							cas_n <= 0;
+							we_n <= 1;
+							
+							address[A10] <= 1;
+							main_state <= STATE_READ_AP;
+							
+							wait_count <= 0;					
+						`else
+							main_state <= STATE_IDLE;
+							wait_count <= 0;
+						`endif
+					end
+
+					else if(wait_count > TIME_TBURST-1)
+					begin
+						main_state <= STATE_WRITE_DATA;
+						write_is_enabled <= 0;
+					end
+									
+					else begin
+						main_state <= STATE_WRITE_DATA;
+					end					
+				end
+							
+				STATE_READ :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+					
+					address <= 	// column address
+							   	{
+							   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+							   		
+							   		1'b1,  // A12 : no burst-chop
+									i_user_data_address[A10+1], 
+									1'b0,  // A10 : no auto-precharge
+									i_user_data_address[A10-1:0]
+								};
+					
+					if(wait_count > (TIME_RL-TIME_TRPRE)-1)
+					begin
+						main_state <= STATE_READ_DATA;
+						wait_count <= 0;
+					end
+					
+					else begin
+						main_state <= STATE_READ;
+					end				
+				end
+						
+				STATE_READ_AP :
+				begin
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+					
+					address <= 	// column address
+							   	{
+							   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+							   		
+							   		1'b1,  // A12 : no burst-chop
+									i_user_data_address[A10+1], 
+									1'b1,  // A10 : use auto-precharge
+									i_user_data_address[A10-1:0]
+								};
+					
+					if(wait_count > (TIME_RL-TIME_TRPRE)-1)
+					begin
+						main_state <= STATE_READ_DATA;
+						wait_count <= 0;
+					end
+					
+					else begin
+						main_state <= STATE_READ_AP;
+					end						
+				end
+
+				STATE_READ_DATA :
+				begin
+					// See https://patents.google.com/patent/US7911857B1/en for pre-amble detection circuit
+					// For read, we get the unshifted DQS from the RAM and have to phase-shift it ourselves before 
+					// using it as a clock strobe signal to sample (or capture) DQ signal
+				
+					if(wait_count > (TIME_TBURST + TIME_TRPST + TIME_TMPRR)-1)
+					begin
+
+						main_state <= STATE_INIT_MRS_3;
+						
+						// MPR_ENABLE is already set to ZERO in the next-IF block
+						// MPR Read function disabled					
+						address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+									MPR_ENABLE, MPR_READ_FUNCTION};	
+															
+						// no more NOP command in next 'ck' cycle, transition to MR3 command
+						cs_n <= 0;
+						ras_n <= 0;
+						cas_n <= 0;
+						we_n <= 0;				
+						
+						wait_count <= 0;				
+					end
+
+					else if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
+					begin
+						if(MPR_ENABLE == 0)  // MPR System Read Calibration is already done previously
+						begin
+							main_state <= STATE_IDLE;
+							
+							// NOP command in next 'ck' cycle, transition to IDLE command
+							cs_n <= 0;
+							ras_n <= 1;
+							cas_n <= 1;
+							we_n <= 1;								
+						end
+						
+						MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished		
+					end
+					
+					else if(wait_count > TIME_TBURST-1)
+					begin
+						main_state <= STATE_READ_DATA;
+						read_is_enabled <= 0;
+					end
+					
+					`ifdef HIGH_SPEED
+					else begin
+						main_state <= STATE_READ_DATA;
+
+						/*
+						Your DQS IO logic is clocked by a clock. You need to align DQS to this clock. 
+						If you sample DQS with the rising edge of the clock, you can get different responses:
+
+						1. If you get always '0' which means that the clock rising edge already happened, 
+						   but DQS rising edge didn't. DQS needs to be moved earlier by decreasing DQS delay.
+
+						2. If you get always '1' which means that the clock rising edge happens after DQS edge. 
+						   Therefore, DQS's delay must be increased.
+
+						3. If you're somewhere in the middle (in the jitter zone) then DQS and clock are aligned.
+
+						Of course, you don't need DQS data, you only need DQ data. Therefore you adjust DQ delays
+						the same as DQS - every time you increase DQS delay, you also increase DQ delay as well.
+						Every time you decrease DQS delay you decrease DQ delay. This way, if DQS shifts, you shift
+						the DQ sampling point to follow DQS.
+						*/
+											
+						if(MPR_ENABLE)
+						begin
+							// samples the delayed version of dqs_r for continous feedback to IDELAY2 primitive
+							if(~delayed_dqs_r & ~previous_delayed_dqs_r)
+							begin
+								idelay_inc_dqs_r <= 0;  // 1st case : decrements delay value
+								dqs_delay_sampling_margin <= dqs_delay_sampling_margin - 1;
+							end
+								
+							else if(delayed_dqs_r & previous_delayed_dqs_r)
+							begin
+								idelay_inc_dqs_r <= 1;  // 2nd case : increments delay value
+								dqs_delay_sampling_margin <= dqs_delay_sampling_margin + 1;
+							end
+							
+							// see 3rd case
+							if(dqs_delay_sampling_margin < JITTER_MARGIN_FOR_DQS_SAMPLING)
+								idelay_counter_enable <= 0;  // disables delay feedback process, calibration is done
+								
+							else idelay_counter_enable <= 1;  // enables delay feedback process						
+						end
+					end
+					`endif
+				end
+							
+				STATE_PRECHARGE :
+				begin
+					// need to do PRECHARGE before REFRESH, see tRP
+
+					ck_en <= 1;
+					cs_n <= 0;			
+					ras_n <= 0;
+					cas_n <= 1;
+					we_n <= 0;
+					address[A10] <= 1;  // precharge ALL banks
+					
+					if(wait_count > TIME_TRP-1)
+					begin
+						if(MPR_ENABLE)  // MPR System Read Calibration has higher priority
+						begin
+							// prepare necessary parameters for next state				
+							main_state <= STATE_INIT_MRS_3;
+							bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+							
+							// MPR Read function enabled
+							address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+										MPR_ENABLE, MPR_READ_FUNCTION};					
+							
+							wait_count <= 0;
+							
+							// no more NOP command in next 'ck' cycle, transition to MR3 command
+							cs_n <= 0;
+							ras_n <= 0;
+							cas_n <= 0;
+							we_n <= 0;					
+						end
+						
+						else begin					
+							main_state <= STATE_REFRESH;
+							wait_count <= 0;
+							
+							// no more NOP command in next 'ck' cycle, transition to REF command
+							ck_en <= 1;
+							cs_n <= 0;
+							ras_n <= 0;
+							cas_n <= 0;
+							we_n <= 1;
+						end
+					end
+					
+					else begin
+						main_state <= STATE_PRECHARGE;
+					end				
+				end
+							
+				STATE_REFRESH :
+				begin
+					// https://www.systemverilog.io/understanding-ddr4-timing-parameters#refresh
+					
+					// As for why the maximum absolute interval between any REFRESH command and the next REFRESH
+					// command is nine times the maximum average interval refresh rate (9x tREFI), we are allowed 
+					// to deviate from sending refresh to a DRAM chip by up to 9x the nominal period in a chain of 
+					// up to 8 refresh commands that are queued to the chip to ensure the data held doesn't decay.
+					// So we can send a spree of refresh commands, then wait some time (9x the nominal period) 
+					// then send another spree because that works out to about the nominal period and the refresh
+					// scheduler in the DRAM will do the rest
+					
+					// the max active -> precharge delay (tRAS) is also 9*tREFI, as we need to be precharged to 
+					// issue a refresh, so if we leave the precharge command any later, the max refresh constraints 
+					// would not be obeyed anymore
+
+					ck_en <= 1;
+
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+
+					if(refresh_Queue > 0)
+						refresh_Queue <= refresh_Queue - 1;  // a countdown trigger for precharge/refresh operation
+					
+					if(wait_count > TIME_TRFC-1)
+					begin			
+						main_state <= STATE_IDLE;
+						wait_count <= 0;
+					end
+					
+					else begin
+						main_state <= STATE_REFRESH;
 					end
 				end
+							
+				STATE_WRITE_LEVELLING :
+				begin
 				
-				else begin
-					main_state <= STATE_PRECHARGE;
-				end				
-			end
-						
-			STATE_REFRESH :
-			begin
-				// https://www.systemverilog.io/understanding-ddr4-timing-parameters#refresh
-				
-				// As for why the maximum absolute interval between any REFRESH command and the next REFRESH
-				// command is nine times the maximum average interval refresh rate (9x tREFI), we are allowed 
-				// to deviate from sending refresh to a DRAM chip by up to 9x the nominal period in a chain of 
-				// up to 8 refresh commands that are queued to the chip to ensure the data held doesn't decay.
-				// So we can send a spree of refresh commands, then wait some time (9x the nominal period) 
-				// then send another spree because that works out to about the nominal period and the refresh
-				// scheduler in the DRAM will do the rest
-				
-				// the max active -> precharge delay (tRAS) is also 9*tREFI, as we need to be precharged to 
-				// issue a refresh, so if we leave the precharge command any later, the max refresh constraints 
-				// would not be obeyed anymore
-
-				ck_en <= 1;
-
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-
-				if(refresh_Queue > 0)
-					refresh_Queue <= refresh_Queue - 1;  // a countdown trigger for precharge/refresh operation
-				
-				if(wait_count > TIME_TRFC-1)
-				begin			
-					main_state <= STATE_IDLE;
-					wait_count <= 0;
 				end
 				
-				else begin
-					main_state <= STATE_REFRESH;
-				end
-			end
-						
-			STATE_WRITE_LEVELLING :
-			begin
-			
-			end
-			
-			default : main_state <= STATE_IDLE;
-			
-		endcase
+				default : main_state <= STATE_IDLE;
+				
+			endcase
+		end
+		
+	`ifdef XILINX
 	end
+	`endif
 end
 
 endmodule
