@@ -58,8 +58,8 @@ module test_ddr3_memory_controller
 		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 				
 		// host clock period in ns
-		parameter CK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
-		parameter CLK_PERIOD = (CK_PERIOD*DIVIDE_RATIO),
+		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3ns
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
@@ -224,8 +224,8 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 	// duration for each bit = 1 * timescale = 1 * 1ps  = 1ps
 	// but the following coding is also for Xilinx ISIM simulator
 
-	localparam RESET_TIMING = 200_000_000;  // 200us
-	localparam STOP_TIMING =  900_000_000;  // 900us
+	localparam RESET_TIMING = 10;  // reset for at least 10ns (requirement by Xilinx PLL IP core)
+	localparam STOP_TIMING =  900_000;  // 900us = 900_000ns
 
 	// clock and reset signals generation for simulation testbench
 	reg clk_sim;
@@ -239,13 +239,9 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 		resetn_sim <= 1'b1;
 		@(posedge clk_sim);
 
-		resetn_sim <= 1'b0;  // asserts master reset signal for at least 10ns (requirement by Xilinx PLL IP core)
+		resetn_sim <= 1'b0;  // asserts master reset signal
 
-		// 10ns divides by 3.3ns = 4 clk_sim cycles
-		@(posedge clk_sim);
-		@(posedge clk_sim);		
-		@(posedge clk_sim);
-		@(posedge clk_sim);
+		repeat((RESET_TIMING/CLK_PERIOD)+1) @(posedge clk_sim);  // +1 because of division usually uses floor()
 		
 		resetn_sim <= 1'b1;  // releases master reset signal
 		

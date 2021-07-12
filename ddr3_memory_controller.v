@@ -65,8 +65,8 @@ module ddr3_memory_controller
 		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 				
 		// host clock period in ns
-		parameter CK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3s
-		parameter CLK_PERIOD = (CK_PERIOD*DIVIDE_RATIO),
+		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3ns
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
@@ -576,6 +576,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	`ifdef XILINX
 	
+		wire locked;
+	
 		pll pll_ddr
 		(	// Clock in ports
 			.clk(clk),  // IN 50MHz
@@ -767,20 +769,6 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 // for an overview on DQS Preamble and Postamble bits
 
 
-// For WRITE, we have to phase-shift DQS by 90 degrees and output the phase-shifted DQS to RAM		  
-
-// phase-shifts the incoming dqs and dqs_n signals by 90 degrees
-// with reference to outgoing 'ck' DDR signal
-// the reason is to sample at the middle of incoming `dq` signal
-`ifndef USE_ILA
-	`ifndef XILINX
-		reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
-	`else
-		reg [1:0] dqs_counter;
-	`endif
-`endif
-
-
 `ifndef HIGH_SPEED
 	reg dqs_is_at_high_previously;
 	reg dqs_is_at_low_previously;
@@ -812,6 +800,20 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	always @(posedge clk) dqs_is_at_high_previously <= dqs_is_at_high;
 	always @(posedge clk) dqs_is_at_low_previously <= dqs_is_at_low;
+
+
+	// For WRITE, we have to phase-shift DQS by 90 degrees and output the phase-shifted DQS to RAM		  
+
+	// phase-shifts the incoming dqs and dqs_n signals by 90 degrees
+	// with reference to outgoing 'ck' DDR signal
+	// the reason is to sample at the middle of incoming `dq` signal
+	`ifndef USE_ILA
+		`ifndef XILINX
+			reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
+		`else
+			reg [1:0] dqs_counter;
+		`endif
+	`endif
 
 	always @(posedge clk)
 	begin
@@ -916,7 +918,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		localparam IODELAY_STARTUP_BITWIDTH = 12;  
 		reg [IODELAY_STARTUP_BITWIDTH-1:0] iodelay_startup_counter;
 		
-		always @(posedge clk) iodelay_startup_counter <= iodelay_startup_counter + 1;
+		always @(posedge clk)
+		begin
+			if(reset) iodelay_startup_counter <= 0;
+			
+			else iodelay_startup_counter <= iodelay_startup_counter + 1;
+		end
 		
 		// xilinx demo example only needs iodelay_startup_counter[IODELAY_STARTUP_BITWIDTH-1]
 		// See https://github.com/promach/DDR/blob/main/phase_detector.v#L135-L137
@@ -1842,6 +1849,7 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 	reg previous_delayed_dqs_r;
 `endif
 
+`ifdef XILINX
 reg need_to_assert_reset;
 
 always @(posedge clk)  // ck is only turned on after clk is turned on
@@ -1850,6 +1858,7 @@ begin
 	
 	else if(locked) need_to_assert_reset <= 0;
 end
+`endif
 
 `ifdef HIGH_SPEED
 always @(posedge ck)
@@ -1860,9 +1869,10 @@ begin
 	`ifdef XILINX
 	if(locked)
 	begin
-	`endif
-		
 		if(need_to_assert_reset) 
+	`else
+		if(reset)
+	`endif
 		begin
 			main_state <= STATE_RESET;
 			previous_main_state <= STATE_RESET;
@@ -1887,9 +1897,15 @@ begin
 			MPR_ENABLE <= 0;
 			MPR_Read_had_finished <= 0;
 			
+			write_is_enabled <= 0;
+			read_is_enabled <= 0;
+			
 			`ifdef HIGH_SPEED
 				// such that the first phase delay calibration iteration does not abort
 				dqs_delay_sampling_margin <= JITTER_MARGIN_FOR_DQS_SAMPLING;
+				
+				idelay_inc_dqs_r <= 0;
+				idelay_counter_enable <= 0;
 			`endif
 		end
 
