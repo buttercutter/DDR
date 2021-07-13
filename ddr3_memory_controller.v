@@ -949,8 +949,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.DOUT     		(), 			// output data to IOB
 			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
 			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
-			.DATAOUT  		(delayed_dqs_r), 		// Output data 1 to ILOGIC/ISERDES2
-			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
+			.DATAOUT  		(),  			// Delayed Data output, can only route to a register in ILOGIC
+			.DATAOUT2 		(delayed_dqs_r),  // Delayed Data output, can route to fabric
 			.IOCLK0   		(ck_90), 		// High speed clock for calibration
 			.IOCLK1   		(ck_270), 		// High speed clock for calibration
 			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
@@ -1040,7 +1040,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		dq_iserdes_0
 		(
 			// fast clock domain
-			.high_speed_clock(ck),
+			.high_speed_clock(ck_90),
 			.data_in(dq_r_q0),
 			
 			// slow clock domain
@@ -1051,7 +1051,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		dq_iserdes_1
 		(
 			// fast clock domain
-			.high_speed_clock(ck_180),
+			.high_speed_clock(ck_270),
 			.data_in(dq_r_q1),
 			
 			// slow clock domain
@@ -1117,7 +1117,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_0),
 			
 			// fast clock domain
-			.high_speed_clock(ck),
+			.high_speed_clock(ck_90),
 			.data_out(dq_w_oserdes_0)
 		);
 
@@ -1128,7 +1128,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_1),
 			
 			// fast clock domain
-			.high_speed_clock(ck_180),
+			.high_speed_clock(ck_270),
 			.data_out(dq_w_oserdes_1)
 		);
 		
@@ -1457,8 +1457,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_dq_iobuf_en(
 			.Q(dq_iobuf_enable[dq_index]),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1484,8 +1484,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		IDDR2_dq_r(
 			.Q0(dq_r_q0[dq_index]),  // 1-bit output captured with C0 clock
 			.Q1(dq_r_q1[dq_index]),  // 1-bit output captured with C1 clock
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D(delayed_dq_r[dq_index]),    // 1-bit DDR data input
 			.R(reset),    // 1-bit reset input
@@ -1505,8 +1505,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_dq_w(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C0)
 			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C1)			
@@ -1545,8 +1545,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
 			.DATAOUT  		(delayed_dq_r[dq_index]), 		// Output data 1 to ILOGIC/ISERDES2
 			.DATAOUT2 		(),	 		// Output data 2 to ILOGIC/ISERDES2
-			.IOCLK0   		(ck), 		// High speed clock for calibration
-			.IOCLK1   		(ck_180), 		// High speed clock for calibration
+			.IOCLK0   		(ck_90), 		// High speed clock for calibration
+			.IOCLK1   		(ck_270), 		// High speed clock for calibration
 			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
 			
 			// Note that my read clock is parallel for all DQ bits as well as the DQS.  
@@ -1887,6 +1887,8 @@ begin
 			// 200 us is required before RST_N goes inactive.
 			// CKE must be maintained inactive for 10 ns before RST_N goes inactive.
 			reset_n <= 0;
+
+			odt <= 0;
 			
 			address <= 0;
 			bank_address <= 0;
