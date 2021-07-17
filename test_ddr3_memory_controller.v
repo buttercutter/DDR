@@ -621,7 +621,7 @@ ddr3 mem(
 	reg [DQ_BITWIDTH-1:0] test_dq_w;
 	reg [DQ_BITWIDTH-1:0] test_dq_w_d0;
 	reg [DQ_BITWIDTH-1:0] test_dq_w_d1;
-	reg [DQS_BITWIDTH-1:0] test_dqs_w;
+	wire [DQS_BITWIDTH-1:0] test_dqs_w;
 
 	always @(posedge ck)
 	begin
@@ -647,19 +647,19 @@ ddr3 mem(
 	// DQS and DQ signals are of double-data-rate signals
 
 	`ifdef XILINX
-		 
-		IOBUF IO_test_dq (
-			.IO(dq),
-			.I(test_dq_w),
-			.T(main_state == STATE_READ_DATA),
-			.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ data bits
-		);
 
 		genvar test_dq_index;
 		generate
 		
 			for(test_dq_index = 0; test_dq_index < DQ_BITWIDTH; test_dq_index = test_dq_index + 1)
 			begin: test_dq_io
+
+				IOBUF IO_test_dq (
+					.IO(dq[test_dq_index]),
+					.I(test_dq_w[test_dq_index]),
+					.T(main_state == STATE_READ_DATA),
+					.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bits
+				);
 			
 				ODDR2 #(
 					.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
@@ -681,28 +681,44 @@ ddr3 mem(
 		endgenerate
 
 
-		IOBUF IO_test_dqs (
-			.IO(test_dqs),
-			.I(test_dqs_w),
+		IOBUF IO_test_udqs (
+			.IO(udqs),
+			.I(test_dqs_w[1]),
 			.T(main_state == STATE_READ_DATA),
 			.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 		);
-		
-		ODDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		ODDR2_test_dqs_w(
-			.Q(test_dqs_w),  // 1-bit DDR output data
-			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D0(1'b1),    // 1-bit DDR data input (associated with C0)
-			.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
-			.R(1'b0),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
+
+		IOBUF IO_test_ldqs (
+			.IO(ldqs),
+			.I(test_dqs_w[0]),
+			.T(main_state == STATE_READ_DATA),
+			.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 		);
+						
+		genvar test_dqs_index;
+		generate
+		
+			for(test_dqs_index = 0; test_dqs_index < DQS_BITWIDTH; test_dqs_index = test_dqs_index + 1)
+			begin: test_dqs_io
+							
+				ODDR2 #(
+					.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+					.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+					.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+				)
+				ODDR2_test_dqs_w(
+					.Q(test_dqs_w[test_dqs_index]),  // 1-bit DDR output data
+					.C0(ck_90),  // 1-bit clock input
+					.C1(ck_270),  // 1-bit clock input
+					.CE(1'b1),  // 1-bit clock enable input
+					.D0(1'b1),    // 1-bit DDR data input (associated with C0)
+					.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
+					.R(1'b0),    // 1-bit reset input
+					.S(1'b0)     // 1-bit set input
+				);			
+			end
+			
+		endgenerate
 		
 	`endif
 	
