@@ -648,7 +648,7 @@ ddr3 mem(
 				IOBUF IO_test_dq (
 					.IO(dq[test_dq_index]),
 					.I(test_dq_w[test_dq_index]),
-					.T(main_state == STATE_READ_DATA),
+					.T(main_state != STATE_READ_DATA),
 					.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bits
 				);
 			
