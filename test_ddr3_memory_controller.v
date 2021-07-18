@@ -677,14 +677,14 @@ ddr3 mem(
 			IOBUF IO_test_udqs (
 				.IO(udqs),
 				.I(test_dqs_w[1]),
-				.T(main_state == STATE_READ_DATA),
+				.T(main_state != STATE_READ_DATA),
 				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 			);
 
 			IOBUF IO_test_ldqs (
 				.IO(ldqs),
 				.I(test_dqs_w[0]),
-				.T(main_state == STATE_READ_DATA),
+				.T(main_state != STATE_READ_DATA),
 				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 			);
 
@@ -693,7 +693,7 @@ ddr3 mem(
 			IOBUF IO_test_dqs (
 				.IO(dqs),
 				.I(test_dqs_w),
-				.T(main_state == STATE_READ_DATA),
+				.T(main_state != STATE_READ_DATA),
 				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 			);
 			
