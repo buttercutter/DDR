@@ -276,8 +276,15 @@ assign user_desired_extra_read_or_write_cycles = MAX_NUM_OF_REFRESH_COMMANDS_POS
 `ifndef HIGH_SPEED
 wire clk_slow_posedge;  // for dq phase shifting purpose
 wire clk180_slow_posedge;  // for dq phase shifting purpose
-`else
+`endif
+
+`ifdef TESTBENCH
 wire ck_90;  // for dq phase shifting purpose
+wire ck_180;
+wire ck_270;
+
+wire udqs_iobuf_enable;
+wire ldqs_iobuf_enable;
 `endif
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
@@ -542,6 +549,9 @@ ddr3_control
 		.ck_90(ck_90),
 		.ck_180(ck_180),
 		.ck_270(ck_270),
+		
+		.udqs_iobuf_enable(udqs_iobuf_enable),
+		.ldqs_iobuf_enable(ldqs_iobuf_enable),
 	`endif
 	
 	.ck_en(ck_en), // CKE
@@ -645,12 +655,27 @@ ddr3 mem(
 			for(test_dq_index = 0; test_dq_index < DQ_BITWIDTH; test_dq_index = test_dq_index + 1)
 			begin: test_dq_io
 
-				IOBUF IO_test_dq (
-					.IO(dq[test_dq_index]),
-					.I(test_dq_w[test_dq_index]),
-					.T(main_state != STATE_READ_DATA),
-					.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bits
-				);
+				if(test_dq_index < (DQ_BITWIDTH >> 1))
+				begin
+				
+					IOBUF IO_test_dq (
+						.IO(dq[test_dq_index]),
+						.I(test_dq_w[test_dq_index]),
+						.T(~ldqs_iobuf_enable),	
+						.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bit
+					);
+				end
+				
+				else begin
+				
+					IOBUF IO_test_dq (
+						.IO(dq[test_dq_index]),
+						.I(test_dq_w[test_dq_index]),
+						.T(~udqs_iobuf_enable),	
+						.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bit
+					);
+				end
+
 			
 				ODDR2 #(
 					.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
@@ -677,14 +702,14 @@ ddr3 mem(
 			IOBUF IO_test_udqs (
 				.IO(udqs),
 				.I(test_dqs_w[1]),
-				.T(main_state != STATE_READ_DATA),
+				.T(~udqs_iobuf_enable),
 				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 			);
 
 			IOBUF IO_test_ldqs (
 				.IO(ldqs),
 				.I(test_dqs_w[0]),
-				.T(main_state != STATE_READ_DATA),
+				.T(~ldqs_iobuf_enable),
 				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 			);
 
@@ -693,7 +718,7 @@ ddr3 mem(
 			IOBUF IO_test_dqs (
 				.IO(dqs),
 				.I(test_dqs_w),
-				.T(main_state != STATE_READ_DATA),
+				.T(~dqs_iobuf_enable),
 				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
 			);
 			

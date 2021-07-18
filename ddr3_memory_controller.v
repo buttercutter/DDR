@@ -158,6 +158,9 @@ module ddr3_memory_controller
 		output ck_90,
 		output ck_180,
 		output ck_270,
+		
+		output ldqs_iobuf_enable,
+		output udqs_iobuf_enable,
 	`endif
 	
 	output reg ck_en, // CKE
