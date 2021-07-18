@@ -613,9 +613,7 @@ ddr3 mem(
     .odt(odt)
 );
 
-`endif
-
-`ifdef TESTBENCH
+`elsif TESTBENCH
 
 	// to emulate DQS and DQ signals coming out from DDR3 RAM
 	wire [DQ_BITWIDTH-1:0] test_dq_w;
@@ -674,20 +672,33 @@ ddr3 mem(
 		endgenerate
 
 
-		IOBUF IO_test_udqs (
-			.IO(udqs),
-			.I(test_dqs_w[1]),
-			.T(main_state == STATE_READ_DATA),
-			.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
-		);
+		`ifdef USE_x16
+		
+			IOBUF IO_test_udqs (
+				.IO(udqs),
+				.I(test_dqs_w[1]),
+				.T(main_state == STATE_READ_DATA),
+				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
+			);
 
-		IOBUF IO_test_ldqs (
-			.IO(ldqs),
-			.I(test_dqs_w[0]),
-			.T(main_state == STATE_READ_DATA),
-			.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
-		);
-						
+			IOBUF IO_test_ldqs (
+				.IO(ldqs),
+				.I(test_dqs_w[0]),
+				.T(main_state == STATE_READ_DATA),
+				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
+			);
+
+		`else
+		
+			IOBUF IO_test_dqs (
+				.IO(dqs),
+				.I(test_dqs_w),
+				.T(main_state == STATE_READ_DATA),
+				.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQS strobe
+			);
+			
+		`endif
+								
 		genvar test_dqs_index;
 		generate
 		
