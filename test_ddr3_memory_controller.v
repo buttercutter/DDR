@@ -618,30 +618,23 @@ ddr3 mem(
 `ifdef TESTBENCH
 
 	// to emulate DQS and DQ signals coming out from DDR3 RAM
-	reg [DQ_BITWIDTH-1:0] test_dq_w;
+	wire [DQ_BITWIDTH-1:0] test_dq_w;
 	reg [DQ_BITWIDTH-1:0] test_dq_w_d0;
 	reg [DQ_BITWIDTH-1:0] test_dq_w_d1;
 	wire [DQS_BITWIDTH-1:0] test_dqs_w;
 
 	always @(posedge ck)
 	begin
-		if(~reset_n) test_dq_w <= 0;
-	
-		else test_dq_w <= test_dq_w + 1;
-	end
-
-	always @(posedge ck)
-	begin
 		if(~reset_n) test_dq_w_d1 <= 1;
 		
-		else test_dq_w_d1 <= test_dq_w_d1 + 1;
+		else if(main_state == STATE_READ_DATA) test_dq_w_d1 <= test_dq_w_d1 + 1;
 	end
 	
 	always @(posedge ck)
 	begin
 		if(~reset_n) test_dq_w_d0 <= 0;
 		
-		else test_dq_w_d0 <= test_dq_w_d0 + 1;
+		else if(main_state == STATE_READ_DATA) test_dq_w_d0 <= test_dq_w_d0 + 1;
 	end
 		
 	// DQS and DQ signals are of double-data-rate signals
