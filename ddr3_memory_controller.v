@@ -159,6 +159,7 @@ module ddr3_memory_controller
 		output ck_180,
 		output ck_270,
 		
+		output [DQ_BITWIDTH-1:0] dq_iobuf_enable,
 		output ldqs_iobuf_enable,
 		output udqs_iobuf_enable,
 	`endif
@@ -1309,7 +1310,11 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 `ifdef XILINX
 
 	wire ldqs_iobuf_enable, ldqs_n_iobuf_enable, udqs_iobuf_enable, udqs_n_iobuf_enable;
+	
+	`ifndef TESTBENCH
 	wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
+	`endif
+	
 	wire [DQ_BITWIDTH-1:0] delayed_dq_r;
 	//wire [DQ_BITWIDTH-1:0] delayed_dq_w;
 	

@@ -283,6 +283,7 @@ wire ck_90;  // for dq phase shifting purpose
 wire ck_180;
 wire ck_270;
 
+wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 wire udqs_iobuf_enable;
 wire ldqs_iobuf_enable;
 `endif
@@ -550,6 +551,7 @@ ddr3_control
 		.ck_180(ck_180),
 		.ck_270(ck_270),
 		
+		.dq_iobuf_enable(dq_iobuf_enable),
 		.udqs_iobuf_enable(udqs_iobuf_enable),
 		.ldqs_iobuf_enable(ldqs_iobuf_enable),
 	`endif
@@ -654,29 +656,15 @@ ddr3 mem(
 		
 			for(test_dq_index = 0; test_dq_index < DQ_BITWIDTH; test_dq_index = test_dq_index + 1)
 			begin: test_dq_io
+				
+				IOBUF IO_test_dq (
+					.IO(dq[test_dq_index]),
+					.I(test_dq_w[test_dq_index]),
+					.T(~dq_iobuf_enable[test_dq_index]),	
+					.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bit
+				);
 
-				if(test_dq_index < (DQ_BITWIDTH >> 1))
-				begin
-				
-					IOBUF IO_test_dq (
-						.IO(dq[test_dq_index]),
-						.I(test_dq_w[test_dq_index]),
-						.T(~ldqs_iobuf_enable),	
-						.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bit
-					);
-				end
-				
-				else begin
-				
-					IOBUF IO_test_dq (
-						.IO(dq[test_dq_index]),
-						.I(test_dq_w[test_dq_index]),
-						.T(~udqs_iobuf_enable),	
-						.O()  // no need to connect since the code is only emulating DDR3 RAM emitting out DQ bit
-					);
-				end
 
-			
 				ODDR2 #(
 					.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
 					.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
