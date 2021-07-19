@@ -587,6 +587,83 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	`ifdef XILINX
 	
 		wire locked;
+/*
+		pll_ck ck_pll 
+		(	
+			// Clock in ports
+			.clk(clk),  // IN 50MHz
+			
+			// Clock out ports
+			.ck(ck),  // OUT 310MHz, 0 phase shift	
+				
+			// Dynamic phase shift ports
+			.psclk(),// IN
+			.psen(), // IN
+			.psincdec(),     // IN
+			.psdone(),       // OUT
+			
+			// Status and control signals
+			.reset(reset),  // IN
+			.locked()  // OUT
+		);
+
+		pll_ck_90 ck_90_pll 
+		(	
+			// Clock in ports
+			.clk(clk),  // IN 50MHz
+			
+			// Clock out ports
+			.ck_90(ck_90),  // OUT 310MHz, 90 phase shift	
+				
+			// Dynamic phase shift ports
+			.psclk(),// IN
+			.psen(), // IN
+			.psincdec(),     // IN
+			.psdone(),       // OUT
+			
+			// Status and control signals
+			.reset(reset),  // IN
+			.locked()  // OUT
+		);
+		
+		pll_ck_180 ck_180_pll 
+		(	
+			// Clock in ports
+			.clk(clk),  // IN 50MHz
+			
+			// Clock out ports
+			.ck_180(ck_180),  // OUT 310MHz, 180 phase shift	
+				
+			// Dynamic phase shift ports
+			.psclk(),// IN
+			.psen(), // IN
+			.psincdec(),     // IN
+			.psdone(),       // OUT
+			
+			// Status and control signals
+			.reset(reset),  // IN
+			.locked()  // OUT
+		);
+
+		pll_ck_270 ck_270_pll 
+		(	
+			// Clock in ports
+			.clk(clk),  // IN 50MHz
+			
+			// Clock out ports
+			.ck_270(ck_270),  // OUT 310MHz, 270 phase shift	
+				
+			// Dynamic phase shift ports
+			.psclk(),// IN
+			.psen(), // IN
+			.psincdec(),     // IN
+			.psdone(),       // OUT
+			
+			// Status and control signals
+			.reset(reset),  // IN
+			.locked()  // OUT
+		);
+*/								
 	
 		pll pll_ddr
 		(	// Clock in ports

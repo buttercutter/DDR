@@ -633,18 +633,18 @@ ddr3 mem(
 	reg [DQ_BITWIDTH-1:0] test_dq_w_d1;
 	wire [DQS_BITWIDTH-1:0] test_dqs_w;
 
-	always @(posedge ck)
+	always @(posedge ck_90)
 	begin
 		if(~reset_n) test_dq_w_d1 <= 1;
 		
-		else if(main_state == STATE_READ_DATA) test_dq_w_d1 <= test_dq_w_d1 + 1;
+		else if(main_state == STATE_READ_DATA) test_dq_w_d1 <= test_dq_w_d0 + 1;
 	end
 	
-	always @(posedge ck)
+	always @(posedge ck_270)
 	begin
 		if(~reset_n) test_dq_w_d0 <= 0;
 		
-		else if(main_state == STATE_READ_DATA) test_dq_w_d0 <= test_dq_w_d0 + 1;
+		else if(main_state == STATE_READ_DATA) test_dq_w_d0 <= test_dq_w_d1 + 1;
 	end
 		
 	// DQS and DQ signals are of double-data-rate signals
