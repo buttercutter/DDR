@@ -1062,8 +1062,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
-		always @(posedge ck_90)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-		always @(posedge ck_270) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
+		always @(posedge ck_270)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck_90) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
 		
 		// why need IOSERDES primitives ?
@@ -1101,22 +1101,25 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		genvar data_index_iserdes;
 		generate
 			for(data_index_iserdes = 0; data_index_iserdes < (DQ_BITWIDTH*SERDES_RATIO); 
-				data_index_iserdes = data_index_iserdes + 1)
+				data_index_iserdes = data_index_iserdes + DQ_BITWIDTH)
 			begin: data_from_ram_combine_loop
 				
-				if((data_index_iserdes % EVEN_RATIO) == 0)
-				begin
-					always @(*)
-					begin
-						data_from_ram[data_index_iserdes] <= data_out_iserdes_0[data_index_iserdes >> 1];
-					end
-				end
+				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_iserdes'
+				// since 'data_out_iserdes_0' and 'data_out_iserdes_1' are half the size of 'data_from_ram'
 				
-				else begin
-						
-					always @(*)
+				always @(*)
+				begin				
+					if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
 					begin
-						data_from_ram[data_index_iserdes] <= data_out_iserdes_1[data_index_iserdes >> 1];
+						data_from_ram[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_out_iserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+											+: DQ_BITWIDTH];
+					end
+				
+					else begin
+						data_from_ram[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_out_iserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+											+: DQ_BITWIDTH];
 					end
 				end
 			end
@@ -1204,7 +1207,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_0),
 			
 			// fast clock domain
-			.high_speed_clock(ck_90),
+			.high_speed_clock(ck_270),
 			.data_out(dq_w_oserdes_0)
 		);
 
@@ -1215,7 +1218,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_1),
 			
 			// fast clock domain
-			.high_speed_clock(ck_270),
+			.high_speed_clock(ck_90),
 			.data_out(dq_w_oserdes_1)
 		);
 		
