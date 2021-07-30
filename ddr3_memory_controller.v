@@ -678,7 +678,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			// Status and control signals
 			.reset(reset),  // IN
 			.locked(locked)  // OUT			
-		):
+		);
 
 
 		// dynamic phase shift for incoming DQ bits		
@@ -692,12 +692,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			// Dynamic phase shift ports
 			.psclk(udqs_r),  // IN
 			.psen(1'b1),  // IN
-			.psincdec(psincdec),     // IN
+			.psincdec(1'b1),     // IN
 			.psdone(psdone),       // OUT
 			
 			// Status and control signals
 			.reset(reset),  // IN
-			.locked(locked_dynamic)  // OUT
+			.locked_dynamic(locked_dynamic)  // OUT
 		);
 
 
