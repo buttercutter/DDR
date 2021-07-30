@@ -677,7 +677,27 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			
 			// Status and control signals
 			.reset(reset),  // IN
-			.locked(locked)  // OUT
+			.locked(locked)  // OUT			
+		):
+
+
+		// dynamic phase shift for incoming DQ bits		
+		pll_tuneable pll_read
+		(	// Clock in ports
+			.clk(clk),  // IN 50MHz
+			
+			// Clock out ports
+			.ck_dynamic(ck_dynamic),  // OUT 400MHz, 0 phase shift
+								
+			// Dynamic phase shift ports
+			.psclk(udqs_r),  // IN
+			.psen(1'b1),  // IN
+			.psincdec(psincdec),     // IN
+			.psdone(psdone),       // OUT
+			
+			// Status and control signals
+			.reset(reset),  // IN
+			.locked(locked_dynamic)  // OUT
 		);
 
 
@@ -1581,7 +1601,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_90),  // 1-bit clock input
 			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D(delayed_dq_r[dq_index]),    // 1-bit DDR data input
+			.D(dq_r[dq_index]),    // 1-bit DDR data input
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
@@ -1609,7 +1629,10 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		);
 		// End of ODDR2_inst instantiation
 		
-
+		
+		// IODELAY2 primitive is not used due to some internal hardware issues as described in
+		// https://www.xilinx.com/support/answers/38408.html
+/*
 		// See https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=51
 		// xilinx specs says "Only possible when the two BUFGs are common for both input and output" or similar
 		// This means that the input and output clocks must be the same
@@ -1657,7 +1680,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
 			.BUSY      		()	// output signal indicating sync circuit has finished / calibration has finished
 		);
-
+*/
 
 		/*
 		The following ODELAY for dq_w is not used.
