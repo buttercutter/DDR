@@ -40,8 +40,8 @@
 localparam NUM_OF_DDR_STATES = 20;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
-// TIME_INITIAL_CK_INACTIVE = 152068;
-localparam MAX_TIMING = 152068;  // just for initial development stage, will refine the value later
+// TIME_INITIAL_CK_INACTIVE = 500000/CK_PERIOD = 500000/3.288 = 152068.126520681;
+localparam MAX_TIMING = 152069;  // just for initial development stage, will refine the value later
 /* verilator lint_on VARHIDDEN */
 `endif
 
@@ -57,18 +57,29 @@ module ddr3_memory_controller
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
 		parameter SERDES_RATIO = 8,
 	`endif
-	
-	`ifdef TESTBENCH
-		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+
+	`ifdef MICRON_SIM
 		parameter PERIOD_MARGIN = 10,  // 10ps margin
-		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model
+		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model	
+		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
 		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
-				
+		
 		// host clock period in ns
-		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3ns
-		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
+		// clock period of 'clk' = 0.8225ns , clock period of 'ck' = 3.3ns
+		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
+	`endif
+		
+	`ifdef TESTBENCH		
+		`ifndef MICRON_SIM
+			parameter PERIOD_MARGIN = 10,  // 10ps margin
+			parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model		
+			parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.		
+			parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
+		`endif
+				
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`endif
 	
 	
@@ -347,24 +358,47 @@ localparam STATE_INIT_MRS_0 = 19;
 `else
 
 	`ifndef XILINX
-	
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD)-1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+		`ifdef MICRON_SIM
+		
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CK_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
-		`ifdef RAM_SIZE_1GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+			`ifdef RAM_SIZE_1GB
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 
-		`elsif RAM_SIZE_2GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CLK_PERIOD);
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+			`elsif RAM_SIZE_2GB
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CK_PERIOD);
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
 
-		`elsif RAM_SIZE_4GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CLK_PERIOD);
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+			`elsif RAM_SIZE_4GB
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CK_PERIOD);
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+			`endif
+
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
+			
+		`else
+		
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+
+			`ifdef RAM_SIZE_1GB
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+
+			`elsif RAM_SIZE_2GB
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CLK_PERIOD);
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+
+			`elsif RAM_SIZE_4GB
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CLK_PERIOD);
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+			`endif
+
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
+			
 		`endif
-
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
 		
 	`else
 			
@@ -399,13 +433,25 @@ localparam STATE_INIT_MRS_0 = 19;
 `endif
 
 `ifndef XILINX
-
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CLK_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_PERIOD));  // Minimum 195ps, setup time
+	`ifdef MICRON_SIM
+	
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CK_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CK_PERIOD));  // Minimum 195ps, setup time
+		
+	`else
+	
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CLK_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_PERIOD));  // Minimum 195ps, setup time
+		
+	`endif
 	
 `else
 
@@ -530,7 +576,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	always @(posedge clk)
 	begin
-		if(reset) counter_reset <= 0;
+		if(reset) counter_reset <= 1;
 
 	`ifndef XILINX	
 		else counter_reset <= (counter == DIVIDE_RATIO_HALVED[0 +: $clog2(DIVIDE_RATIO_HALVED)] - 1'b1);
@@ -550,7 +596,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	always @(posedge clk)
 	begin
-		if(reset) clk_slow <= 0;
+		if(reset) clk_slow <= 1;
 		
 		else if(counter_reset)
 		  	clk_slow <= ~clk_slow;
@@ -776,8 +822,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_ldqs_w(
 				.Q(ldqs_w),  // 1-bit DDR output data
-				.C0(ck),  // 1-bit clock input
-				.C1(ck_180),  // 1-bit clock input
+				.C0(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -792,8 +838,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_udqs_w(
 				.Q(udqs_w),  // 1-bit DDR output data
-				.C0(ck),  // 1-bit clock input
-				.C1(ck_180),  // 1-bit clock input
+				.C0(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -808,8 +854,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_ldqs_n_w(
 				.Q(ldqs_n_w),  // 1-bit DDR output data
-				.C0(ck_180),  // 1-bit clock input
-				.C1(ck),  // 1-bit clock input
+				.C0(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -824,8 +870,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_udqs_n_w(
 				.Q(udqs_n_w),  // 1-bit DDR output data
-				.C0(ck_180),  // 1-bit clock input
-				.C1(ck),  // 1-bit clock input
+				.C0(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -1082,8 +1128,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
-		always @(posedge ck_270)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-		always @(posedge ck_90) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
+		always @(posedge ck_180)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
 		
 		// why need IOSERDES primitives ?
@@ -1480,8 +1526,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_ldqs_iobuf_en(
 			.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1496,8 +1542,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_ldqs_n_iobuf_en(
 			.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck_180),  // 1-bit clock input
-			.C1(ck),  // 1-bit clock input
+			.C0(ck_270),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1512,8 +1558,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_udqs_iobuf_en(
 			.Q(udqs_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1528,8 +1574,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_udqs_n_iobuf_en(
 			.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck_180),  // 1-bit clock input
-			.C1(ck),  // 1-bit clock input
+			.C0(ck_270),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1571,8 +1617,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_dq_iobuf_en(
 			.Q(dq_iobuf_enable[dq_index]),  // 1-bit DDR output data
-			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
+			.C0(ck),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1598,8 +1644,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		IDDR2_dq_r(
 			.Q0(dq_r_q0[dq_index]),  // 1-bit output captured with C0 clock
 			.Q1(dq_r_q1[dq_index]),  // 1-bit output captured with C1 clock
-			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
+			.C0(ck),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D(dq_r[dq_index]),    // 1-bit DDR data input
 			.R(reset),    // 1-bit reset input
@@ -1619,8 +1665,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		)
 		ODDR2_dq_w(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
-			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
+			.C0(ck),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C0)
 			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C1)			

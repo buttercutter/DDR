@@ -50,20 +50,30 @@ module test_ddr3_memory_controller
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
 		parameter SERDES_RATIO = 8,
 	`endif
-	
-	`ifdef TESTBENCH
-		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+
+	`ifdef MICRON_SIM
 		parameter PERIOD_MARGIN = 10,  // 10ps margin
-		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model
+		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model	
+		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
 		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
-				
+		
 		// host clock period in ns
-		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),  // clock period of 'clk' = 0.825ns , clock period of 'ck' = 3.3ns
-		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
+		// clock period of 'clk' = 0.8225ns , clock period of 'ck' = 3.3ns
+		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns
 	`endif
-
+		
+	`ifdef TESTBENCH		
+		`ifndef MICRON_SIM
+			parameter PERIOD_MARGIN = 10,  // 10ps margin
+			parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model		
+			parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.		
+			parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
+		`endif
+				
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
+	`endif
 
 	`ifdef USE_x16
 		parameter DM_BITWIDTH = 2,
@@ -224,7 +234,8 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 	// duration for each bit = 1 * timescale = 1 * 1ps  = 1ps
 	// but the following coding is also for Xilinx ISIM simulator
 
-	localparam RESET_TIMING = 10;  // reset for at least 10ns (requirement by Xilinx PLL IP core)
+	// reset for at least 3 CLKIN clock cycles (requirement by Xilinx PLL IP core)
+	localparam RESET_TIMING = 3 * CLK_PERIOD;
 	localparam STOP_TIMING =  900_000;  // 900us = 900_000ns
 
 	// clock and reset signals generation for simulation testbench
