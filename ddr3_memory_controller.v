@@ -726,6 +726,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.locked(locked)  // OUT			
 		);
 
+		reg psen;
+		// Phase shifting is like changing PLL settings, so need to wait for the new PLL lock in order to avoid
+		// Warning : Please wait for PSDONE signal before adjusting the Phase Shift 
+		always @(posedge clk) psen <= psdone;
 
 		// dynamic phase shift for incoming DQ bits		
 		pll_tuneable pll_read
@@ -737,7 +741,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 								
 			// Dynamic phase shift ports
 			.psclk(udqs_r),  // IN
-			.psen(1'b1),  // IN
+			.psen(psen),  // IN
 			.psincdec(1'b1),     // IN
 			.psdone(psdone),       // OUT
 			
