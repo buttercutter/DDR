@@ -650,9 +650,29 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 
 		reg psen;
-		// Phase shifting is like changing PLL settings, so need to wait for the new PLL lock in order to avoid
-		// Warning : Please wait for PSDONE signal before adjusting the Phase Shift 
-		always @(posedge ck) psen <= psdone;
+
+		reg data_read_is_ongoing_previous;
+		always @(posedge ck)
+			data_read_is_ongoing_previous <= data_read_is_ongoing;
+		
+		reg psdone_previous;
+		always @(posedge ck) psdone_previous <= psdone;
+		
+		always @(posedge ck)
+		begin
+			// triggers the first phase shift enable request only during the start of read operation
+			if(~data_read_is_ongoing_previous && data_read_is_ongoing) psen <= 1;
+			
+			// Phase shifting is like changing PLL settings, so need to wait for new PLL lock in order to avoid
+			// Warning : Please wait for PSDONE signal before adjusting the Phase Shift
+			// asserts psen signal only when psdone is asserted low after asserted high previously			
+			else if(psdone_previous && ~psdone) psen <= psdone;
+			
+			// assert PSEN for one PSCLK cycle only and then wait for PSDONE to assert before performing
+			// another phase shift operation. Asserting PSEN for more than one PSCLK cycle can cause the DCM 
+			// to phase shift in an unpredictable manner.
+			else psen <= 0;
+		end
 
 		localparam PLL_STATUS_BITWIDTH = 2;
 
