@@ -632,84 +632,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	`ifdef XILINX
 	
-		wire locked;
-/*
-		pll_ck ck_pll 
-		(	
-			// Clock in ports
-			.clk(clk),  // IN 50MHz
-			
-			// Clock out ports
-			.ck(ck),  // OUT 310MHz, 0 phase shift	
-				
-			// Dynamic phase shift ports
-			.psclk(),// IN
-			.psen(), // IN
-			.psincdec(),     // IN
-			.psdone(),       // OUT
-			
-			// Status and control signals
-			.reset(reset),  // IN
-			.locked()  // OUT
-		);
-
-		pll_ck_90 ck_90_pll 
-		(	
-			// Clock in ports
-			.clk(clk),  // IN 50MHz
-			
-			// Clock out ports
-			.ck_90(ck_90),  // OUT 310MHz, 90 phase shift	
-				
-			// Dynamic phase shift ports
-			.psclk(),// IN
-			.psen(), // IN
-			.psincdec(),     // IN
-			.psdone(),       // OUT
-			
-			// Status and control signals
-			.reset(reset),  // IN
-			.locked()  // OUT
-		);
-		
-		pll_ck_180 ck_180_pll 
-		(	
-			// Clock in ports
-			.clk(clk),  // IN 50MHz
-			
-			// Clock out ports
-			.ck_180(ck_180),  // OUT 310MHz, 180 phase shift	
-				
-			// Dynamic phase shift ports
-			.psclk(),// IN
-			.psen(), // IN
-			.psincdec(),     // IN
-			.psdone(),       // OUT
-			
-			// Status and control signals
-			.reset(reset),  // IN
-			.locked()  // OUT
-		);
-
-		pll_ck_270 ck_270_pll 
-		(	
-			// Clock in ports
-			.clk(clk),  // IN 50MHz
-			
-			// Clock out ports
-			.ck_270(ck_270),  // OUT 310MHz, 270 phase shift	
-				
-			// Dynamic phase shift ports
-			.psclk(),// IN
-			.psen(), // IN
-			.psincdec(),     // IN
-			.psdone(),       // OUT
-			
-			// Status and control signals
-			.reset(reset),  // IN
-			.locked()  // OUT
-		);
-*/								
+		wire locked;							
 	
 		pll pll_ddr
 		(	// Clock in ports
@@ -723,13 +646,20 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			
 			// Status and control signals
 			.reset(reset),  // IN
-			.locked(locked)  // OUT			
+			.locked(locked)  // OUT
 		);
 
 		reg psen;
 		// Phase shifting is like changing PLL settings, so need to wait for the new PLL lock in order to avoid
 		// Warning : Please wait for PSDONE signal before adjusting the Phase Shift 
-		always @(posedge clk) psen <= psdone;
+		always @(posedge ck) psen <= psdone;
+
+		localparam PLL_STATUS_BITWIDTH = 2;
+
+		wire locked_dynamic;
+		wire [PLL_STATUS_BITWIDTH-1:0] pll_read_status;
+		wire input_clk_stopped;
+		wire clk_valid;
 
 		// dynamic phase shift for incoming DQ bits		
 		pll_tuneable pll_read
@@ -747,7 +677,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			
 			// Status and control signals
 			.reset(reset),  // IN
-			.locked_dynamic(locked_dynamic)  // OUT
+			.locked_dynamic(locked_dynamic),  // OUT
+			.status(pll_read_status),  // OUT
+			.input_clk_stopped(input_clk_stopped),  // OUT
+			.clk_valid(clk_valid)  // OUT			
 		);
 
 
