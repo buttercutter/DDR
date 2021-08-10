@@ -674,7 +674,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			else psen <= 0;
 		end
 
-		localparam PLL_STATUS_BITWIDTH = 2;
+		localparam PLL_STATUS_BITWIDTH = 3;
 
 		wire locked_dynamic;
 		wire [PLL_STATUS_BITWIDTH-1:0] pll_read_status;
