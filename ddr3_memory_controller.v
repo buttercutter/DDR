@@ -639,10 +639,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.ck(ck),  // OUT 400MHz, 0 phase shift
-			.ck_90(ck_90),  // OUT 400MHz, 90 phase shift, for dq phase shifting purpose
-			.ck_180(ck_180),  // OUT 400MHz, 180 phase shift
-			.ck_270(ck_270),  // OUT 400MHz, 270 phase shift, for dq phase shifting purpose
+			.ck(ck),  // OUT 350MHz, 0 phase shift
+			.ck_90(ck_90),  // OUT 350MHz, 90 phase shift, for dq phase shifting purpose
+			.ck_180(ck_180),  // OUT 350MHz, 180 phase shift
+			.ck_270(ck_270),  // OUT 350MHz, 270 phase shift, for dq phase shifting purpose
 			
 			// Status and control signals
 			.reset(reset),  // IN
@@ -1201,22 +1201,25 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		genvar data_index_oserdes;
 		generate
 			for(data_index_oserdes = 0; data_index_oserdes < (DQ_BITWIDTH*SERDES_RATIO); 
-				data_index_oserdes = data_index_oserdes + 1)
+				data_index_oserdes = data_index_oserdes + DQ_BITWIDTH)
 			begin: data_to_ram_split_loop
-				
-				if((data_index_oserdes % EVEN_RATIO) == 0)
-				begin
-					always @(*)
+
+				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_oserdes'
+				// since 'data_in_oserdes_0' and 'data_in_oserdes_1' are half the size of 'data_to_ram'
+					
+				always @(*)
+				begin				
+					if(((data_index_oserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
 					begin
-						data_in_oserdes_0[data_index_oserdes >> 1] <= data_to_ram[data_index_oserdes];
+						data_in_oserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
+									DQ_BITWIDTH] <= 
+						data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
 					end
-				end
 				
-				else begin
-						
-					always @(*)
-					begin
-						data_in_oserdes_1[data_index_oserdes >> 1] <= data_to_ram[data_index_oserdes];
+					else begin
+						data_in_oserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
+									DQ_BITWIDTH] <= 
+						data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
 					end
 				end
 			end
