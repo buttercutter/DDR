@@ -71,7 +71,11 @@ module test_ddr3_memory_controller
 			parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.		
 			parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 		`endif
-				
+	`endif
+
+	`ifdef HIGH_SPEED
+		parameter CK_PERIOD = 3,  // 350MHz from PLL, 1/350MHz = 2.857143ns, round up to the nearest integer
+	`else
 		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`endif
 
@@ -297,6 +301,8 @@ wire ck_270;
 wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 wire udqs_iobuf_enable;
 wire ldqs_iobuf_enable;
+
+wire data_read_is_ongoing;
 `endif
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
@@ -565,6 +571,8 @@ ddr3_control
 		.dq_iobuf_enable(dq_iobuf_enable),
 		.udqs_iobuf_enable(udqs_iobuf_enable),
 		.ldqs_iobuf_enable(ldqs_iobuf_enable),
+		
+		.data_read_is_ongoing(data_read_is_ongoing),
 	`endif
 	
 	.ck_en(ck_en), // CKE
@@ -646,16 +654,16 @@ ddr3 mem(
 
 	always @(posedge ck_90)
 	begin
-		if(~reset_n) test_dq_w_d1 <= 1;
+		if(~reset_n | ~(|dq_iobuf_enable)) test_dq_w_d1 <= 1;
 		
-		else if(main_state == STATE_READ_DATA) test_dq_w_d1 <= test_dq_w_d0 + 1;
+		else if(data_read_is_ongoing) test_dq_w_d1 <= test_dq_w_d0 + 1;
 	end
 	
 	always @(posedge ck_270)
 	begin
-		if(~reset_n) test_dq_w_d0 <= 0;
+		if(~reset_n | ~(|dq_iobuf_enable)) test_dq_w_d0 <= 0;
 		
-		else if(main_state == STATE_READ_DATA) test_dq_w_d0 <= test_dq_w_d1 + 1;
+		else if(data_read_is_ongoing) test_dq_w_d0 <= test_dq_w_d1 + 1;
 	end
 		
 	// DQS and DQ signals are of double-data-rate signals

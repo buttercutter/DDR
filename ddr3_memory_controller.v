@@ -78,10 +78,14 @@ module ddr3_memory_controller
 			parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.		
 			parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 		`endif
-				
-		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`endif
 	
+	`ifdef HIGH_SPEED
+		parameter CK_PERIOD = 3,  // 350MHz from PLL, 1/350MHz = 2.857143ns, round up to the nearest integer
+	`else
+		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
+	`endif
+		
 	
 	// for STATE_IDLE transition into STATE_REFRESH
 	// tREFI = 65*tRFC calculated using info from Micron dataheet, so tREFI > 8 * tRFC
@@ -173,6 +177,8 @@ module ddr3_memory_controller
 		output [DQ_BITWIDTH-1:0] dq_iobuf_enable,
 		output ldqs_iobuf_enable,
 		output udqs_iobuf_enable,
+		
+		output reg data_read_is_ongoing,
 	`endif
 	
 	output reg ck_en, // CKE
@@ -625,6 +631,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 `else
 
+	wire clk_pll;
 	wire ck, ck_out;
 	wire ck_90;
 	wire ck_180, ck_180_out;
@@ -639,6 +646,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
+			.clk_pll(clk_pll),  // OUT 50MHz, 0 phase shift, for solving CDC issues
 			.ck(ck),  // OUT 350MHz, 0 phase shift
 			.ck_90(ck_90),  // OUT 350MHz, 90 phase shift, for dq phase shifting purpose
 			.ck_180(ck_180),  // OUT 350MHz, 180 phase shift
@@ -1018,7 +1026,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire idelay_is_busy;
 		reg idelay_is_busy_previously;
 		
-		always @(posedge clk) idelay_is_busy_previously <= idelay_is_busy;
+		always @(posedge clk_pll) idelay_is_busy_previously <= idelay_is_busy;
 		
 		
 		reg idelay_inc_dqs_r;
@@ -1028,7 +1036,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		localparam IODELAY_STARTUP_BITWIDTH = 12;  
 		reg [IODELAY_STARTUP_BITWIDTH-1:0] iodelay_startup_counter;
 		
-		always @(posedge clk)
+		always @(posedge clk_pll)
 		begin
 			if(reset) iodelay_startup_counter <= 0;
 			
@@ -1331,9 +1339,39 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 `endif
 
 
-wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE) && 
-							 ((main_state == STATE_READ) || (main_state == STATE_READ_AP))) || 
-					  		 (main_state == STATE_READ_DATA);
+// wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE) && 
+//							 ((main_state == STATE_READ) || (main_state == STATE_READ_AP))) || 
+//					  		 (main_state == STATE_READ_DATA);
+
+// for pipelining in order to solve STA setup timing violation issue
+localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 4;
+`ifndef TESTBENCH
+reg data_read_is_ongoing;
+`endif
+reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoing_temp_3;
+
+// ck is 350MHz, and the logic inside 'data_read_is_ongoing' are of 50MHz clk_pll domain
+// ck and clk_pll clock domains do not have phase difference,
+// but 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
+// which have 90 degrees and 270 degrees phase difference respectively
+always @(posedge ck)
+begin
+	if(reset)
+	begin
+		data_read_is_ongoing_temp_3 <= 0;
+		data_read_is_ongoing_temp_2 <= 0;
+		data_read_is_ongoing_temp_1 <= 0;
+		data_read_is_ongoing <= 0;
+	end
+	
+	else begin
+		data_read_is_ongoing_temp_3 <= (main_state == STATE_READ);
+		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state == STATE_READ_AP);
+		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2 && 
+									 	(wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE);
+		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state == STATE_READ_DATA);
+	end
+end
 
 wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) && 
 		    				  ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP))) || 
@@ -1822,14 +1860,14 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 /*	
 	reg reset_extended;
 	
-	always @(posedge clk)
+	always @(posedge clk_pll)
 	begin
 		if(reset) reset_extended <= 1;
 		
 		else reset_extended <= reset;
 	end
 	
-	always @(posedge clk)  // reset extender
+	always @(posedge clk_pll)  // reset extender
 	begin
 		if(($past(reset) == 1) && (reset_extended) && (!$past(reset_extended))) assume(reset);
 	end
@@ -1857,14 +1895,14 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 	reg first_clock_had_passed;
 	initial first_clock_had_passed = 0;
 	
-	always @(posedge clk)
+	always @(posedge clk_pll)
 	begin
 		if(reset) first_clock_had_passed <= 0;
 		
 		else first_clock_had_passed <= 1;
 	end
 
-	always @(posedge clk)
+	always @(posedge clk_pll)
 	begin
 		if(first_clock_had_passed)
 		begin
@@ -1878,7 +1916,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		end
 	end
 
-	always @(posedge clk)
+	always @(posedge clk_pll)
 	begin
 		if(data_write_is_ongoing)
 		begin
@@ -1888,7 +1926,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		else assert(dqs == dqs_r);
 	end
 
-	always @(posedge clk)
+	always @(posedge clk_pll)
 	begin
 		if(data_write_is_ongoing)
 		begin
@@ -1898,7 +1936,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		else assert(dqs_n == dqs_n_r);
 	end
 
-	always @(posedge clk)
+	always @(posedge clk_pll)
 	begin
 		if(data_write_is_ongoing)
 		begin
@@ -1979,15 +2017,22 @@ always @(posedge clk)  // ck is only turned on after clk is turned on
 begin
 	if(reset) need_to_assert_reset <= 1;
 	
-	else if(locked) need_to_assert_reset <= 0;
+	else if(locked_previous) need_to_assert_reset <= 0;
 end
+
+reg locked_previous;
+
+always @(posedge clk) locked_previous <= locked;
 `endif
 
-
+`ifdef HIGH_SPEED
+always @(posedge clk_pll)
+`else
 always @(posedge clk)
+`endif
 begin
 `ifdef XILINX
-	if(need_to_assert_reset && locked) 
+	if(need_to_assert_reset && locked_previous) 
 `else
 	if(reset)
 `endif
@@ -2751,7 +2796,8 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > (TIME_RL-TIME_TRPRE)-1)
+				if(wait_count > 
+						(TIME_RL-TIME_TRPRE+(NUM_OF_READ_PIPELINE_REGISTER_ADDED*CK_PERIOD/CLK_PERIOD))-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
@@ -2783,7 +2829,8 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > (TIME_RL-TIME_TRPRE)-1)
+				if(wait_count > 
+						(TIME_RL-TIME_TRPRE+(NUM_OF_READ_PIPELINE_REGISTER_ADDED*CK_PERIOD/CLK_PERIOD))-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
