@@ -744,14 +744,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// see https://forums.xilinx.com/t5/Other-FPGA-Architecture/Place-1198-Error-Route-cause-and-possible-solution/m-p/408489/highlight/true#M34528
 		
 		ODDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_ck_out(
 			.Q(ck_out),  // 1-bit DDR output data
 			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C1(ck),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 			.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -760,14 +760,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_ck_180_out(
 			.Q(ck_180_out),  // 1-bit DDR output data
 			.C0(ck_180),  // 1-bit clock input
-			.C1(ck),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 			.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -1049,7 +1049,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// will implement dynamic (real-time) phase calibration as project progresses
 		wire idelay_cal_dqs_r = &iodelay_startup_counter;  // Wait for IODELAY to be available
 				
-		
+/*		
 		IODELAY2 #(
 			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
 			.IDELAY_VALUE  		(0), 			// {0 ... 255}
@@ -1078,7 +1078,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
 			.BUSY      		(idelay_is_busy)	// output signal indicating sync circuit has finished / calibration has finished
 		);
-
+*/
 
 		// RAM -> IOBUF (for inout) -> IDELAY (DQS Centering) -> IDDR2 (input DDR buffer) -> ISERDES		
 		// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
@@ -1093,7 +1093,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
-		always @(posedge ck_180)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
 		always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
 		
@@ -1172,7 +1172,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		dq_iserdes_1
 		(
 			// fast clock domain
-			.high_speed_clock(ck_270),
+			.high_speed_clock(ck_90),
 			.data_in(dq_r_q1),
 			
 			// slow clock domain
@@ -1241,7 +1241,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_0),
 			
 			// fast clock domain
-			.high_speed_clock(ck_270),
+			.high_speed_clock(ck_90),
 			.data_out(dq_w_oserdes_0)
 		);
 
@@ -1350,8 +1350,14 @@ reg data_read_is_ongoing;
 `endif
 reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoing_temp_3;
 
+// to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
+reg can_proceed_to_read_data_state;
+always @(posedge ck)
+	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE-1);
+
 // ck is 350MHz, and the logic inside 'data_read_is_ongoing' are of 50MHz clk_pll domain
-// ck and clk_pll clock domains do not have phase difference,
+// ck and clk_pll clock domains do not have phase difference, and they are both generated from the same PLL
+// hence no need any async FIFO synchronizer.
 // but 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
 // which have 90 degrees and 270 degrees phase difference respectively
 always @(posedge ck)
@@ -1367,8 +1373,7 @@ begin
 	else begin
 		data_read_is_ongoing_temp_3 <= (main_state == STATE_READ);
 		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state == STATE_READ_AP);
-		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2 && 
-									 	(wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE);
+		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2 && can_proceed_to_read_data_state;
 		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state == STATE_READ_DATA);
 	end
 end
@@ -1609,9 +1614,9 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_dq_iobuf_en(
 			.Q(dq_iobuf_enable[dq_index]),  // 1-bit DDR output data
@@ -1634,10 +1639,10 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		IDDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT_Q0(1'b0),  // Sets initial state of the Q0 output to 1'b0 or 1'b1
 			.INIT_Q1(1'b0),  // Sets initial state of the Q1 output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		IDDR2_dq_r(
 			.Q0(dq_r_q0[dq_index]),  // 1-bit output captured with C0 clock
@@ -1657,9 +1662,9 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_dq_w(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
