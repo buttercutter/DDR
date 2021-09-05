@@ -790,7 +790,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			ODDR2_ldqs_w(
 				.Q(ldqs_w),  // 1-bit DDR output data
 				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -806,7 +806,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			ODDR2_udqs_w(
 				.Q(udqs_w),  // 1-bit DDR output data
 				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -1239,6 +1239,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_oserdes_0
 		(
+			.reset(need_to_assert_reset),
+			
 			// slow clock domain
 			.data_in(data_in_oserdes_0),
 			
@@ -1250,6 +1252,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_oserdes_1
 		(
+			.reset(need_to_assert_reset),
+		
 			// slow clock domain
 			.data_in(data_in_oserdes_1),
 			
@@ -1559,7 +1563,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_ldqs_iobuf_en(
 			.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
 			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
@@ -1591,7 +1595,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_udqs_iobuf_en(
 			.Q(udqs_iobuf_enable),  // 1-bit DDR output data
 			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
@@ -1650,7 +1654,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_dq_iobuf_en(
 			.Q(dq_iobuf_enable[dq_index]),  // 1-bit DDR output data
 			.C0(ck),  // 1-bit clock input
-			.C1(ck),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1716,7 +1720,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_dq_w(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
 			.C0(ck),  // 1-bit clock input
-			.C1(ck),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C0)
 			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C1)			
