@@ -1519,6 +1519,33 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		);
 
 
+		// https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
+		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN = 3;
+		
+		// to synchronize signal in ck domain to ck_90 domain
+		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1:0] data_read_is_ongoing_90;
+		
+		genvar ff_ck_ck_90;
+		
+		generate
+			for(ff_ck_ck_90 = 0; ff_ck_ck_90 < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN;
+			    ff_ck_ck_90 = ff_ck_ck_90 + 1)
+			begin: ck_to_ck_90
+			
+				always @(posedge ck_90)
+				begin
+					if(reset) data_read_is_ongoing_90[ff_ck_ck_90] <= 0;
+					
+					else begin
+						if(ff_ck_ck_90 == 0) data_read_is_ongoing_90[ff_ck_ck_90] <= data_read_is_ongoing;
+						
+						else data_read_is_ongoing_90[ff_ck_ck_90] <= data_read_is_ongoing_90[ff_ck_ck_90-1];
+					end
+				end
+			end		
+		endgenerate
+
+
 		// see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
 		// 'data_read_is_ongoing' signal is not of double-data-rate signals,
 		// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
@@ -1534,8 +1561,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_90),  // 1-bit clock input
 			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -1566,8 +1593,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_90),  // 1-bit clock input
 			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -1660,7 +1687,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 */
 
 
-		// IDDR2 is recoded in verilog fabric due to same clock restriction of IODDR which leas to routing issue
+		// https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=51
+		// IDDR2 is re-coded in verilog fabric due to same clock restriction of IODDR which leads to routing issue
 		always @(posedge ck_dynamic)
 		begin
 			if(reset) dq_r_q0[dq_index] <= 0;
