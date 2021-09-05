@@ -1235,6 +1235,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			end
 		endgenerate
 
+		reg need_to_assert_reset;
 		
 		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_oserdes_0
@@ -1245,7 +1246,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_0),
 			
 			// fast clock domain
-			.high_speed_clock(ck_90),
+			.high_speed_clock(ck),
 			.data_out(dq_w_oserdes_0)
 		);
 
@@ -1258,7 +1259,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_in(data_in_oserdes_1),
 			
 			// fast clock domain
-			.high_speed_clock(ck_90),
+			.high_speed_clock(ck),
 			.data_out(dq_w_oserdes_1)
 		);
 		
@@ -1654,7 +1655,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_dq_iobuf_en(
 			.Q(dq_iobuf_enable[dq_index]),  // 1-bit DDR output data
 			.C0(ck),  // 1-bit clock input
-			.C1(ck_90),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1720,10 +1721,10 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_dq_w(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
 			.C0(ck),  // 1-bit clock input
-			.C1(ck_90),  // 1-bit clock input
+			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C0)
-			.D1(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C1)			
+			.D0(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C0)
+			.D1(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
@@ -2067,8 +2068,6 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 `endif
 
 `ifdef XILINX
-reg need_to_assert_reset;
-
 always @(posedge clk)  // ck is only turned on after clk is turned on
 begin
 	if(reset) need_to_assert_reset <= 1;
