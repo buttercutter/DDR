@@ -822,7 +822,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			ODDR2_ldqs_n_w(
 				.Q(ldqs_n_w),  // 1-bit DDR output data
 				.C0(ck_270),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -838,7 +838,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			ODDR2_udqs_n_w(
 				.Q(udqs_n_w),  // 1-bit DDR output data
 				.C0(ck_270),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -1580,7 +1580,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_ldqs_n_iobuf_en(
 			.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
 			.C0(ck_270),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
@@ -1612,7 +1612,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		ODDR2_udqs_n_iobuf_en(
 			.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
 			.C0(ck_270),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
+			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
 			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
