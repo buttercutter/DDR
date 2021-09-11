@@ -172,7 +172,7 @@ localparam MAX_TIMING = 152068;  // just for initial development stage, will ref
 `endif
 
 localparam STATE_WRITE_DATA = 8;
-localparam STATE_READ_DATA = 11;
+localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
 `ifndef XILINX
 	wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
@@ -303,7 +303,13 @@ wire udqs_iobuf_enable;
 wire ldqs_iobuf_enable;
 
 wire data_read_is_ongoing;
+
+// for clk_serdes clock domain
+wire locked_previous;
+wire need_to_assert_reset;
 `endif
+
+wire clk_serdes;  // 87.5MHz
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 
@@ -338,13 +344,21 @@ reg done_writing, done_reading;
 			data_write_index = data_write_index + 1)
 		begin: data_write_loop
 	`endif
-		`ifdef TESTBENCH			
-			always @(posedge clk_sim)
+		`ifdef HIGH_SPEED
+			always @(posedge clk_serdes)
 		`else
-			always @(posedge clk)
+			`ifdef TESTBENCH			
+				always @(posedge clk_sim)
+			`else
+				always @(posedge clk)
+			`endif
 		`endif
 			begin
-				if(reset) 
+			`ifdef XILINX
+				if((reset) || (locked_previous && need_to_assert_reset))
+			`else
+				if(reset)
+			`endif
 				begin
 					i_user_data_address <= 0;
 					test_data <= STARTING_VALUE_OF_TEST_DATA;
@@ -387,7 +401,7 @@ reg done_writing, done_reading;
 						`endif
 					`endif
 					
-					test_data <= test_data + 1;
+					test_data <= test_data + 1; // + SERDES_RATIO;
 					write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
 					read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // starts the readback operation
 					done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
@@ -575,6 +589,12 @@ ddr3_control
 		.data_read_is_ongoing(data_read_is_ongoing),
 	`endif
 	
+	`ifdef HIGH_SPEED
+		.clk_serdes(clk_serdes),  // 87.5MHz
+		.locked_previous(locked_previous),
+		.need_to_assert_reset(need_to_assert_reset),
+	`endif
+		
 	.ck_en(ck_en), // CKE
 	.cs_n(cs_n), // chip select signal
 	.odt(odt), // on-die termination
