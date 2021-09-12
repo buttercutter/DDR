@@ -14,7 +14,7 @@ reg [$clog2(S)-1:0] serialization_ratio;
 
 always @(posedge high_speed_clock)
 begin
-	if(reset) serialization_ratio <= 1;
+	if(reset) serialization_ratio <= 0;
 
 	else serialization_ratio <= serialization_ratio + 1;
 end
