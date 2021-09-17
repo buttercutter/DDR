@@ -1205,9 +1205,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 		
 
+		reg need_to_assert_reset_clk;
+		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1:0] need_to_assert_reset_clk_serdes;
+
 		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_iserdes_0
 		(
+			.reset(need_to_assert_reset_clk_serdes),		
+		
 			// fast clock domain
 			.high_speed_clock(ck_dynamic),
 			.data_in(dq_r_q0),
@@ -1219,6 +1224,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_iserdes_1
 		(
+			.reset(need_to_assert_reset_clk_serdes),		
+		
 			// fast clock domain
 			.high_speed_clock(ck_dynamic),
 			.data_in(dq_r_q1),
@@ -1281,8 +1288,6 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			end
 		endgenerate
 
-		reg need_to_assert_reset_clk;
-		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1:0] need_to_assert_reset_clk_serdes;
 		
 		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_oserdes_0
