@@ -1,5 +1,6 @@
 `define MICRON_SIM 1  // micron simulation model
 `define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
+`define VIVADO 1  // for 7-series and above
 
 `define USE_x16 1
 
@@ -10,20 +11,18 @@
 //`define RAM_SIZE_4GB
 
 `ifndef FORMAL
-	`ifndef MICRON_SIM
 	
-		// for internal logic analyzer
-		//`define USE_ILA 1
-		
-		// for lattice ECP5 FPGA
-		//`define LATTICE 1
+	// for internal logic analyzer
+	//`define USE_ILA 1
+	
+	// for lattice ECP5 FPGA
+	//`define LATTICE 1
 
-		// for Xilinx Spartan-6 FPGA
-		`define XILINX 1
-		
-		`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
-				
-	`endif
+	// for Xilinx Spartan-6 FPGA
+	`define XILINX 1
+	
+	`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
+
 `endif
 
 `ifdef MICRON_SIM
@@ -51,11 +50,12 @@ module test_ddr3_memory_controller
 		parameter SERDES_RATIO = 8,
 	`endif
 
-	`ifdef MICRON_SIM
+	parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
+
+	`ifndef HIGH_SPEED
 		parameter PERIOD_MARGIN = 10,  // 10ps margin
 		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model	
 		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
-		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 		
 		// host clock period in ns
 		// clock period of 'clk' = 0.8225ns , clock period of 'ck' = 3.3ns
@@ -69,7 +69,6 @@ module test_ddr3_memory_controller
 			parameter PERIOD_MARGIN = 10,  // 10ps margin
 			parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model		
 			parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.		
-			parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 		`endif
 	`endif
 

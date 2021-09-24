@@ -9,6 +9,7 @@
 
 `define MICRON_SIM 1  // micron simulation model
 `define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
+`define VIVADO 1  // for 7-series and above
 
 `define USE_x16 1
 
@@ -19,20 +20,18 @@
 //`define RAM_SIZE_4GB
 
 `ifndef FORMAL
-	`ifndef MICRON_SIM
 	
-		// for internal logic analyzer
-		//`define USE_ILA 1
-		
-		// for lattice ECP5 FPGA
-		//`define LATTICE 1
+	// for internal logic analyzer
+	//`define USE_ILA 1
+	
+	// for lattice ECP5 FPGA
+	//`define LATTICE 1
 
-		// for Xilinx Spartan-6 FPGA
-		`define XILINX 1
-		
-		`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
-				
-	`endif
+	// for Xilinx Spartan-6 FPGA
+	`define XILINX 1
+	
+	`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
+
 `endif
 
 `ifndef XILINX
@@ -58,17 +57,19 @@ module ddr3_memory_controller
 		parameter SERDES_RATIO = 8,
 	`endif
 
-	`ifdef MICRON_SIM
+	parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
+
+	`ifndef HIGH_SPEED
 		parameter PERIOD_MARGIN = 10,  // 10ps margin
 		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model	
 		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
-		parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 		
 		// host clock period in ns
 		// clock period of 'clk' = 0.8225ns , clock period of 'ck' = 3.3ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
-		parameter CLK_PERIOD = 20,  // 20ns
+		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
+		parameter CLK_SERDES_PERIOD = 11.4285714,  // 11.4285714ns, 87.5MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -76,7 +77,6 @@ module ddr3_memory_controller
 			parameter PERIOD_MARGIN = 10,  // 10ps margin
 			parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model		
 			parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.		
-			parameter PICO_TO_NANO_CONVERSION_FACTOR = 1000,  // 1ns = 1000ps
 		`endif
 	`endif
 	
@@ -316,8 +316,8 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 	`ifndef XILINX
 	reg [$clog2(MAX_TIMING)-1:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
 	`else
-	// $clog2(24999) = 15
-	reg [14:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
+	// $clog2(152069) = 18
+	reg [17:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
 	`endif
 `endif
 
@@ -370,7 +370,7 @@ localparam STATE_INIT_MRS_0 = 19;
 `else
 
 	`ifndef XILINX
-		`ifdef MICRON_SIM
+		`ifndef HIGH_SPEED
 		
 			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
 			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CK_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
@@ -392,45 +392,45 @@ localparam STATE_INIT_MRS_0 = 19;
 			
 		`else
 		
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_SERDES_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_SERDES_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
 			`ifdef RAM_SIZE_1GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_SERDES_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CLK_SERDES_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 
 			`elsif RAM_SIZE_2GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CLK_PERIOD);
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CLK_SERDES_PERIOD);
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CLK_SERDES_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
 
 			`elsif RAM_SIZE_4GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CLK_PERIOD);
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CLK_SERDES_PERIOD);
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CLK_SERDES_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
 			`endif
 
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
+			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_SERDES_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
 			
 		`endif
 		
 	`else
 			
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 10000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 24999;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 17501;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 43751;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
 		`ifdef RAM_SIZE_1GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 6;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 6;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 10;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 11;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 
 		`elsif RAM_SIZE_2GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 8;
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 9;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 15;
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 15;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
 
 		`elsif RAM_SIZE_4GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 13;
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 14;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 23;
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 24;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
 		`endif
 
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 390;  // 7.8μs = 7800ns, Maximum average periodic refresh
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 683;  // 7.8μs = 7800ns, Maximum average periodic refresh
 
 	`endif
 
@@ -445,7 +445,7 @@ localparam STATE_INIT_MRS_0 = 19;
 `endif
 
 `ifndef XILINX
-	`ifdef MICRON_SIM
+	`ifndef HIGH_SPEED
 	
 		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CK_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
 		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
@@ -456,22 +456,22 @@ localparam STATE_INIT_MRS_0 = 19;
 		
 	`else
 	
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CLK_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_PERIOD));  // Minimum 195ps, setup time
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CLK_SERDES_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_SERDES_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_SERDES_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_SERDES_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_SERDES_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_SERDES_PERIOD));  // Minimum 195ps, setup time
 		
 	`endif
 	
 `else
 
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = 2;  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 3;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = 4;  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 2;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 2;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 2;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 5;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = 1;  // Minimum 195ps, setup time
 	
 `endif
@@ -648,7 +648,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	
 		wire locked;							
 	
-		pll pll_ddr
+		pll_ddr pll_static_clocks
 		(	// Clock in ports
 			.clk(clk),  // IN 50MHz
 			
@@ -719,10 +719,16 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			
 			// Status and control signals
 			.reset(reset),  // IN
+			
+			`ifdef VIVADO
+			.locked_dynamic(locked_dynamic)  // OUT
+			
+			`else
 			.locked_dynamic(locked_dynamic),  // OUT
 			.status(pll_read_status),  // OUT
 			.input_clk_stopped(input_clk_stopped),  // OUT
-			.clk_valid(clk_valid)  // OUT			
+			.clk_valid(clk_valid)  // OUT
+			`endif
 		);
 
 
@@ -900,6 +906,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 // See https://www.micron.com/-/media/client/global/documents/products/technical-note/dram/tn4605.pdf#page=7
 // for an overview on DQS Preamble and Postamble bits
 
+wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w;
+wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 
 `ifndef HIGH_SPEED
 	reg dqs_is_at_high_previously;
@@ -993,408 +1001,407 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	`ifdef USE_x16
 		wire [(DQ_BITWIDTH >> 1)-1:0] ldq;
 		wire [(DQ_BITWIDTH >> 1)-1:0] udq;
-		wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w = data_to_ram[0 +: (DQ_BITWIDTH >> 1)];
-		wire [(DQ_BITWIDTH >> 1)-1:0] udq_w = data_to_ram[(DQ_BITWIDTH >> 1) +: (DQ_BITWIDTH >> 1)];
+		assign ldq_w = data_to_ram[0 +: (DQ_BITWIDTH >> 1)];
+		assign udq_w = data_to_ram[(DQ_BITWIDTH >> 1) +: (DQ_BITWIDTH >> 1)];
 		assign dq_w = {udq_w, ldq_w};
 	`else
 		assign dq_w = data_to_ram;  // input data stream of 'data_to_ram' is NOT serialized
 	`endif
 
 `else
-	`ifdef XILINX
 	
-		// bitslip and IODELAY phase shift delay calibration
-		// https://www.xilinx.com/support/documentation/application_notes/xapp1208-bitslip-logic.pdf#page=4
-		// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=130
-		// https://www.xilinx.com/support/documentation/white_papers/wp249.pdf#page=5
-		// https://www.xilinx.com/support/documentation/ip_documentation/ultrascale_memory_ip/v1_4/pg150-ultrascale-memory-ip.pdf#page=361
-		// https://blog.elphel.com/2014/06/ddr3-memory-interface-on-xilinx-zynq-soc-free-software-compatible/
-		// Will use Micron built-in features (Write leveling, MPR_Read_function) to facilitate skew calibration
+	// bitslip and IODELAY phase shift delay calibration
+	// https://www.xilinx.com/support/documentation/application_notes/xapp1208-bitslip-logic.pdf#page=4
+	// https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_7/spartan6_hdl.pdf#page=130
+	// https://www.xilinx.com/support/documentation/white_papers/wp249.pdf#page=5
+	// https://www.xilinx.com/support/documentation/ip_documentation/ultrascale_memory_ip/v1_4/pg150-ultrascale-memory-ip.pdf#page=361
+	// https://blog.elphel.com/2014/06/ddr3-memory-interface-on-xilinx-zynq-soc-free-software-compatible/
+	// Will use Micron built-in features (Write leveling, MPR_Read_function) to facilitate skew calibration
+	
+	// See https://www.edaboard.com/threads/phase-detection-mechanism.398492/ for an
+	// understanding on how the dynamic(real-time) phase calibration mechanism works
+	/*
+	phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
+	pd_state_machine (
+		.use_phase_detector 	(use_phase_detector),
+		.busy			(busy_data),
+		.valid 			(valid_data),	
+		.inc_dec 		(incdec_data),	
+		.reset 			(reset),	
+		.gclk 			(gclk),		
+		.debug_in		(debug_in),		
+		.cal_master		(cal_data_master),
+		.cal_slave 		(cal_data_slave),	
+		.rst_out 		(rst_data),
+		.ce 			(ce_data),
+		.inc			(inc_data),
+		.debug			(debug)
+	);
+	*/
+	
+/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
+	// for phase shift alignment between READ DQS strobe and 'ck' signal
+	wire delayed_dqs_r;
+	
+	// See https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=73
+	// Once BUSY is Low, the new delay value is operational.
+	wire idelay_is_busy;
+	reg idelay_is_busy_previously;
+	
+	always @(posedge clk_serdes) idelay_is_busy_previously <= idelay_is_busy;
+	
+	
+	reg idelay_inc_dqs_r;
+	reg idelay_counter_enable;
+	
+	// IODELAY2 primitive requires some initial hardware startup or warmup time
+	localparam IODELAY_STARTUP_BITWIDTH = 12;  
+	reg [IODELAY_STARTUP_BITWIDTH-1:0] iodelay_startup_counter;
+	
+	always @(posedge clk_serdes)
+	begin
+		if(reset) iodelay_startup_counter <= 0;
 		
-		// See https://www.edaboard.com/threads/phase-detection-mechanism.398492/ for an
-		// understanding on how the dynamic(real-time) phase calibration mechanism works
-		/*
-		phase_detector #(.D(DQ_BITWIDTH)) 			// Set the number of inputs
-		pd_state_machine (
-			.use_phase_detector 	(use_phase_detector),
-			.busy			(busy_data),
-			.valid 			(valid_data),	
-			.inc_dec 		(incdec_data),	
-			.reset 			(reset),	
-			.gclk 			(gclk),		
-			.debug_in		(debug_in),		
-			.cal_master		(cal_data_master),
-			.cal_slave 		(cal_data_slave),	
-			.rst_out 		(rst_data),
-			.ce 			(ce_data),
-			.inc			(inc_data),
-			.debug			(debug)
-		);
-		*/
-
-		// for phase shift alignment between READ DQS strobe and 'ck' signal
-		wire delayed_dqs_r;
-		
-		// See https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=73
-		// Once BUSY is Low, the new delay value is operational.
-		wire idelay_is_busy;
-		reg idelay_is_busy_previously;
-		
-		always @(posedge clk_serdes) idelay_is_busy_previously <= idelay_is_busy;
-		
-		
-		reg idelay_inc_dqs_r;
-		reg idelay_counter_enable;
-		
-		// IODELAY2 primitive requires some initial hardware startup or warmup time
-		localparam IODELAY_STARTUP_BITWIDTH = 12;  
-		reg [IODELAY_STARTUP_BITWIDTH-1:0] iodelay_startup_counter;
-		
-		always @(posedge clk_serdes)
-		begin
-			if(reset) iodelay_startup_counter <= 0;
+		else iodelay_startup_counter <= iodelay_startup_counter + 1;
+	end
+	
+	// xilinx demo example only needs iodelay_startup_counter[IODELAY_STARTUP_BITWIDTH-1]
+	// See https://github.com/promach/DDR/blob/main/phase_detector.v#L135-L137
+	// It is only static calibration as of now,
+	// will implement dynamic (real-time) phase calibration as project progresses
+	wire idelay_cal_dqs_r = &iodelay_startup_counter;  // Wait for IODELAY to be available
 			
-			else iodelay_startup_counter <= iodelay_startup_counter + 1;
-		end
-		
-		// xilinx demo example only needs iodelay_startup_counter[IODELAY_STARTUP_BITWIDTH-1]
-		// See https://github.com/promach/DDR/blob/main/phase_detector.v#L135-L137
-		// It is only static calibration as of now,
-		// will implement dynamic (real-time) phase calibration as project progresses
-		wire idelay_cal_dqs_r = &iodelay_startup_counter;  // Wait for IODELAY to be available
-				
-/*		
-		IODELAY2 #(
-			.DATA_RATE      	("DDR"), 		// <SDR>, DDR
-			.IDELAY_VALUE  		(0), 			// {0 ... 255}
-			.IDELAY2_VALUE 		(0), 			// {0 ... 255}
-			.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
-			.ODELAY_VALUE  		(0), 			// {0 ... 255}
-			.IDELAY_TYPE   		("VARIABLE_FROM_ZERO"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
-			.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
-			.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
-			.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
-		)
-		iodelay_dqs_r (
-			.IDATAIN  		(dqs_r), 	// data from primary IOB
-			.TOUT     		(), 			// tri-state signal to IOB
-			.DOUT     		(), 			// output data to IOB
-			.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
-			.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
-			.DATAOUT  		(),  			// Delayed Data output, can only route to a register in ILOGIC
-			.DATAOUT2 		(delayed_dqs_r),  // Delayed Data output, can route to fabric
-			.IOCLK0   		(ck_90), 		// High speed clock for calibration
-			.IOCLK1   		(ck_270), 		// High speed clock for calibration
-			.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
-			.CAL      		(idelay_cal_dqs_r),	// Calibrate control signal
-			.INC      		(idelay_inc_dqs_r), 		// Increment counter
-			.CE       		(idelay_counter_enable), 		// Enable counter increment/decrement
-			.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
-			.BUSY      		(idelay_is_busy)	// output signal indicating sync circuit has finished / calibration has finished
-		);
+	
+	IODELAY2 #(
+		.DATA_RATE      	("DDR"), 		// <SDR>, DDR
+		.IDELAY_VALUE  		(0), 			// {0 ... 255}
+		.IDELAY2_VALUE 		(0), 			// {0 ... 255}
+		.IDELAY_MODE  		("NORMAL" ), 		// NORMAL, PCI
+		.ODELAY_VALUE  		(0), 			// {0 ... 255}
+		.IDELAY_TYPE   		("VARIABLE_FROM_ZERO"),// "DEFAULT", "DIFF_PHASE_DETECTOR", "FIXED", "VARIABLE_FROM_HALF_MAX", "VARIABLE_FROM_ZERO"
+		.COUNTER_WRAPAROUND 	("WRAPAROUND" ), 	// <STAY_AT_LIMIT>, WRAPAROUND
+		.DELAY_SRC     		("IDATAIN" ), 		// "IO", "IDATAIN", "ODATAIN"
+		.SERDES_MODE   		("NONE") 		// <NONE>, MASTER, SLAVE
+	)
+	iodelay_dqs_r (
+		.IDATAIN  		(dqs_r), 	// data from primary IOB
+		.TOUT     		(), 			// tri-state signal to IOB
+		.DOUT     		(), 			// output data to IOB
+		.T        		(1'b1), 		// tri-state control from OLOGIC/OSERDES2
+		.ODATAIN  		(1'b0), 		// data from OLOGIC/OSERDES2
+		.DATAOUT  		(),  			// Delayed Data output, can only route to a register in ILOGIC
+		.DATAOUT2 		(delayed_dqs_r),  // Delayed Data output, can route to fabric
+		.IOCLK0   		(ck_90), 		// High speed clock for calibration
+		.IOCLK1   		(ck_270), 		// High speed clock for calibration
+		.CLK      		(clk), 		// Fabric clock (GCLK) for control signals
+		.CAL      		(idelay_cal_dqs_r),	// Calibrate control signal
+		.INC      		(idelay_inc_dqs_r), 		// Increment counter
+		.CE       		(idelay_counter_enable), 		// Enable counter increment/decrement
+		.RST      		(idelay_is_busy_previously & (~idelay_is_busy)),		// Reset delay line
+		.BUSY      		(idelay_is_busy)	// output signal indicating sync circuit has finished / calibration has finished
+	);
 */
 
-		// RAM -> IOBUF (for inout) -> IDELAY (DQS Centering) -> IDDR2 (input DDR buffer) -> ISERDES		
-		// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
-		
-		//assign dqs_r = (udqs_r | ldqs_r);	
-		assign dqs_r = udqs_r;  // iodelay input must come directly from IO pad, no FPGA fabric in between
+	// RAM -> IOBUF (for inout) -> IDELAY (DQS Centering) -> IDDR2 (input DDR buffer) -> ISERDES		
+	// OSERDES -> ODDR2 (output DDR buffer) -> ODELAY (DQS Centering) -> IOBUF (for inout) -> RAM
+	
+	//assign dqs_r = (udqs_r | ldqs_r);	
+	assign dqs_r = udqs_r;  // iodelay input must come directly from IO pad, no FPGA fabric in between
 
-		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
-		// Check the explanation below for the need of two separate OSERDES
-		reg [DQ_BITWIDTH-1:0] dq_w_d0;
-		reg [DQ_BITWIDTH-1:0] dq_w_d1;
-		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
-		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
-		
-		always @(posedge ck)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-		always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
-		
+	// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
+	// Check the explanation below for the need of two separate OSERDES
+	reg [DQ_BITWIDTH-1:0] dq_w_d0;
+	reg [DQ_BITWIDTH-1:0] dq_w_d1;
+	wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
+	wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
+	
+	always @(posedge ck)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+	always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
+	
 
-		// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3678799/#msg3678799
-		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN= 3;
-		
-		// to synchronize signal in ck_dynamic domain to ck domain
-		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
-				
-		genvar ff_ck_dynamic_ck;
-		
-		generate
-			for(ff_ck_dynamic_ck = 0;
-				ff_ck_dynamic_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN;
-			    ff_ck_dynamic_ck = ff_ck_dynamic_ck + 1)
-			begin: ck_dynamic_to_ck
+	// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3678799/#msg3678799
+	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN= 3;
+	
+	// to synchronize signal in ck_dynamic domain to ck domain
+	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
 			
-				always @(posedge ck)
+	genvar ff_ck_dynamic_ck;
+	
+	generate
+		for(ff_ck_dynamic_ck = 0;
+			ff_ck_dynamic_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN;
+		    ff_ck_dynamic_ck = ff_ck_dynamic_ck + 1)
+		begin: ck_dynamic_to_ck
+		
+			always @(posedge ck)
+			begin
+				if(reset) data_from_ram_ck[ff_ck_dynamic_ck] <= 0;
+				
+				else begin
+					if(ff_ck_dynamic_ck == 0) 
+						data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck_dynamic;
+					
+					else data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck[ff_ck_dynamic_ck-1];
+				end
+			end
+		end
+	endgenerate
+
+	assign data_from_ram = data_from_ram_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1];
+	
+	
+	// why need IOSERDES primitives ?
+	// because you want a memory transaction rate much higher than the main clock frequency 
+	// but you don't want to require a very high main clock frequency
+	
+	// send a write of 8w bits to the memory controller, 
+	// which is similar to bundling multiple transactions into one wider one,
+	// and the memory controller issues 8 writes of w bits to the memory, 
+	// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
+	// This literally means SERDES_RATIO=8 
+	// localparam SERDES_RATIO = 8;
+
+	localparam EVEN_RATIO = 2;
+
+	// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
+	reg [DQ_BITWIDTH-1:0] dq_r_q0;
+	reg [DQ_BITWIDTH-1:0] dq_r_q1;
+	//reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
+	
+	// The following way of combining dq_r_q0 and dq_r_q1 back into a single signal will not work
+	// for high DDR3 RAM frequency.  Besides, never use clock-related signal for combinational logic
+	// See the rationale for having two separate deserializer module to handle this instead
+	//always @(dq_r_q0, dq_r_q1, delayed_dqs_r)
+	//	dq_r_iserdes <= (delayed_dqs_r) ?  dq_r_q0: dq_r_q1;
+	
+
+	// if you want to build your own serdeses feeding from IDDR, you cannot clump dq_r_q0 and dq_r_q1 back
+	// into a single signal and feed this signal to your single serdes. 
+	// You will need to build two separate serdeses - one for dq_r_q0, and another one for dq_r_q1.
+
+	wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
+	wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
+
+	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
+
+	genvar data_index_iserdes;
+	generate
+		for(data_index_iserdes = 0; data_index_iserdes < (DQ_BITWIDTH*SERDES_RATIO); 
+			data_index_iserdes = data_index_iserdes + DQ_BITWIDTH)
+		begin: data_from_ram_combine_loop
+			
+			// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_iserdes'
+			// since 'data_out_iserdes_0' and 'data_out_iserdes_1' are half the size of 
+			// 'data_from_ram_ck_dynamic'
+			
+			always @(*)
+			begin				
+				if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
 				begin
-					if(reset) data_from_ram_ck[ff_ck_dynamic_ck] <= 0;
-					
-					else begin
-						if(ff_ck_dynamic_ck == 0) 
-							data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck_dynamic;
-						
-						else data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck[ff_ck_dynamic_ck-1];
-					end
+					data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
+					data_out_iserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+										+: DQ_BITWIDTH];
+				end
+			
+				else begin
+					data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
+					data_out_iserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+										+: DQ_BITWIDTH];
 				end
 			end
-		endgenerate
+		end
+	endgenerate
+	
 
-		assign data_from_ram = data_from_ram_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1];
+	reg need_to_assert_reset_clk;
+	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1:0] need_to_assert_reset_clk_serdes;
+
+	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+	dq_iserdes_0
+	(
+		.reset(need_to_assert_reset_clk_serdes),		
+	
+		// fast clock domain
+		.high_speed_clock(ck_dynamic),
+		.data_in(dq_r_q0),
 		
+		// slow clock domain
+		.data_out(data_out_iserdes_0)
+	);
+
+	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+	dq_iserdes_1
+	(
+		.reset(need_to_assert_reset_clk_serdes),		
+	
+		// fast clock domain
+		.high_speed_clock(ck_dynamic),
+		.data_in(dq_r_q1),
 		
-		// why need IOSERDES primitives ?
-		// because you want a memory transaction rate much higher than the main clock frequency 
-		// but you don't want to require a very high main clock frequency
-		
-		// send a write of 8w bits to the memory controller, 
-		// which is similar to bundling multiple transactions into one wider one,
-		// and the memory controller issues 8 writes of w bits to the memory, 
-		// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
-		// This literally means SERDES_RATIO=8 
-		// localparam SERDES_RATIO = 8;
+		// slow clock domain
+		.data_out(data_out_iserdes_1)
+	);
+	
 
-		localparam EVEN_RATIO = 2;
+	// There is need to use two separate OSERDES because ODDR2 expects its D0 and D1 inputs to be
+	// presented to it at a DDR clock rate of 303MHz (D0 at posedge of 303MHz, D1 at negedge of 303MHz),
+	// where 303MHz is the minimum DDR3 RAM working frequency.
+	// However, one single SDR OSERDES alone could not fulfill this data rate requirement of ODDR2
 
-		// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
-		reg [DQ_BITWIDTH-1:0] dq_r_q0;
-		reg [DQ_BITWIDTH-1:0] dq_r_q1;
-		//reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
-		
-		// The following way of combining dq_r_q0 and dq_r_q1 back into a single signal will not work
-		// for high DDR3 RAM frequency.  Besides, never use clock-related signal for combinational logic
-		// See the rationale for having two separate deserializer module to handle this instead
-		//always @(dq_r_q0, dq_r_q1, delayed_dqs_r)
-		//	dq_r_iserdes <= (delayed_dqs_r) ?  dq_r_q0: dq_r_q1;
-		
+	// For example, a 8:1 DDR OSERDES which takes 8 inputs D0,D1,D2,D3,D4,D5,D6,D7 and output them serially
+	
+	// The values supplied by D0,D2,D4,D6 are clocked out on the rising edge
+	// The values supplied by D1,D3,D5,D7 are clocked out on the falling edge
 
-		// if you want to build your own serdeses feeding from IDDR, you cannot clump dq_r_q0 and dq_r_q1 back
-		// into a single signal and feed this signal to your single serdes. 
-		// You will need to build two separate serdeses - one for dq_r_q0, and another one for dq_r_q1.
+	// You can then create two 4:1 SDR OSERDES modules.
 
-		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
-		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
+	// One of the 2 modules will take D0,D2,D4,D6 inputs and output them serially. 
+	// You route its output to the D0 pin of the ODDR.
 
-		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
+	// The other will output D1,D3,D5,D7 serially. You route its output to the D1 pin of the ODDR.
 
-		genvar data_index_iserdes;
-		generate
-			for(data_index_iserdes = 0; data_index_iserdes < (DQ_BITWIDTH*SERDES_RATIO); 
-				data_index_iserdes = data_index_iserdes + DQ_BITWIDTH)
-			begin: data_from_ram_combine_loop
+	// But this is only if you write your own OSERDES.
+
+	// The vendor-specific hardware OSERDES will have built-in DDR mode. 
+	// Even if you put it in SDR mode, it cannot be routed to ODDR because ODDR and OSERDES are two
+	// incarnations of the same OLOGIC block.
+	
+	reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_0;
+	reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_1;
+
+	genvar data_index_oserdes;
+	generate
+		for(data_index_oserdes = 0; data_index_oserdes < (DQ_BITWIDTH*SERDES_RATIO); 
+			data_index_oserdes = data_index_oserdes + DQ_BITWIDTH)
+		begin: data_to_ram_split_loop
+
+			// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_oserdes'
+			// since 'data_in_oserdes_0' and 'data_in_oserdes_1' are half the size of 'data_to_ram'
 				
-				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_iserdes'
-				// since 'data_out_iserdes_0' and 'data_out_iserdes_1' are half the size of 
-				// 'data_from_ram_ck_dynamic'
-				
-				always @(*)
-				begin				
-					if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
-					begin
-						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
-						data_out_iserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
-											+: DQ_BITWIDTH];
-					end
-				
-					else begin
-						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
-						data_out_iserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
-											+: DQ_BITWIDTH];
-					end
+			always @(*)
+			begin				
+				if(((data_index_oserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
+				begin
+					data_in_oserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
+								DQ_BITWIDTH] <= 
+					data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
+				end
+			
+				else begin
+					data_in_oserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
+								DQ_BITWIDTH] <= 
+					data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
 				end
 			end
-		endgenerate
+		end
+	endgenerate
+
+	
+	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+	dq_oserdes_0
+	(
+		.reset(need_to_assert_reset_clk_serdes),
 		
-
-		reg need_to_assert_reset_clk;
-		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1:0] need_to_assert_reset_clk_serdes;
-
-		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-		dq_iserdes_0
-		(
-			.reset(need_to_assert_reset_clk_serdes),		
+		// slow clock domain
+		.data_in(data_in_oserdes_0),
 		
-			// fast clock domain
-			.high_speed_clock(ck_dynamic),
-			.data_in(dq_r_q0),
-			
-			// slow clock domain
-			.data_out(data_out_iserdes_0)
-		);
+		// fast clock domain
+		.high_speed_clock(ck),
+		.data_out(dq_w_oserdes_0)
+	);
 
-		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-		dq_iserdes_1
-		(
-			.reset(need_to_assert_reset_clk_serdes),		
+	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+	dq_oserdes_1
+	(
+		.reset(need_to_assert_reset_clk_serdes),
+	
+		// slow clock domain
+		.data_in(data_in_oserdes_1),
 		
-			// fast clock domain
-			.high_speed_clock(ck_dynamic),
-			.data_in(dq_r_q1),
-			
-			// slow clock domain
-			.data_out(data_out_iserdes_1)
-		);
-		
+		// fast clock domain
+		.high_speed_clock(ck),
+		.data_out(dq_w_oserdes_1)
+	);
+	
+	
+	// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
+	// See https://forums.xilinx.com/t5/Implementation/Xilinx-ISE-implementation-stage-issues/m-p/1255587/highlight/true#M30717
 
-		// There is need to use two separate OSERDES because ODDR2 expects its D0 and D1 inputs to be
-		// presented to it at a DDR clock rate of 303MHz (D0 at posedge of 303MHz, D1 at negedge of 303MHz),
-		// where 303MHz is the minimum DDR3 RAM working frequency.
-		// However, one single SDR OSERDES alone could not fulfill this data rate requirement of ODDR2
+	// DDR Data Reception Using Two BUFIO2s
+	// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
+	/*
+	wire rxioclkp;
+	wire rxioclkn;
+	wire rx_serdesstrobe;
+	
+	wire gclk_iserdes;
+	wire clkin_p_iserdes = (udqs_r | ldqs_r);
+	wire clkin_n_iserdes = (udqs_n_r | ldqs_n_r);
+	
+	serdes_1_to_n_clk_ddr_s8_diff #(.S(SERDES_RATIO))
+	dqs_iserdes
+	(
+		.clkin_p(clkin_p_iserdes),
+		.clkin_n(clkin_n_iserdes),
+		.rxioclkp(rxioclkp),
+		.rxioclkn(rxioclkn),
+		.rx_serdesstrobe(rx_serdesstrobe),
+		.rx_bufg_x1(gclk_iserdes)
+	);
+	
+	serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+	dq_iserdes
+	(
+		.use_phase_detector(1'b1),
+		.datain_p(dq_r),
+		.datain_n(),
+		.rxioclkp(rxioclkp),
+		.rxioclkn(rxioclkn),
+		.rxserdesstrobe(rx_serdesstrobe),
+		.reset(reset),
+		.gclk(gclk_iserdes),
+		.bitslip(1'b1),
+		.debug_in(2'b00),
+		.data_out(data_from_ram),
+		.debug(debug_dq_serdes)
+	);
 
-		// For example, a 8:1 DDR OSERDES which takes 8 inputs D0,D1,D2,D3,D4,D5,D6,D7 and output them serially
-		
-		// The values supplied by D0,D2,D4,D6 are clocked out on the rising edge
-		// The values supplied by D1,D3,D5,D7 are clocked out on the falling edge
+	// DDR Data Transmission Using Two BUFIO2s
+	// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
 
-		// You can then create two 4:1 SDR OSERDES modules.
+	wire txioclkp;
+	wire txioclkn;
+	wire txserdesstrobe;
+	
+	wire gclk_oserdes;
 
-		// One of the 2 modules will take D0,D2,D4,D6 inputs and output them serially. 
-		// You route its output to the D0 pin of the ODDR.
-
-		// The other will output D1,D3,D5,D7 serially. You route its output to the D1 pin of the ODDR.
-
-		// But this is only if you write your own OSERDES.
-
-		// The vendor-specific hardware OSERDES will have built-in DDR mode. 
-		// Even if you put it in SDR mode, it cannot be routed to ODDR because ODDR and OSERDES are two
-		// incarnations of the same OLOGIC block.
-		
-		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_0;
-		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_1;
-
-		genvar data_index_oserdes;
-		generate
-			for(data_index_oserdes = 0; data_index_oserdes < (DQ_BITWIDTH*SERDES_RATIO); 
-				data_index_oserdes = data_index_oserdes + DQ_BITWIDTH)
-			begin: data_to_ram_split_loop
-
-				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_oserdes'
-				// since 'data_in_oserdes_0' and 'data_in_oserdes_1' are half the size of 'data_to_ram'
-					
-				always @(*)
-				begin				
-					if(((data_index_oserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
-					begin
-						data_in_oserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
-									DQ_BITWIDTH] <= 
-						data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
-					end
-				
-					else begin
-						data_in_oserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
-									DQ_BITWIDTH] <= 
-						data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
-					end
-				end
-			end
-		endgenerate
-
-		
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-		dq_oserdes_0
-		(
-			.reset(need_to_assert_reset_clk_serdes),
-			
-			// slow clock domain
-			.data_in(data_in_oserdes_0),
-			
-			// fast clock domain
-			.high_speed_clock(ck),
-			.data_out(dq_w_oserdes_0)
-		);
-
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-		dq_oserdes_1
-		(
-			.reset(need_to_assert_reset_clk_serdes),
-		
-			// slow clock domain
-			.data_in(data_in_oserdes_1),
-			
-			// fast clock domain
-			.high_speed_clock(ck),
-			.data_out(dq_w_oserdes_1)
-		);
-		
-		
-		// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
-		// See https://forums.xilinx.com/t5/Implementation/Xilinx-ISE-implementation-stage-issues/m-p/1255587/highlight/true#M30717
-
-		// DDR Data Reception Using Two BUFIO2s
-		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
-		/*
-		wire rxioclkp;
-		wire rxioclkn;
-		wire rx_serdesstrobe;
-		
-		wire gclk_iserdes;
-		wire clkin_p_iserdes = (udqs_r | ldqs_r);
-		wire clkin_n_iserdes = (udqs_n_r | ldqs_n_r);
-		
-		serdes_1_to_n_clk_ddr_s8_diff #(.S(SERDES_RATIO))
-		dqs_iserdes
-		(
-			.clkin_p(clkin_p_iserdes),
-			.clkin_n(clkin_n_iserdes),
-			.rxioclkp(rxioclkp),
-			.rxioclkn(rxioclkn),
-			.rx_serdesstrobe(rx_serdesstrobe),
-			.rx_bufg_x1(gclk_iserdes)
-		);
-		
-		serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-		dq_iserdes
-		(
-			.use_phase_detector(1'b1),
-			.datain_p(dq_r),
-			.datain_n(),
-			.rxioclkp(rxioclkp),
-			.rxioclkn(rxioclkn),
-			.rxserdesstrobe(rx_serdesstrobe),
-			.reset(reset),
-			.gclk(gclk_iserdes),
-			.bitslip(1'b1),
-			.debug_in(2'b00),
-			.data_out(data_from_ram),
-			.debug(debug_dq_serdes)
-		);
-
-		// DDR Data Transmission Using Two BUFIO2s
-		// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
-
-		wire txioclkp;
-		wire txioclkn;
-		wire txserdesstrobe;
-		
-		wire gclk_oserdes;
-
-		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
-		dqs_oserdes
-		(
-			.clkin_p(clk),
-			.clkin_n(),
-			.ioclkap(txioclkp),
-			.ioclkan(txioclkn),
-			.serdesstrobea(txserdesstrobe),
-			.ioclkbp(),
-			.ioclkbn(),
-			.serdesstrobeb(),
-			.gclk(gclk_oserdes)
-		);
-		
-		serdes_n_to_1_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-		dq_oserdes
-		(
-			.txioclkp(txioclkp),
-			.txioclkn(txioclkn),
-			.txserdesstrobe(txserdesstrobe),
-			.reset(reset),
-			.gclk(gclk_oserdes),
-			.datain(data_to_ram),
-			.dataout_p(dq_w),
-			.dataout_n()
-		);
-		*/
-	`endif
+	clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
+	dqs_oserdes
+	(
+		.clkin_p(clk),
+		.clkin_n(),
+		.ioclkap(txioclkp),
+		.ioclkan(txioclkn),
+		.serdesstrobea(txserdesstrobe),
+		.ioclkbp(),
+		.ioclkbn(),
+		.serdesstrobeb(),
+		.gclk(gclk_oserdes)
+	);
+	
+	serdes_n_to_1_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+	dq_oserdes
+	(
+		.txioclkp(txioclkp),
+		.txioclkn(txioclkn),
+		.txserdesstrobe(txserdesstrobe),
+		.reset(reset),
+		.gclk(gclk_oserdes),
+		.datain(data_to_ram),
+		.dataout_p(dq_w),
+		.dataout_n()
+	);
+	*/
 `endif
 
 
@@ -2141,15 +2148,16 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 		= (refresh_timing_count == TIME_TREFI[0 +: 9]);
 `endif
 
-
+/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
 `ifdef HIGH_SPEED
 	// for phase-shifting incoming read DQS strobe with respect to 'ck' signal
 	localparam JITTER_MARGIN_FOR_DQS_SAMPLING = 2;
 	reg dqs_delay_sampling_margin;
 	reg previous_delayed_dqs_r;
 `endif
+*/
 
-`ifdef XILINX
+`ifdef HIGH_SPEED
 always @(posedge clk)  // clk_serdes is only turned on after clk is turned on
 begin
 	if(reset) need_to_assert_reset_clk <= 1;
@@ -2198,7 +2206,7 @@ always @(posedge clk_serdes)
 always @(posedge clk)
 `endif
 begin
-`ifdef XILINX
+`ifdef HIGH_SPEED
 	if((reset) || (locked_previous &&
 	   need_to_assert_reset_clk_serdes[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1]))
 `else
@@ -2233,6 +2241,7 @@ begin
 		write_is_enabled <= 0;
 		read_is_enabled <= 0;
 		
+		/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
 		`ifdef HIGH_SPEED
 			// such that the first phase delay calibration iteration does not abort
 			dqs_delay_sampling_margin <= JITTER_MARGIN_FOR_DQS_SAMPLING;
@@ -2240,6 +2249,7 @@ begin
 			idelay_inc_dqs_r <= 0;
 			idelay_counter_enable <= 0;
 		`endif
+		*/
 	end
 
 `ifdef HIGH_SPEED
@@ -2270,9 +2280,11 @@ begin
 		wait_count <= wait_count + 1;
 		previous_main_state <= main_state;
 
+		/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
 		`ifdef HIGH_SPEED
 			previous_delayed_dqs_r <= delayed_dqs_r;
 		`endif
+		*/
 		
 		if(extra_read_or_write_cycles_had_passed) postponed_refresh_timing_count <= 0;
 			
@@ -3078,6 +3090,7 @@ begin
 					the DQ sampling point to follow DQS.
 					*/
 										
+					/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
 					if(MPR_ENABLE)
 					begin
 						// samples the delayed version of dqs_r for continous feedback to IDELAY2 primitive
@@ -3098,7 +3111,7 @@ begin
 							idelay_counter_enable <= 0;  // disables delay feedback process, calibration is done
 							
 						else idelay_counter_enable <= 1;  // enables delay feedback process						
-					end
+					end*/
 				end
 				`endif
 			end
