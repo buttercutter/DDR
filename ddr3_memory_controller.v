@@ -493,7 +493,7 @@ localparam ADDRESS_FOR_MODE_REGISTER_3 = 3;
 // Mode register 0 (MR0) settings
 localparam MR0 = 2'b00;  // Mode register set 0
 localparam PRECHARGE_PD = 1'b1;  // DLL on
-localparam WRITE_RECOVERY = 3'b001;   // WR = 5
+localparam WRITE_RECOVERY = 3'b010;   // WR = 6 , WR (cycles) = roundup (tWR [ns]/tCK [ns])
 localparam DLL_RESET = 1'b1;
 localparam CAS_LATENCY_46 = 3'b001;
 localparam CAS_LATENCY_2 = 1'b0;
