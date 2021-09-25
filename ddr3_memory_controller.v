@@ -1418,7 +1418,7 @@ reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoi
 
 // to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
 reg can_proceed_to_read_data_state;
-always @(posedge ck)
+always @(posedge ck_270)
 	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE-1);
 
 // ck is 350MHz, and the logic inside 'data_read_is_ongoing' are of 87.5MHz clk_serdes domain
