@@ -1214,12 +1214,13 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	
 
 	reg need_to_assert_reset_clk;
-	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1:0] need_to_assert_reset_ck_270;
+	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN = 3;
+	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1:0] need_to_assert_reset_ck_180;
 
 	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_iserdes_0
 	(
-		.reset(need_to_assert_reset_ck_270),		
+		.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
 	
 		// fast clock domain
 		.high_speed_clock(ck_dynamic),
@@ -1232,7 +1233,7 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_iserdes_1
 	(
-		.reset(need_to_assert_reset_ck_270),		
+		.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
 	
 		// fast clock domain
 		.high_speed_clock(ck_dynamic),
@@ -1297,10 +1298,13 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	endgenerate
 
 	
+	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN = 3;
+	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1:0] need_to_assert_reset_ck;
+	
 	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_oserdes_0
 	(
-		.reset(need_to_assert_reset_clk),
+		.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
 		
 		// slow clock domain
 		.data_in(data_in_oserdes_0),
@@ -1313,7 +1317,7 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_oserdes_1
 	(
-		.reset(need_to_assert_reset_clk),
+		.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
 	
 		// slow clock domain
 		.data_in(data_in_oserdes_1),
@@ -1418,14 +1422,14 @@ reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoi
 
 // to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
 reg can_proceed_to_read_data_state;
-always @(posedge ck_270)
+always @(posedge ck_180)
 	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE-1);
 
 
 // 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
 // The logic immediately below is not for clock domain synchronization, 
 // it is just to split a single long combinational logic path into smaller multiple paths
-always @(posedge ck_270)
+always @(posedge ck_180)
 begin
 	if(reset)
 	begin
@@ -1585,58 +1589,86 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 
 
 		// https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
-		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN = 3;
+		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN = 3;
 		
-		// to synchronize signal in ck domain to ck_90 domain
-		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1:0] data_read_is_ongoing_90;
+		// to synchronize signal in ck_180 domain to ck_90 domain
+		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1:0] data_read_is_ongoing_90;
 		
-		genvar ff_ck_ck_90;
+		genvar ff_ck_180_ck_90;
 		
 		generate
-			for(ff_ck_ck_90 = 0; ff_ck_ck_90 < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN;
-			    ff_ck_ck_90 = ff_ck_ck_90 + 1)
-			begin: ck_to_ck_90
+			for(ff_ck_180_ck_90 = 0; 
+			    ff_ck_180_ck_90 < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN;
+			    ff_ck_180_ck_90 = ff_ck_180_ck_90 + 1)
+			begin: ck_180_to_ck_90
 			
 				always @(posedge ck_90)
 				begin
-					if(reset) data_read_is_ongoing_90[ff_ck_ck_90] <= 0;
+					if(reset) data_read_is_ongoing_90[ff_ck_180_ck_90] <= 0;
 					
 					else begin
-						if(ff_ck_ck_90 == 0) data_read_is_ongoing_90[ff_ck_ck_90] <= data_read_is_ongoing;
+						if(ff_ck_180_ck_90 == 0) data_read_is_ongoing_90[ff_ck_180_ck_90] <= data_read_is_ongoing;
 						
-						else data_read_is_ongoing_90[ff_ck_ck_90] <= data_read_is_ongoing_90[ff_ck_ck_90-1];
+						else data_read_is_ongoing_90[ff_ck_180_ck_90] <= data_read_is_ongoing_90[ff_ck_180_ck_90-1];
 					end
 				end
 			end		
 		endgenerate
 
 
-		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_270_DOMAIN_TO_CK_DOMAIN = 3;
+		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN = 3;
 		
-		// to synchronize signal in ck_270 domain to ck domain
-		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_270_DOMAIN_TO_CK_DOMAIN-1:0] data_read_is_ongoing_ck;
+		// to synchronize signal in ck_180 domain to ck domain
+		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1:0] data_read_is_ongoing_ck;
 		
-		genvar ff_ck_270_ck;
+		genvar ff_ck_180_ck;
 		
 		generate
-			for(ff_ck_270_ck = 0; ff_ck_270_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_270_DOMAIN_TO_CK_DOMAIN;
-			    ff_ck_270_ck = ff_ck_270_ck + 1)
-			begin: ck_270_to_ck
+			for(ff_ck_180_ck = 0; ff_ck_180_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN;
+			    ff_ck_180_ck = ff_ck_180_ck + 1)
+			begin: ck_180_to_ck
 			
 				always @(posedge ck)
 				begin
-					if(reset) data_read_is_ongoing_ck[ff_ck_270_ck] <= 0;
+					if(reset) data_read_is_ongoing_ck[ff_ck_180_ck] <= 0;
 					
 					else begin
-						if(ff_ck_270_ck == 0) data_read_is_ongoing_ck[ff_ck_270_ck] <= data_read_is_ongoing;
+						if(ff_ck_180_ck == 0) data_read_is_ongoing_ck[ff_ck_180_ck] <= data_read_is_ongoing;
 						
-						else data_read_is_ongoing_ck[ff_ck_270_ck] <= data_read_is_ongoing_ck[ff_ck_270_ck-1];
+						else data_read_is_ongoing_ck[ff_ck_180_ck] <= data_read_is_ongoing_ck[ff_ck_180_ck-1];
+					end
+				end
+			end		
+		endgenerate
+
+		
+		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN = 3;
+		
+		// to synchronize signal in ck_180 domain to ck_270 domain
+		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1:0] data_read_is_ongoing_270;
+		
+		genvar ff_ck_180_ck_270;
+		
+		generate
+			for(ff_ck_180_ck_270 = 0; 
+			    ff_ck_180_ck_270 < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN;
+			    ff_ck_180_ck_270 = ff_ck_180_ck_270 + 1)
+			begin: ck_to_ck_270
+			
+				always @(posedge ck_270)
+				begin
+					if(reset) data_read_is_ongoing_270[ff_ck_180_ck_270] <= 0;
+					
+					else begin
+						if(ff_ck_180_ck_270 == 0) data_read_is_ongoing_270[ff_ck_180_ck_270] <= data_read_is_ongoing;
+						
+						else data_read_is_ongoing_270[ff_ck_180_ck_270] <= data_read_is_ongoing_270[ff_ck_180_ck_270-1];
 					end
 				end
 			end		
 		endgenerate
 		
-
+		
 		// see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
 		// 'data_read_is_ongoing' signal is not of double-data-rate signals,
 		// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
@@ -1652,8 +1684,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_90),  // 1-bit clock input
 			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -1668,8 +1700,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_270),  // 1-bit clock input
 			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
@@ -1684,8 +1716,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_90),  // 1-bit clock input
 			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -1700,8 +1732,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_270),  // 1-bit clock input
 			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -2165,47 +2197,75 @@ end
 always @(posedge clk_serdes) locked_previous <= locked;
 
 
-localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN = 3;
+// localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN = 3;
 
-// to synchronize signal in clk domain to ck_270 domain
-// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1:0] need_to_assert_reset_ck_270;
+// to synchronize signal in clk domain to ck domain
+// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1:0] need_to_assert_reset_ck;
 
-genvar ff_clk_ck_270;
+genvar ff_clk_ck;
 
 generate
-	for(ff_clk_ck_270 = 0; ff_clk_ck_270 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN;
-	    ff_clk_ck_270 = ff_clk_ck_270 + 1)
-	begin: clk_to_clk_serdes
+	for(ff_clk_ck = 0; ff_clk_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN;
+	    ff_clk_ck = ff_clk_ck + 1)
+	begin: clk_to_ck
 	
-		always @(posedge ck_270)
+		always @(posedge ck)
 		begin
-			if(reset) need_to_assert_reset_ck_270[ff_clk_ck_270] <= 0;
+			if(reset) need_to_assert_reset_ck[ff_clk_ck] <= 0;
 			
 			else begin
-				if(ff_clk_ck_270 == 0)
-					need_to_assert_reset_ck_270[ff_clk_ck_270] <= need_to_assert_reset_clk;
+				if(ff_clk_ck == 0)
+					need_to_assert_reset_ck[ff_clk_ck] <= need_to_assert_reset_ck;
 				
-				else need_to_assert_reset_ck_270[ff_clk_ck_270] <=
-					 need_to_assert_reset_ck_270[ff_clk_ck_270-1];
+				else need_to_assert_reset_ck[ff_clk_ck] <=
+					 need_to_assert_reset_ck[ff_clk_ck-1];
+			end
+		end
+	end		
+endgenerate
+
+
+// localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN = 3;
+
+// to synchronize signal in clk domain to ck_180 domain
+// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1:0] need_to_assert_reset_ck_180;
+
+genvar ff_clk_ck_180;
+
+generate
+	for(ff_clk_ck_180 = 0; ff_clk_ck_180 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN;
+	    ff_clk_ck_180 = ff_clk_ck_180 + 1)
+	begin: clk_to_ck_180
+	
+		always @(posedge ck_180)
+		begin
+			if(reset) need_to_assert_reset_ck_180[ff_clk_ck_180] <= 0;
+			
+			else begin
+				if(ff_clk_ck_180 == 0)
+					need_to_assert_reset_ck_180[ff_clk_ck_180] <= need_to_assert_reset_clk;
+				
+				else need_to_assert_reset_ck_180[ff_clk_ck_180] <=
+					 need_to_assert_reset_ck_180[ff_clk_ck_180-1];
 			end
 		end
 	end		
 endgenerate
 
 assign need_to_assert_reset =
-	   need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1];
+	   need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1];
 
 `endif
 
 `ifdef HIGH_SPEED
-always @(posedge ck_270)
+always @(posedge ck_180)
 `else
 always @(posedge clk)
 `endif
 begin
 `ifdef HIGH_SPEED
 	if((reset) || (locked_previous &&
-	   need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1]))
+	   need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]))
 `else
 	if(reset)
 `endif
