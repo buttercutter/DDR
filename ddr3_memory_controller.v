@@ -673,7 +673,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 		reg data_read_is_ongoing_previous;
 		always @(posedge ck)
-			data_read_is_ongoing_previous <= data_read_is_ongoing;
+			data_read_is_ongoing_previous <= data_read_is_ongoing_ck;
 		
 		reg psdone_previous;
 		always @(posedge ck) psdone_previous <= psdone;
@@ -681,7 +681,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		always @(posedge ck)
 		begin
 			// triggers the first phase shift enable request only during the start of read operation
-			if(~data_read_is_ongoing_previous && data_read_is_ongoing) psen <= 1;
+			if(~data_read_is_ongoing_previous && data_read_is_ongoing_ck) psen <= 1;
 			
 			// Phase shifting is like changing PLL settings, so need to wait for new PLL lock in order to avoid
 			// Warning : Please wait for PSDONE signal before adjusting the Phase Shift
@@ -1214,12 +1214,12 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	
 
 	reg need_to_assert_reset_clk;
-	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1:0] need_to_assert_reset_clk_serdes;
+	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1:0] need_to_assert_reset_ck_270;
 
 	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_iserdes_0
 	(
-		.reset(need_to_assert_reset_clk_serdes),		
+		.reset(need_to_assert_reset_ck_270),		
 	
 		// fast clock domain
 		.high_speed_clock(ck_dynamic),
@@ -1232,7 +1232,7 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_iserdes_1
 	(
-		.reset(need_to_assert_reset_clk_serdes),		
+		.reset(need_to_assert_reset_ck_270),		
 	
 		// fast clock domain
 		.high_speed_clock(ck_dynamic),
@@ -1300,7 +1300,7 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_oserdes_0
 	(
-		.reset(need_to_assert_reset_clk_serdes),
+		.reset(need_to_assert_reset_clk),
 		
 		// slow clock domain
 		.data_in(data_in_oserdes_0),
@@ -1313,7 +1313,7 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 	dq_oserdes_1
 	(
-		.reset(need_to_assert_reset_clk_serdes),
+		.reset(need_to_assert_reset_clk),
 	
 		// slow clock domain
 		.data_in(data_in_oserdes_1),
@@ -1421,14 +1421,11 @@ reg can_proceed_to_read_data_state;
 always @(posedge ck_270)
 	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE-1);
 
-// ck is 350MHz, and the logic inside 'data_read_is_ongoing' are of 87.5MHz clk_serdes domain
-// ck and clk_serdes clock domains do not have phase difference, and they are both generated from the same PLL
-// hence no need any async FIFO synchronizer.
-// but 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
-// which have 90 degrees and 270 degrees phase difference respectively
+
+// 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
 // The logic immediately below is not for clock domain synchronization, 
 // it is just to split a single long combinational logic path into smaller multiple paths
-always @(posedge ck)
+always @(posedge ck_270)
 begin
 	if(reset)
 	begin
@@ -1614,26 +1611,26 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		endgenerate
 
 
-		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_270_DOMAIN = 3;
+		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_270_DOMAIN_TO_CK_DOMAIN = 3;
 		
-		// to synchronize signal in ck domain to ck_270 domain
-		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_270_DOMAIN-1:0] data_read_is_ongoing_270;
+		// to synchronize signal in ck_270 domain to ck domain
+		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_270_DOMAIN_TO_CK_DOMAIN-1:0] data_read_is_ongoing_ck;
 		
-		genvar ff_ck_ck_270;
+		genvar ff_ck_270_ck;
 		
 		generate
-			for(ff_ck_ck_270 = 0; ff_ck_ck_270 < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_270_DOMAIN;
-			    ff_ck_ck_270 = ff_ck_ck_270 + 1)
-			begin: ck_to_ck_270
+			for(ff_ck_270_ck = 0; ff_ck_270_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_270_DOMAIN_TO_CK_DOMAIN;
+			    ff_ck_270_ck = ff_ck_270_ck + 1)
+			begin: ck_270_to_ck
 			
-				always @(posedge ck_270)
+				always @(posedge ck)
 				begin
-					if(reset) data_read_is_ongoing_270[ff_ck_ck_270] <= 0;
+					if(reset) data_read_is_ongoing_ck[ff_ck_270_ck] <= 0;
 					
 					else begin
-						if(ff_ck_ck_270 == 0) data_read_is_ongoing_270[ff_ck_ck_270] <= data_read_is_ongoing;
+						if(ff_ck_270_ck == 0) data_read_is_ongoing_ck[ff_ck_270_ck] <= data_read_is_ongoing;
 						
-						else data_read_is_ongoing_270[ff_ck_ck_270] <= data_read_is_ongoing_270[ff_ck_ck_270-1];
+						else data_read_is_ongoing_ck[ff_ck_270_ck] <= data_read_is_ongoing_ck[ff_ck_270_ck-1];
 					end
 				end
 			end		
@@ -1671,8 +1668,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_270),  // 1-bit clock input
 			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
@@ -1703,8 +1700,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck_270),  // 1-bit clock input
 			.C1(ck_90),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
 			.R(1'b0),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -1746,8 +1743,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_ck),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_ck),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -2168,35 +2165,35 @@ end
 always @(posedge clk_serdes) locked_previous <= locked;
 
 
-localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN = 3;
+localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN = 3;
 
-// to synchronize signal in clk domain to clk_serdes domain
-// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1:0] need_to_assert_reset_clk_serdes;
+// to synchronize signal in clk domain to ck_270 domain
+// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1:0] need_to_assert_reset_ck_270;
 
-genvar ff_clk_clk_serdes;
+genvar ff_clk_ck_270;
 
 generate
-	for(ff_clk_clk_serdes = 0; ff_clk_clk_serdes < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN;
-	    ff_clk_clk_serdes = ff_clk_clk_serdes + 1)
+	for(ff_clk_ck_270 = 0; ff_clk_ck_270 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN;
+	    ff_clk_ck_270 = ff_clk_ck_270 + 1)
 	begin: clk_to_clk_serdes
 	
-		always @(posedge clk_serdes)
+		always @(posedge ck_270)
 		begin
-			if(reset) need_to_assert_reset_clk_serdes[ff_clk_clk_serdes] <= 0;
+			if(reset) need_to_assert_reset_ck_270[ff_clk_ck_270] <= 0;
 			
 			else begin
-				if(ff_clk_clk_serdes == 0)
-					need_to_assert_reset_clk_serdes[ff_clk_clk_serdes] <= need_to_assert_reset_clk;
+				if(ff_clk_ck_270 == 0)
+					need_to_assert_reset_ck_270[ff_clk_ck_270] <= need_to_assert_reset_clk;
 				
-				else need_to_assert_reset_clk_serdes[ff_clk_clk_serdes] <=
-					 need_to_assert_reset_clk_serdes[ff_clk_clk_serdes-1];
+				else need_to_assert_reset_ck_270[ff_clk_ck_270] <=
+					 need_to_assert_reset_ck_270[ff_clk_ck_270-1];
 			end
 		end
 	end		
 endgenerate
 
 assign need_to_assert_reset =
-	   need_to_assert_reset_clk_serdes[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1];
+	   need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1];
 
 `endif
 
@@ -2208,7 +2205,7 @@ always @(posedge clk)
 begin
 `ifdef HIGH_SPEED
 	if((reset) || (locked_previous &&
-	   need_to_assert_reset_clk_serdes[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CLK_SERDES_DOMAIN-1]))
+	   need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1]))
 `else
 	if(reset)
 `endif
