@@ -2215,7 +2215,7 @@ generate
 			
 			else begin
 				if(ff_clk_ck == 0)
-					need_to_assert_reset_ck[ff_clk_ck] <= need_to_assert_reset_ck;
+					need_to_assert_reset_ck[ff_clk_ck] <= need_to_assert_reset_clk;
 				
 				else need_to_assert_reset_ck[ff_clk_ck] <=
 					 need_to_assert_reset_ck[ff_clk_ck-1];
