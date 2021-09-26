@@ -1443,9 +1443,7 @@ begin
 		data_read_is_ongoing_temp_3 <= (main_state == STATE_READ);
 		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state == STATE_READ_AP);
 		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2 && can_proceed_to_read_data_state;
-		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || 
-								// smaller value to solve setup timing issue due to lesser comparison hardware
-								(main_state[$clog2(STATE_READ_DATA):0] == STATE_READ_DATA);
+		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state == STATE_READ_DATA);
 	end
 end
 
