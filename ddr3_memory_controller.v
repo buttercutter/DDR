@@ -1666,76 +1666,145 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			end		
 		endgenerate
 		
+		`ifdef VIVADO
 		
-		// see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
-		// 'data_read_is_ongoing' signal is not of double-data-rate signals,
-		// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
-		// thus the purpose of having the following ODDR2 primitives
-				
-		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		ODDR2_ldqs_iobuf_en(
-			.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-			.R(1'b0),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
-		);	
+			// see https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_3/7series_hdl.pdf#page=327
+			// 'data_read_is_ongoing' signal is not of double-data-rate signals,
+			// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
+			// thus the purpose of having the following ODDR primitives
+					
+			ODDR #(
+				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR_ldqs_iobuf_en(
+				.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
+				.C(ck_90),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D2(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);	
 
-		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		ODDR2_ldqs_n_iobuf_en(
-			.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck_270),  // 1-bit clock input
-			.C1(ck_90),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-			.R(1'b0),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
-		);
-		
-		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		ODDR2_udqs_iobuf_en(
-			.Q(udqs_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck_90),  // 1-bit clock input
-			.C1(ck_270),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-			.R(1'b0),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
-		);	
-
-		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-		)
-		ODDR2_udqs_n_iobuf_en(
-			.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
-			.C0(ck_270),  // 1-bit clock input
-			.C1(ck_90),  // 1-bit clock input
-			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-			.R(1'b0),    // 1-bit reset input
-			.S(1'b0)     // 1-bit set input
-		);	
+			ODDR #(
+				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR_ldqs_n_iobuf_en(
+				.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
+				.C(ck_270),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D2(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
 			
+			ODDR #(
+				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR_udqs_iobuf_en(
+				.Q(udqs_iobuf_enable),  // 1-bit DDR output data
+				.C(ck_90),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D2(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);	
+
+			ODDR #(
+				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR_udqs_n_iobuf_en(
+				.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
+				.C(ck_270),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D2(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);	
+			
+		`else		
+		
+			// see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
+			// 'data_read_is_ongoing' signal is not of double-data-rate signals,
+			// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
+			// thus the purpose of having the following ODDR2 primitives
+					
+			ODDR2 #(
+				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_ldqs_iobuf_en(
+				.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
+				.C0(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);	
+
+			ODDR2 #(
+				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_ldqs_n_iobuf_en(
+				.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
+				.C0(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
+			
+			ODDR2 #(
+				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_udqs_iobuf_en(
+				.Q(udqs_iobuf_enable),  // 1-bit DDR output data
+				.C0(ck_90),  // 1-bit clock input
+				.C1(ck_270),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);	
+
+			ODDR2 #(
+				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+			)
+			ODDR2_udqs_n_iobuf_en(
+				.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
+				.C0(ck_270),  // 1-bit clock input
+				.C1(ck_90),  // 1-bit clock input
+				.CE(1'b1),  // 1-bit clock enable input
+				.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+				.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+				.R(1'b0),    // 1-bit reset input
+				.S(1'b0)     // 1-bit set input
+			);
+				
+		`endif
 	`endif
 		
 
@@ -2570,11 +2639,12 @@ begin
 				// See Figure 59 or https://i.imgur.com/K1qrMME.png 
 				else if(wait_count > TIME_TMOD-1) begin
 					// MPR System READ calibration is a must for all Micron DDR RAM, 
-					// so transitions to RDAP command in next state
+					// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
+					// but transition to RDAP command
 					ck_en <= 1;
 					cs_n <= 0;			
 					ras_n <= 1;
-					cas_n <= 0;
+					cas_n <= 1;
 					we_n <= 1;
 											
 					main_state <= STATE_READ_AP;
@@ -2882,11 +2952,12 @@ begin
 						
 					else if(read_is_enabled) 
 					begin
-						// no more NOP command in next 'ck' cycle, transition to RDAP command
+						// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
+						// but transition to RDAP command
 						ck_en <= 1;
 						cs_n <= 0;			
 						ras_n <= 1;
-						cas_n <= 0;
+						cas_n <= 1;
 						we_n <= 1;
 						
 						address[A10] <= 1;
@@ -2982,11 +3053,12 @@ begin
 				if(wait_count > (TIME_TBURST+TIME_TDAL)-1)
 				begin
 					`ifdef LOOPBACK
-						// no more NOP command in next 'ck' cycle, transition to RDAP command
+						// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
+						// but transition to RDAP command
 						ck_en <= 1;
 						cs_n <= 0;			
 						ras_n <= 1;
-						cas_n <= 0;
+						cas_n <= 1;
 						we_n <= 1;
 						
 						address[A10] <= 1;
@@ -3014,12 +3086,25 @@ begin
 			begin
 				ck_en <= 1;
 
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				if(wait_count > (NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
+				begin
+					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
+					ck_en <= 1;
+					cs_n <= 0;			
+					ras_n <= 1;
+					cas_n <= 0;
+					we_n <= 1;
+				end
+
+				else begin
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+				end
 				
 				address <= 	// column address
 						   	{
@@ -3032,7 +3117,8 @@ begin
 							};
 				
 				if(wait_count > 
-						(TIME_RL-TIME_TRPRE+(NUM_OF_READ_PIPELINE_REGISTER_ADDED*CK_PERIOD/CLK_PERIOD))-1)
+						(TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
@@ -3047,12 +3133,25 @@ begin
 			begin
 				ck_en <= 1;
 
-				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				if(wait_count > (NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
+				begin
+					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
+					ck_en <= 1;
+					cs_n <= 0;			
+					ras_n <= 1;
+					cas_n <= 0;
+					we_n <= 1;
+				end
+
+				else begin
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+				end
 				
 				address <= 	// column address
 						   	{
@@ -3065,7 +3164,8 @@ begin
 							};
 				
 				if(wait_count > 
-						(TIME_RL-TIME_TRPRE+(NUM_OF_READ_PIPELINE_REGISTER_ADDED*CK_PERIOD/CLK_PERIOD))-1)
+						(TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
