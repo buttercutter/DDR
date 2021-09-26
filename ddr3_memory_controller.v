@@ -3132,26 +3132,6 @@ begin
 			STATE_READ_AP :
 			begin
 				ck_en <= 1;
-
-				if(wait_count > (NUM_OF_READ_PIPELINE_REGISTER_ADDED+
-						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
-				begin
-					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 1;
-					cas_n <= 0;
-					we_n <= 1;
-				end
-
-				else begin
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 1;	
-				end
 				
 				address <= 	// column address
 						   	{
@@ -3167,11 +3147,25 @@ begin
 						(TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
+					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
+					ck_en <= 1;
+					cs_n <= 0;			
+					ras_n <= 1;
+					cas_n <= 0;
+					we_n <= 1;
+									
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
 				end
 				
 				else begin
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+									
 					main_state <= STATE_READ_AP;
 				end						
 			end
