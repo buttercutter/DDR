@@ -1409,7 +1409,8 @@ wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
 `endif
 
 
-// wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE) && 
+// wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+//						 						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN) && 
 //							 ((main_state == STATE_READ) || (main_state == STATE_READ_AP))) || 
 //					  		 (main_state == STATE_READ_DATA);
 
@@ -1423,7 +1424,9 @@ reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoi
 // to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
 reg can_proceed_to_read_data_state;
 always @(posedge ck_180)
-	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE-1);
+	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > 
+										TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+										NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1);
 
 
 // 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
@@ -1842,8 +1845,8 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_ck),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_ck),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -2640,7 +2643,7 @@ begin
 				else if(wait_count > TIME_TMOD-1) begin
 					// MPR System READ calibration is a must for all Micron DDR RAM, 
 					// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
-					// but transition to RDAP command
+					// but transition to RDAP state first
 					ck_en <= 1;
 					cs_n <= 0;			
 					ras_n <= 1;
@@ -2953,14 +2956,13 @@ begin
 					else if(read_is_enabled) 
 					begin
 						// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
-						// but transition to RDAP command
+						// but transition to RDAP state first
 						ck_en <= 1;
 						cs_n <= 0;			
 						ras_n <= 1;
 						cas_n <= 1;
 						we_n <= 1;
 						
-						address[A10] <= 1;
 						main_state <= STATE_READ_AP;
 						
 						wait_count <= 0;
@@ -3054,14 +3056,13 @@ begin
 				begin
 					`ifdef LOOPBACK
 						// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
-						// but transition to RDAP command
+						// but transition to RDAP state first
 						ck_en <= 1;
 						cs_n <= 0;			
 						ras_n <= 1;
 						cas_n <= 1;
 						we_n <= 1;
 						
-						address[A10] <= 1;
 						main_state <= STATE_READ_AP;
 						
 						wait_count <= 0;					
@@ -3147,18 +3148,6 @@ begin
 						(TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
-					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 1;
-					cas_n <= 0;
-					we_n <= 1;
-									
-					main_state <= STATE_READ_DATA;
-					wait_count <= 0;
-				end
-				
-				else begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 					// only a single, non-repeating ACT command is executed, and followed by NOP commands
 					cs_n <= 0;
@@ -3166,6 +3155,34 @@ begin
 					cas_n <= 1;
 					we_n <= 1;	
 									
+					main_state <= STATE_READ_DATA;
+					wait_count <= 0;
+				end
+
+				else if(wait_count ==  
+						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
+				begin
+					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
+					ck_en <= 1;
+					cs_n <= 0;			
+					ras_n <= 1;
+					cas_n <= 0;
+					we_n <= 1;
+
+					address[A10] <= 1;									
+					main_state <= STATE_READ_AP;
+				end
+								
+				else begin
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					cs_n <= 0;
+					ras_n <= 1;
+					cas_n <= 1;
+					we_n <= 1;	
+
+					address[A10] <= 1;									
 					main_state <= STATE_READ_AP;
 				end						
 			end
