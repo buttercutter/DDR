@@ -698,9 +698,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 		wire ck_dynamic, ck_dynamic_180;
 		wire locked_dynamic;
+		
+		`ifndef VIVADO
 		wire [PLL_STATUS_BITWIDTH-1:0] pll_read_status;
 		wire input_clk_stopped;
 		wire clk_valid;
+		`endif
 
 		// dynamic phase shift for incoming DQ bits		
 		pll_tuneable pll_read
@@ -906,10 +909,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 // See https://www.micron.com/-/media/client/global/documents/products/technical-note/dram/tn4605.pdf#page=7
 // for an overview on DQS Preamble and Postamble bits
 
-wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w;
-wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
-
 `ifndef HIGH_SPEED
+	wire [(DQ_BITWIDTH >> 1)-1:0] ldq_w;
+	wire [(DQ_BITWIDTH >> 1)-1:0] udq_w;
+
 	reg dqs_is_at_high_previously;
 	reg dqs_is_at_low_previously;
 
@@ -1533,7 +1536,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 	wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 	`endif
 	
-	wire [DQ_BITWIDTH-1:0] delayed_dq_r;
+	//wire [DQ_BITWIDTH-1:0] delayed_dq_r;
 	//wire [DQ_BITWIDTH-1:0] delayed_dq_w;
 	
 
@@ -2028,7 +2031,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 `endif
 
 
-`ifdef MICRON_SIM
+`ifndef HIGH_SPEED
 	`ifndef USE_x16
 	
 	assign dqs = ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP) || 
