@@ -1,3 +1,4 @@
+`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
 `define MICRON_SIM 1  // micron simulation model
 `define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
 `define VIVADO 1  // for 7-series and above
@@ -11,18 +12,18 @@
 //`define RAM_SIZE_4GB
 
 `ifndef FORMAL
-	
-	// for internal logic analyzer
-	//`define USE_ILA 1
-	
-	// for lattice ECP5 FPGA
-	//`define LATTICE 1
+	`ifdef HIGH_SPEED
+		
+		// for internal logic analyzer
+		//`define USE_ILA 1
+		
+		// for lattice ECP5 FPGA
+		//`define LATTICE 1
 
-	// for Xilinx Spartan-6 FPGA
-	`define XILINX 1
-	
-	`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
-
+		// for Xilinx Spartan-6 FPGA
+		`define XILINX 1
+		
+	`endif
 `endif
 
 `ifdef MICRON_SIM

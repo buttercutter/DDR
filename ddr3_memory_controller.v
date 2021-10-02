@@ -7,6 +7,7 @@
 // Later, formal verification will proceed with using Micron simulation model
 
 
+`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
 `define MICRON_SIM 1  // micron simulation model
 `define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
 `define VIVADO 1  // for 7-series and above
@@ -20,18 +21,18 @@
 //`define RAM_SIZE_4GB
 
 `ifndef FORMAL
+	`ifdef HIGH_SPEED
 	
-	// for internal logic analyzer
-	//`define USE_ILA 1
-	
-	// for lattice ECP5 FPGA
-	//`define LATTICE 1
+		// for internal logic analyzer
+		//`define USE_ILA 1
+		
+		// for lattice ECP5 FPGA
+		//`define LATTICE 1
 
-	// for Xilinx Spartan-6 FPGA
-	`define XILINX 1
-	
-	`define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
-
+		// for Xilinx Spartan-6 FPGA
+		`define XILINX 1
+		
+	`endif
 `endif
 
 `ifndef XILINX
@@ -638,11 +639,16 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 `else
 
 	wire clk_pll;
-	wire clk_serdes;
+	// wire clk_serdes;
 	wire ck, ck_out;
-	wire ck_90;
-	wire ck_180, ck_180_out;
-	wire ck_270;
+	
+	`ifndef TESTBENCH
+		wire ck_90;
+		wire ck_180;
+		wire ck_270;
+	`endif
+	
+	wire ck_180_out;
 
 	`ifdef XILINX
 	
@@ -670,7 +676,13 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 
 		reg psen;
+		wire psdone;
 
+		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN = 4;
+		
+		// to synchronize signal in ck_180 domain to ck domain
+		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1:0] data_read_is_ongoing_ck;
+		
 		reg data_read_is_ongoing_previous;
 		always @(posedge ck)
 			data_read_is_ongoing_previous <= data_read_is_ongoing_ck;
@@ -1127,7 +1139,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	
 	// to synchronize signal in ck_dynamic domain to ck domain
 	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
-			
+
+	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
+				
 	genvar ff_ck_dynamic_ck;
 	
 	generate
@@ -1185,7 +1199,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
 	wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
 
-	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
+	// reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
 
 	genvar data_index_iserdes;
 	generate
@@ -1528,9 +1542,42 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 
 `endif
 
+
+// https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
+localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN = 3;
+
+// to synchronize signal in ck_180 domain to ck_90 domain
+reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1:0] data_read_is_ongoing_90;
+
+genvar ff_ck_180_ck_90;
+
+generate
+	for(ff_ck_180_ck_90 = 0; 
+	    ff_ck_180_ck_90 < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN;
+	    ff_ck_180_ck_90 = ff_ck_180_ck_90 + 1)
+	begin: ck_180_to_ck_90
+	
+		always @(posedge ck_90)
+		begin
+			if(reset) data_read_is_ongoing_90[ff_ck_180_ck_90] <= 0;
+			
+			else begin
+				if(ff_ck_180_ck_90 == 0) data_read_is_ongoing_90[ff_ck_180_ck_90] <= data_read_is_ongoing;
+				
+				else data_read_is_ongoing_90[ff_ck_180_ck_90] <= data_read_is_ongoing_90[ff_ck_180_ck_90-1];
+			end
+		end
+	end		
+endgenerate
+		
+
 `ifdef XILINX
 
-	wire ldqs_iobuf_enable, ldqs_n_iobuf_enable, udqs_iobuf_enable, udqs_n_iobuf_enable;
+	`ifndef TESTBENCH
+		wire ldqs_iobuf_enable, udqs_iobuf_enable;
+	`endif
+	
+	wire ldqs_n_iobuf_enable, udqs_n_iobuf_enable;
 	
 	`ifndef TESTBENCH
 	wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
@@ -1589,38 +1636,10 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 		);
 
 
-		// https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
-		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN = 3;
-		
-		// to synchronize signal in ck_180 domain to ck_90 domain
-		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1:0] data_read_is_ongoing_90;
-		
-		genvar ff_ck_180_ck_90;
-		
-		generate
-			for(ff_ck_180_ck_90 = 0; 
-			    ff_ck_180_ck_90 < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN;
-			    ff_ck_180_ck_90 = ff_ck_180_ck_90 + 1)
-			begin: ck_180_to_ck_90
-			
-				always @(posedge ck_90)
-				begin
-					if(reset) data_read_is_ongoing_90[ff_ck_180_ck_90] <= 0;
-					
-					else begin
-						if(ff_ck_180_ck_90 == 0) data_read_is_ongoing_90[ff_ck_180_ck_90] <= data_read_is_ongoing;
-						
-						else data_read_is_ongoing_90[ff_ck_180_ck_90] <= data_read_is_ongoing_90[ff_ck_180_ck_90-1];
-					end
-				end
-			end		
-		endgenerate
-
-
-		localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN = 4;
+		// localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN = 4;
 		
 		// to synchronize signal in ck_180 domain to ck domain
-		reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1:0] data_read_is_ongoing_ck;
+		// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1:0] data_read_is_ongoing_ck;
 		
 		genvar ff_ck_180_ck;
 		
