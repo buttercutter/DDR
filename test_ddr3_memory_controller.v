@@ -22,7 +22,10 @@
 
 		// for Xilinx Spartan-6 FPGA
 		`define XILINX 1
-		
+
+		// for Altera MAX-10 FPGA
+		//`define ALTERA 1
+				
 	`endif
 `endif
 
