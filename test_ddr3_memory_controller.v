@@ -306,13 +306,15 @@ wire udqs_iobuf_enable;
 wire ldqs_iobuf_enable;
 
 wire data_read_is_ongoing;
+`endif
 
+`ifdef HIGH_SPEED
 // for clk_serdes clock domain
+wire clk_serdes;  // 87.5MHz
 wire locked_previous;
 wire need_to_assert_reset;
 `endif
 
-wire clk_serdes;  // 87.5MHz
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 
@@ -357,23 +359,17 @@ reg done_writing, done_reading;
 			`endif
 		`endif
 			begin
-			`ifdef XILINX
+			`ifdef HIGH_SPEED
 				if((reset) || (locked_previous && need_to_assert_reset))
 			`else
 				if(reset)
 			`endif
 				begin
-					i_user_data_address <= 0;
-					test_data <= STARTING_VALUE_OF_TEST_DATA;
 					`ifdef HIGH_SPEED
 						data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
 					`else
 						data_to_ram <= 0;
 					`endif
-					write_enable <= 1;  // writes data first
-					read_enable <= 0;
-					done_writing <= 0;
-					done_reading <= 0;
 				end
 				
 				else if(
@@ -385,9 +381,7 @@ reg done_writing, done_reading;
 					(clk180_slow_posedge | clk_slow_posedge) &&
 				`endif
 					(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
-				begin
-					i_user_data_address <= i_user_data_address + 1;
-					
+				begin					
 					`ifdef HIGH_SPEED							
 						`ifdef USE_x16
 							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
@@ -403,39 +397,10 @@ reg done_writing, done_reading;
 							data_to_ram <= test_data;
 						`endif
 					`endif
-					
-					test_data <= test_data + 1; // + SERDES_RATIO;
-					write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
-					read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // starts the readback operation
-					done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
-					done_reading <= 0;
 				end
 				
 				else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
-					if(done_writing && 
-						(test_data > 0)) // such that it would only reset address only ONCE
-						i_user_data_address <= 0;  // read from the first piece of data written
-					
-					else i_user_data_address <= i_user_data_address + 1;
-					
-					test_data <= 0;  // not related to DDR read operation, only for DDR write operation
-					write_enable <= 0;
-					
-					if(done) read_enable <= 0;  // already finished reading all data
-					
-					else read_enable <= 1;
-					
-					done_writing <= done_writing;
-					
-					`ifdef USE_x16			
-					if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >=
-					 									 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
-					`else
-					if(data_from_ram[0 +: DQ_BITWIDTH] >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
-					`endif			
-					begin
-						done_reading <= 1;
-					end
+
 				end
 			end
 			
@@ -443,6 +408,79 @@ reg done_writing, done_reading;
 		end
 	endgenerate		
 	`endif
+	
+`ifdef HIGH_SPEED
+	always @(posedge clk_serdes)
+`else
+	`ifdef TESTBENCH			
+		always @(posedge clk_sim)
+	`else
+		always @(posedge clk)
+	`endif
+`endif
+	begin
+	`ifdef HIGH_SPEED
+		if((reset) || (locked_previous && need_to_assert_reset))
+	`else
+		if(reset)
+	`endif
+		begin
+			i_user_data_address <= 0;
+			test_data <= STARTING_VALUE_OF_TEST_DATA;
+
+			write_enable <= 1;  // writes data first
+			read_enable <= 0;
+			done_writing <= 0;
+			done_reading <= 0;
+		end
+		
+		else if(
+		`ifndef HIGH_SPEED
+			// Since this is always block which updates new data in next clock cycle,
+			// and DIVIDE_RATIO=4 which means there are 2 'clk' cycles in each half period of a 'clk_slow' cycle,
+			// the following immediate single line of code will update new data 
+			// both at 90 degrees before and after positive edge of 'ck'
+			(clk180_slow_posedge | clk_slow_posedge) &&
+		`endif
+			(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
+		begin
+			i_user_data_address <= i_user_data_address + 1;
+			
+			test_data <= test_data + 1; // + SERDES_RATIO;
+			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
+			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // starts the readback operation
+			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
+			done_reading <= 0;
+		end
+		
+		else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
+			if(done_writing && 
+				(test_data > 0)) // such that it would only reset address only ONCE
+				i_user_data_address <= 0;  // read from the first piece of data written
+			
+			else i_user_data_address <= i_user_data_address + 1;
+			
+			test_data <= 0;  // not related to DDR read operation, only for DDR write operation
+			write_enable <= 0;
+			
+			if(done) read_enable <= 0;  // already finished reading all data
+			
+			else read_enable <= 1;
+			
+			done_writing <= done_writing;
+			
+			`ifdef USE_x16			
+			if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >=
+			 									 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
+			`else
+			if(data_from_ram[0 +: DQ_BITWIDTH] >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
+			`endif			
+			begin
+				done_reading <= 1;
+			end
+		end
+	end
+	
 `endif
 
 

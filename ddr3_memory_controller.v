@@ -924,7 +924,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.inclk0(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.clk_pll(clk_pll),  // OUT 50MHz, 0 phase shift, for solving CDC issues
+			//.clk_pll(clk_pll),  // OUT 50MHz, 0 phase shift, for solving CDC issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz
@@ -1564,6 +1564,68 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.T(data_read_is_ongoing),
 			.O(udqs_n_r)
 		);
+	`endif
+
+	generate
+	genvar dq_index;  // to indicate the bit position of DQ signal
+
+	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
+	begin : dq_tristate_io
+
+		TRELLIS_IO BB_dq (
+			.B(dq[dq_index]),
+			.I(dq_w[dq_index]),
+			.T(data_read_is_ongoing),
+			.O(dq_r[dq_index])
+		);
+	end
+
+	endgenerate
+
+`endif
+
+`ifdef ALTERA
+
+	// https://www.intel.com/content/dam/www/programmable/us/en/pdfs/literature/hb/max-10/archives/ug-m10-gpio-15.1.pdf#page=47
+
+	// we cannot have tristate signal inside the logic of FPGA. tristates only work at the I/O boundary.
+	// So, need to split up the read/write signals and have logic to handle these as two separate paths 
+	// that meet at the I/O boundary at the GPIO primitive.
+
+	`ifndef USE_x16
+
+		IOBUF BB_dqs (
+			.inclock(ck_dynamic),
+			.outclock(ck_90),
+			.pad_io(dqs),
+			.pad_io_b(dqs_n),
+			.oe(data_read_is_ongoing),
+			.dout(2'b10),  // {dqs_w, dqs_n_w}
+			.din(dqs_r_1, dqs_r_2)
+		);
+
+	`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
+
+		IOBUF BB_ldqs (
+			.inclock(ck_dynamic),
+			.outclock(ck_90),
+			.pad_io(ldqs),
+			.pad_io_b(ldqs_n),
+			.oe(data_read_is_ongoing),
+			.dout(2'b10),  // {ldqs_w, ldqs_n_w}
+			.din({ldqs_r_1, ldqs_r_2})
+		);
+
+		IOBUF BB_udqs (
+			.inclock(ck_dynamic),
+			.outclock(ck_90),
+			.pad_io(udqs),
+			.pad_io_b(udqs_n),
+			.oe(data_read_is_ongoing),
+			.dout(2'b10),  // {udqs_w, udqs_n_w}
+			.din({udqs_r_1, udqs_r_2})
+		);
+		
 	`endif
 
 	generate
