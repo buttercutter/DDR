@@ -1243,33 +1243,41 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	// reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
 
-	genvar data_index_iserdes;
-	generate
-		for(data_index_iserdes = 0; data_index_iserdes < (DQ_BITWIDTH*SERDES_RATIO); 
-			data_index_iserdes = data_index_iserdes + DQ_BITWIDTH)
-		begin: data_from_ram_combine_loop
-			
-			// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_iserdes'
-			// since 'data_out_iserdes_0' and 'data_out_iserdes_1' are half the size of 
-			// 'data_from_ram_ck_dynamic'
-			
-			always @(*)
-			begin				
-				if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
-				begin
-					data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
-					data_out_iserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
-										+: DQ_BITWIDTH];
-				end
-			
-				else begin
-					data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
-					data_out_iserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
-										+: DQ_BITWIDTH];
+	`ifndef ALTERA
+	
+		genvar data_index_iserdes;
+		generate
+			for(data_index_iserdes = 0; data_index_iserdes < (DQ_BITWIDTH*SERDES_RATIO); 
+				data_index_iserdes = data_index_iserdes + DQ_BITWIDTH)
+			begin: data_from_ram_combine_loop
+				
+				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_iserdes'
+				// since 'data_out_iserdes_0' and 'data_out_iserdes_1' are half the size of 
+				// 'data_from_ram_ck_dynamic'
+				
+				always @(*)
+				begin				
+					if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
+					begin
+						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_out_iserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+											+: DQ_BITWIDTH];
+					end
+				
+					else begin
+						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_out_iserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+											+: DQ_BITWIDTH];
+					end
 				end
 			end
-		end
-	endgenerate
+		endgenerate
+	
+	`else
+	
+		
+	
+	`endif
 	
 
 	reg need_to_assert_reset_clk;
@@ -1601,7 +1609,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.pad_io_b(dqs_n),
 			.oe(data_read_is_ongoing),
 			.dout(2'b10),  // {dqs_w, dqs_n_w}
-			.din(dqs_r_1, dqs_r_2)
+			.din({dqs_r_1, dqs_r_0})
 		);
 
 	`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
@@ -1613,7 +1621,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.pad_io_b(ldqs_n),
 			.oe(data_read_is_ongoing),
 			.dout(2'b10),  // {ldqs_w, ldqs_n_w}
-			.din({ldqs_r_1, ldqs_r_2})
+			.din({ldqs_r_1, ldqs_r_0})
 		);
 
 		IOBUF BB_udqs (
@@ -1623,7 +1631,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 			.pad_io_b(udqs_n),
 			.oe(data_read_is_ongoing),
 			.dout(2'b10),  // {udqs_w, udqs_n_w}
-			.din({udqs_r_1, udqs_r_2})
+			.din({udqs_r_1, udqs_r_0})
 		);
 		
 	`endif
@@ -1631,14 +1639,17 @@ wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) &&
 	generate
 	genvar dq_index;  // to indicate the bit position of DQ signal
 
-	for(dq_index = 0; dq_index < DQ_BITWIDTH; dq_index = dq_index + 1)
+	for(dq_index = 0; dq_index < (DQ_BITWIDTH >> 1); dq_index = dq_index + 1)
 	begin : dq_tristate_io
 
-		TRELLIS_IO BB_dq (
-			.B(dq[dq_index]),
-			.I(dq_w[dq_index]),
-			.T(data_read_is_ongoing),
-			.O(dq_r[dq_index])
+		IOBUF_DQ BB_dq (
+			.inclock(ck_dynamic),
+			.outclock(ck),
+			.pad_io(dq[dq_index]),
+			//.pad_io_b(),  // DQ signal is not differential type
+			.oe(data_read_is_ongoing),
+			.dout({dq_w_1[dq_index], dq_w_0[dq_index]}),
+			.din({dq_r_1[dq_index], dq_r_0[dq_index]})			
 		);
 	end
 
