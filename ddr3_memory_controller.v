@@ -13,6 +13,7 @@
 `define VIVADO 1  // for 7-series and above
 
 `define USE_x16 1
+//`define USE_SERDES 1
 
 // `define TDQS 1
 
@@ -55,7 +56,7 @@ localparam MAX_TIMING = 175000;  // just for initial development stage, will ref
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
 #(
-	`ifdef HIGH_SPEED
+	`ifdef USE_SERDES
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
 		parameter SERDES_RATIO = 8,
@@ -141,12 +142,13 @@ module ddr3_memory_controller
 	input write_enable,  // write to DDR memory
 	input read_enable,  // read from DDR memory
 	input [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address,  // the DDR memory address for which the user wants to write/read the data
-	`ifdef HIGH_SPEED
+	`ifdef USE_SERDES
 		input [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram,  // data for which the user wants to write to DDR
 		output [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
 	`else
-		input [DQ_BITWIDTH-1:0] data_to_ram,  // data for which the user wants to write to DDR
-		output reg [DQ_BITWIDTH-1:0] data_from_ram,  // the requested data from DDR RAM after read operation
+		// TWO pieces of data bundled together due to double-data-rate requirement of DQ signal
+		input  [(DQ_BITWIDTH << 1)-1:0] data_to_ram,  // data to be written to DDR RAM
+		output [(DQ_BITWIDTH << 1)-1:0] data_from_ram,  // the requested data being read from DDR RAM read operation
 	`endif
 	
 	`ifndef XILINX
@@ -1165,86 +1167,64 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	//assign dqs_r = (udqs_r | ldqs_r);	
 	assign dqs_r = udqs_r;  // iodelay input must come directly from IO pad, no FPGA fabric in between
 
-	// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
-	// Check the explanation below for the need of two separate OSERDES
-	reg [DQ_BITWIDTH-1:0] dq_w_d0;
-	reg [DQ_BITWIDTH-1:0] dq_w_d1;
-	wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
-	wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
-	
-	always @(posedge ck)     dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-	always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
-	
 
 	// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3678799/#msg3678799
 	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN= 3;
-	
-	// to synchronize signal in ck_dynamic domain to ck domain
-	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
+	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN = 3;
+	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN = 3;
 
-	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
-				
-	genvar ff_ck_dynamic_ck;
+	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1:0] need_to_assert_reset_ck;
+	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1:0] need_to_assert_reset_ck_180;
 	
-	generate
-		for(ff_ck_dynamic_ck = 0;
-			ff_ck_dynamic_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN;
-		    ff_ck_dynamic_ck = ff_ck_dynamic_ck + 1)
-		begin: ck_dynamic_to_ck
-		
-			always @(posedge ck)
-			begin
-				if(reset) data_from_ram_ck[ff_ck_dynamic_ck] <= 0;
-				
-				else begin
-					if(ff_ck_dynamic_ck == 0) 
-						data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck_dynamic;
-					
-					else data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck[ff_ck_dynamic_ck-1];
-				end
-			end
-		end
-	endgenerate
-
-	assign data_from_ram = data_from_ram_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1];
-	
-	
-	// why need IOSERDES primitives ?
-	// because you want a memory transaction rate much higher than the main clock frequency 
-	// but you don't want to require a very high main clock frequency
-	
-	// send a write of 8w bits to the memory controller, 
-	// which is similar to bundling multiple transactions into one wider one,
-	// and the memory controller issues 8 writes of w bits to the memory, 
-	// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
-	// This literally means SERDES_RATIO=8 
-	// localparam SERDES_RATIO = 8;
-
-	localparam EVEN_RATIO = 2;
-
 	// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
 	reg [DQ_BITWIDTH-1:0] dq_r_q0;
 	reg [DQ_BITWIDTH-1:0] dq_r_q1;
-	//reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
+		
+	`ifdef USE_SERDES
 	
-	// The following way of combining dq_r_q0 and dq_r_q1 back into a single signal will not work
-	// for high DDR3 RAM frequency.  Besides, never use clock-related signal for combinational logic
-	// See the rationale for having two separate deserializer module to handle this instead
-	//always @(dq_r_q0, dq_r_q1, delayed_dqs_r)
-	//	dq_r_iserdes <= (delayed_dqs_r) ?  dq_r_q0: dq_r_q1;
+		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
+		// Check the explanation below for the need of two separate OSERDES
+		reg [DQ_BITWIDTH-1:0] dq_w_d0;
+		reg [DQ_BITWIDTH-1:0] dq_w_d1;		
+		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
+		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
+		
+		always @(posedge ck) dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 	
-
-	// if you want to build your own serdeses feeding from IDDR, you cannot clump dq_r_q0 and dq_r_q1 back
-	// into a single signal and feed this signal to your single serdes. 
-	// You will need to build two separate serdeses - one for dq_r_q0, and another one for dq_r_q1.
-
-	wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
-	wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
-
-	// reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
-
-	`ifndef ALTERA
 	
+		// why need IOSERDES primitives ?
+		// because you want a memory transaction rate much higher than the main clock frequency 
+		// but you don't want to require a very high main clock frequency
+		
+		// send a write of 8w bits to the memory controller, 
+		// which is similar to bundling multiple transactions into one wider one,
+		// and the memory controller issues 8 writes of w bits to the memory, 
+		// where w is the data width of your memory interface. (w == DQ_BITWIDTH)
+		// This literally means SERDES_RATIO=8 
+		// localparam SERDES_RATIO = 8;
+
+		localparam EVEN_RATIO = 2;
+
+		//reg [DQ_BITWIDTH-1:0] dq_r_iserdes;
+		
+		// The following way of combining dq_r_q0 and dq_r_q1 back into a single signal will not work
+		// for high DDR3 RAM frequency.  Besides, never use clock-related signal for combinational logic
+		// See the rationale for having two separate deserializer module to handle this instead
+		//always @(dq_r_q0, dq_r_q1, delayed_dqs_r)
+		//	dq_r_iserdes <= (delayed_dqs_r) ?  dq_r_q0: dq_r_q1;
+		
+
+		// if you want to build your own serdeses feeding from IDDR, you cannot clump dq_r_q0 and dq_r_q1 back
+		// into a single signal and feed this signal to your single serdes. 
+		// You will need to build two separate serdeses - one for dq_r_q0, and another one for dq_r_q1.
+
+		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
+		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
+
+		// reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
+
+		
 		genvar data_index_iserdes;
 		generate
 			for(data_index_iserdes = 0; data_index_iserdes < (DQ_BITWIDTH*SERDES_RATIO); 
@@ -1260,221 +1240,255 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 					if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
 					begin
 						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
-						data_out_iserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
-											+: DQ_BITWIDTH];
+						data_out_iserdes_0[DQ_BITWIDTH * 
+										   $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+										   +: DQ_BITWIDTH];
 					end
 				
 					else begin
 						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
-						data_out_iserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
-											+: DQ_BITWIDTH];
+						data_out_iserdes_1[DQ_BITWIDTH * 
+										   $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
+										   +: DQ_BITWIDTH];
 					end
 				end
 			end
 		endgenerate
-	
-	`else
-	
 		
-	
-	`endif
-	
 
-	reg need_to_assert_reset_clk;
-	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN = 3;
-	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1:0] need_to_assert_reset_ck_180;
-
-	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-	dq_iserdes_0
-	(
-		.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
-	
-		// fast clock domain
-		.high_speed_clock(ck_dynamic),
-		.data_in(dq_r_q0),
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_iserdes_0
+		(
+			.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
 		
-		// slow clock domain
-		.data_out(data_out_iserdes_0)
-	);
-
-	deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-	dq_iserdes_1
-	(
-		.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
-	
-		// fast clock domain
-		.high_speed_clock(ck_dynamic),
-		.data_in(dq_r_q1),
-		
-		// slow clock domain
-		.data_out(data_out_iserdes_1)
-	);
-	
-
-	// There is need to use two separate OSERDES because ODDR2 expects its D0 and D1 inputs to be
-	// presented to it at a DDR clock rate of 303MHz (D0 at posedge of 303MHz, D1 at negedge of 303MHz),
-	// where 303MHz is the minimum DDR3 RAM working frequency.
-	// However, one single SDR OSERDES alone could not fulfill this data rate requirement of ODDR2
-
-	// For example, a 8:1 DDR OSERDES which takes 8 inputs D0,D1,D2,D3,D4,D5,D6,D7 and output them serially
-	
-	// The values supplied by D0,D2,D4,D6 are clocked out on the rising edge
-	// The values supplied by D1,D3,D5,D7 are clocked out on the falling edge
-
-	// You can then create two 4:1 SDR OSERDES modules.
-
-	// One of the 2 modules will take D0,D2,D4,D6 inputs and output them serially. 
-	// You route its output to the D0 pin of the ODDR.
-
-	// The other will output D1,D3,D5,D7 serially. You route its output to the D1 pin of the ODDR.
-
-	// But this is only if you write your own OSERDES.
-
-	// The vendor-specific hardware OSERDES will have built-in DDR mode. 
-	// Even if you put it in SDR mode, it cannot be routed to ODDR because ODDR and OSERDES are two
-	// incarnations of the same OLOGIC block.
-	
-	reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_0;
-	reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_1;
-
-	genvar data_index_oserdes;
-	generate
-		for(data_index_oserdes = 0; data_index_oserdes < (DQ_BITWIDTH*SERDES_RATIO); 
-			data_index_oserdes = data_index_oserdes + DQ_BITWIDTH)
-		begin: data_to_ram_split_loop
-
-			// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_oserdes'
-			// since 'data_in_oserdes_0' and 'data_in_oserdes_1' are half the size of 'data_to_ram'
-				
-			always @(*)
-			begin				
-				if(((data_index_oserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
-				begin
-					data_in_oserdes_0[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
-								DQ_BITWIDTH] <= 
-					data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
-				end
+			// fast clock domain
+			.high_speed_clock(ck_dynamic),
+			.data_in(dq_r_q0),
 			
-				else begin
-					data_in_oserdes_1[DQ_BITWIDTH * $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) +:
-								DQ_BITWIDTH] <= 
-					data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
+			// slow clock domain
+			.data_out(data_out_iserdes_0)
+		);
+
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_iserdes_1
+		(
+			.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
+		
+			// fast clock domain
+			.high_speed_clock(ck_dynamic),
+			.data_in(dq_r_q1),
+			
+			// slow clock domain
+			.data_out(data_out_iserdes_1)
+		);
+		
+
+		// There is need to use two separate OSERDES because ODDR2 expects its D0 and D1 inputs to be
+		// presented to it at a DDR clock rate of 303MHz (D0 at posedge of 303MHz, D1 at negedge of 303MHz),
+		// where 303MHz is the minimum DDR3 RAM working frequency.
+		// However, one single SDR OSERDES alone could not fulfill this data rate requirement of ODDR2
+
+		// For example, a 8:1 DDR OSERDES which takes 8 inputs D0,D1,D2,D3,D4,D5,D6,D7 and output them serially
+		
+		// The values supplied by D0,D2,D4,D6 are clocked out on the rising edge
+		// The values supplied by D1,D3,D5,D7 are clocked out on the falling edge
+
+		// You can then create two 4:1 SDR OSERDES modules.
+
+		// One of the 2 modules will take D0,D2,D4,D6 inputs and output them serially. 
+		// You route its output to the D0 pin of the ODDR.
+
+		// The other will output D1,D3,D5,D7 serially. You route its output to the D1 pin of the ODDR.
+
+		// But this is only if you write your own OSERDES.
+
+		// The vendor-specific hardware OSERDES will have built-in DDR mode. 
+		// Even if you put it in SDR mode, it cannot be routed to ODDR because ODDR and OSERDES are two
+		// incarnations of the same OLOGIC block.
+		
+		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_0;
+		reg [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_in_oserdes_1;
+
+		genvar data_index_oserdes;
+		generate
+			for(data_index_oserdes = 0; data_index_oserdes < (DQ_BITWIDTH*SERDES_RATIO); 
+				data_index_oserdes = data_index_oserdes + DQ_BITWIDTH)
+			begin: data_to_ram_split_loop
+
+				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_oserdes'
+				// since 'data_in_oserdes_0' and 'data_in_oserdes_1' are half the size of 'data_to_ram'
+					
+				always @(*)
+				begin				
+					if(((data_index_oserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
+					begin
+						data_in_oserdes_0[DQ_BITWIDTH * 
+										  $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) 
+										  +: DQ_BITWIDTH] <= 
+						data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
+					end
+				
+					else begin
+						data_in_oserdes_1[DQ_BITWIDTH * 
+										  $rtoi($floor(data_index_oserdes/(DQ_BITWIDTH << 1))) 
+										  +: DQ_BITWIDTH] <= 
+						data_to_ram[data_index_oserdes +: DQ_BITWIDTH];
+					end
 				end
 			end
+		endgenerate
+
+		
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_oserdes_0
+		(
+			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
+			
+			// slow clock domain
+			.data_in(data_in_oserdes_0),
+			
+			// fast clock domain
+			.high_speed_clock(ck),
+			.data_out(dq_w_oserdes_0)
+		);
+
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		dq_oserdes_1
+		(
+			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
+		
+			// slow clock domain
+			.data_in(data_in_oserdes_1),
+			
+			// fast clock domain
+			.high_speed_clock(ck),
+			.data_out(dq_w_oserdes_1)
+		);
+		
+	
+		// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
+		// See https://forums.xilinx.com/t5/Implementation/Xilinx-ISE-implementation-stage-issues/m-p/1255587/highlight/true#M30717
+
+		// DDR Data Reception Using Two BUFIO2s
+		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
+		/*
+		wire rxioclkp;
+		wire rxioclkn;
+		wire rx_serdesstrobe;
+		
+		wire gclk_iserdes;
+		wire clkin_p_iserdes = (udqs_r | ldqs_r);
+		wire clkin_n_iserdes = (udqs_n_r | ldqs_n_r);
+		
+		serdes_1_to_n_clk_ddr_s8_diff #(.S(SERDES_RATIO))
+		dqs_iserdes
+		(
+			.clkin_p(clkin_p_iserdes),
+			.clkin_n(clkin_n_iserdes),
+			.rxioclkp(rxioclkp),
+			.rxioclkn(rxioclkn),
+			.rx_serdesstrobe(rx_serdesstrobe),
+			.rx_bufg_x1(gclk_iserdes)
+		);
+		
+		serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		dq_iserdes
+		(
+			.use_phase_detector(1'b1),
+			.datain_p(dq_r),
+			.datain_n(),
+			.rxioclkp(rxioclkp),
+			.rxioclkn(rxioclkn),
+			.rxserdesstrobe(rx_serdesstrobe),
+			.reset(reset),
+			.gclk(gclk_iserdes),
+			.bitslip(1'b1),
+			.debug_in(2'b00),
+			.data_out(data_from_ram),
+			.debug(debug_dq_serdes)
+		);
+
+		// DDR Data Transmission Using Two BUFIO2s
+		// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
+
+		wire txioclkp;
+		wire txioclkn;
+		wire txserdesstrobe;
+		
+		wire gclk_oserdes;
+
+		clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
+		dqs_oserdes
+		(
+			.clkin_p(clk),
+			.clkin_n(),
+			.ioclkap(txioclkp),
+			.ioclkan(txioclkn),
+			.serdesstrobea(txserdesstrobe),
+			.ioclkbp(),
+			.ioclkbn(),
+			.serdesstrobeb(),
+			.gclk(gclk_oserdes)
+		);
+		
+		serdes_n_to_1_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
+		dq_oserdes
+		(
+			.txioclkp(txioclkp),
+			.txioclkn(txioclkn),
+			.txserdesstrobe(txserdesstrobe),
+			.reset(reset),
+			.gclk(gclk_oserdes),
+			.datain(data_to_ram),
+			.dataout_p(dq_w),
+			.dataout_n()
+		);
+		*/
+
+		// to synchronize signal in ck_dynamic domain to ck domain
+		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
+
+		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;	
+
+	`else
+		wire [DQ_BITWIDTH-1:0] dq_w_d0 = data_to_ram[0 +: DQ_BITWIDTH];
+		wire [DQ_BITWIDTH-1:0] dq_w_d1 = data_to_ram[DQ_BITWIDTH +: DQ_BITWIDTH];	
+		
+		// to synchronize signal in ck_dynamic domain to ck domain
+		reg [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
+
+		wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck_dynamic = 
+					{dq_r_q1, dq_r_q0};	
+				
+	`endif
+
+
+genvar ff_ck_dynamic_ck;
+
+generate
+	for(ff_ck_dynamic_ck = 0;
+		ff_ck_dynamic_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN;
+		ff_ck_dynamic_ck = ff_ck_dynamic_ck + 1)
+	begin: ck_dynamic_to_ck
+	
+		always @(posedge ck)
+		begin
+			if(reset) data_from_ram_ck[ff_ck_dynamic_ck] <= 0;
+			
+			else begin
+				if(ff_ck_dynamic_ck == 0) 
+					data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck_dynamic;
+				
+				else data_from_ram_ck[ff_ck_dynamic_ck] <=
+				 	 data_from_ram_ck[ff_ck_dynamic_ck-1];
+			end
 		end
-	endgenerate
+	end
+endgenerate
 
-	
-	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN = 3;
-	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1:0] need_to_assert_reset_ck;
-	
-	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-	dq_oserdes_0
-	(
-		.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
-		
-		// slow clock domain
-		.data_in(data_in_oserdes_0),
-		
-		// fast clock domain
-		.high_speed_clock(ck),
-		.data_out(dq_w_oserdes_0)
-	);
-
-	serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
-	dq_oserdes_1
-	(
-		.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
-	
-		// slow clock domain
-		.data_in(data_in_oserdes_1),
-		
-		// fast clock domain
-		.high_speed_clock(ck),
-		.data_out(dq_w_oserdes_1)
-	);
-	
-	
-	// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
-	// See https://forums.xilinx.com/t5/Implementation/Xilinx-ISE-implementation-stage-issues/m-p/1255587/highlight/true#M30717
-
-	// DDR Data Reception Using Two BUFIO2s
-	// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
-	/*
-	wire rxioclkp;
-	wire rxioclkn;
-	wire rx_serdesstrobe;
-	
-	wire gclk_iserdes;
-	wire clkin_p_iserdes = (udqs_r | ldqs_r);
-	wire clkin_n_iserdes = (udqs_n_r | ldqs_n_r);
-	
-	serdes_1_to_n_clk_ddr_s8_diff #(.S(SERDES_RATIO))
-	dqs_iserdes
-	(
-		.clkin_p(clkin_p_iserdes),
-		.clkin_n(clkin_n_iserdes),
-		.rxioclkp(rxioclkp),
-		.rxioclkn(rxioclkn),
-		.rx_serdesstrobe(rx_serdesstrobe),
-		.rx_bufg_x1(gclk_iserdes)
-	);
-	
-	serdes_1_to_n_data_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-	dq_iserdes
-	(
-		.use_phase_detector(1'b1),
-		.datain_p(dq_r),
-		.datain_n(),
-		.rxioclkp(rxioclkp),
-		.rxioclkn(rxioclkn),
-		.rxserdesstrobe(rx_serdesstrobe),
-		.reset(reset),
-		.gclk(gclk_iserdes),
-		.bitslip(1'b1),
-		.debug_in(2'b00),
-		.data_out(data_from_ram),
-		.debug(debug_dq_serdes)
-	);
-
-	// DDR Data Transmission Using Two BUFIO2s
-	// See Figure 18 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=17
-
-	wire txioclkp;
-	wire txioclkn;
-	wire txserdesstrobe;
-	
-	wire gclk_oserdes;
-
-	clock_generator_ddr_s8_diff #(.S(SERDES_RATIO))
-	dqs_oserdes
-	(
-		.clkin_p(clk),
-		.clkin_n(),
-		.ioclkap(txioclkp),
-		.ioclkan(txioclkn),
-		.serdesstrobea(txserdesstrobe),
-		.ioclkbp(),
-		.ioclkbn(),
-		.serdesstrobeb(),
-		.gclk(gclk_oserdes)
-	);
-	
-	serdes_n_to_1_ddr_s8_diff #(.D(DQ_BITWIDTH), .S(SERDES_RATIO))
-	dq_oserdes
-	(
-		.txioclkp(txioclkp),
-		.txioclkn(txioclkn),
-		.txserdesstrobe(txserdesstrobe),
-		.reset(reset),
-		.gclk(gclk_oserdes),
-		.datain(data_to_ram),
-		.dataout_p(dq_w),
-		.dataout_n()
-	);
-	*/
-`endif
-
+assign data_from_ram =
+ 		data_from_ram_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1];
+	 		
 
 // wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE) && 
 //							 ((main_state == STATE_READ) || (main_state == STATE_READ_AP))) || 
@@ -1517,6 +1531,9 @@ end
 wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) && 
 		    				  ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP))) || 
 							  (main_state == STATE_WRITE_DATA);
+
+`endif
+
 
 `ifdef LATTICE
 
@@ -2013,7 +2030,6 @@ endgenerate
 		// End of IDDR2_inst instantiation	
 */
 
-
 		// https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=51
 		// IDDR2 is re-coded in verilog fabric due to same clock restriction of IODDR which leads to routing issue
 		always @(posedge ck_dynamic)
@@ -2029,7 +2045,6 @@ endgenerate
 			
 			else dq_r_q1[dq_index] <= dq_r[dq_index];
 		end
-		
 
 		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
 		// Spartan-6
@@ -2046,7 +2061,7 @@ endgenerate
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C0)
-			.D1(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C1)			
+			.D1(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C1)
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);
@@ -2391,14 +2406,20 @@ wire it_is_time_to_do_refresh_now  // tREFI is the "average" interval between RE
 */
 
 `ifdef HIGH_SPEED
-always @(posedge clk)  // clk_serdes is only turned on after clk is turned on
+reg need_to_assert_reset_clk;
+
+always @(posedge clk)  // 'clk_serdes' or 'ck' is only turned on after clk is turned on
 begin
 	if(reset) need_to_assert_reset_clk <= 1;
 	
 	else if(locked_previous) need_to_assert_reset_clk <= 0;
 end
 
-always @(posedge clk_serdes) locked_previous <= locked;
+	`ifdef USE_SERDES
+		always @(posedge clk_serdes) locked_previous <= locked;
+	`else
+		always @(posedge ck) locked_previous <= locked;
+	`endif
 
 
 // localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN = 3;

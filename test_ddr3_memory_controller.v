@@ -4,6 +4,7 @@
 `define VIVADO 1  // for 7-series and above
 
 `define USE_x16 1
+//`define USE_SERDES 1
 
 // `define TDQS 1
 
@@ -48,7 +49,7 @@
 
 module test_ddr3_memory_controller
 #(
-	`ifdef HIGH_SPEED
+	`ifdef USE_SERDES
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
 		parameter SERDES_RATIO = 8,
@@ -174,6 +175,7 @@ localparam NUM_OF_DDR_STATES = 20;
 localparam MAX_TIMING = 152068;  // just for initial development stage, will refine the value later
 `endif
 
+localparam STATE_WRITE = 6;
 localparam STATE_WRITE_DATA = 8;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
@@ -318,12 +320,13 @@ wire need_to_assert_reset;
 
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 
-`ifdef HIGH_SPEED
+`ifdef USE_SERDES
 	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
 	wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
-`else
-	reg [DQ_BITWIDTH-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
-	wire [DQ_BITWIDTH-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
+`else 
+	// TWO pieces of data bundled together due to double-data-rate requirement of DQ signal
+	reg  [(DQ_BITWIDTH << 1)-1:0] data_to_ram;  // data to be written to DDR RAM
+	wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram;  // the requested data being read from DDR RAM
 `endif
 
 reg write_enable, read_enable;
@@ -331,18 +334,14 @@ reg done_writing, done_reading;
 
 `ifdef LOOPBACK
 
-	`ifdef USE_x16
-		reg [(DQ_BITWIDTH >> 1)-1:0] test_data;
-	`else
-		reg [DQ_BITWIDTH-1:0] test_data;
-	`endif
+	reg [DQ_BITWIDTH-1:0] test_data;
 
 	assign done = (done_writing & done_reading);  // finish a data loopback transaction
 
 	localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 8;  // only 8 pieces of data are used during data loopback integrity test
 	localparam STARTING_VALUE_OF_TEST_DATA = 5;  // starts from 5
 
-	`ifdef HIGH_SPEED
+	`ifdef USE_SERDES
 	genvar data_write_index;
 	generate
 		for(data_write_index = 0; data_write_index < SERDES_RATIO;
@@ -350,7 +349,11 @@ reg done_writing, done_reading;
 		begin: data_write_loop
 	`endif
 		`ifdef HIGH_SPEED
-			always @(posedge clk_serdes)
+			`ifdef USE_SERDES
+				always @(posedge clk_serdes)
+			`else
+				always @(posedge ck)			
+			`endif
 		`else
 			`ifdef TESTBENCH			
 				always @(posedge clk_sim)
@@ -365,7 +368,7 @@ reg done_writing, done_reading;
 				if(reset)
 			`endif
 				begin
-					`ifdef HIGH_SPEED
+					`ifdef USE_SERDES
 						data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
 					`else
 						data_to_ram <= 0;
@@ -380,9 +383,11 @@ reg done_writing, done_reading;
 					// both at 90 degrees before and after positive edge of 'ck'
 					(clk180_slow_posedge | clk_slow_posedge) &&
 				`endif
-					(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
+					(~done_writing) &&
+					// write operation has higher priority in loopback mechanism
+					(main_state == STATE_WRITE_DATA))
 				begin					
-					`ifdef HIGH_SPEED							
+					`ifdef USE_SERDES							
 						`ifdef USE_x16
 							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
 										{test_data + data_write_index + 1, test_data + data_write_index};
@@ -404,20 +409,29 @@ reg done_writing, done_reading;
 				end
 			end
 			
-	`ifdef HIGH_SPEED
+	`ifdef USE_SERDES
 		end
 	endgenerate		
 	`endif
+
+
+	// such that DQ output signal will have unique value every DQS cycle
+	// this is due to double-data-rate nature of DQ
+	localparam UNIQUE_DQ_OUTPUT = 2;
 	
-`ifdef HIGH_SPEED
-	always @(posedge clk_serdes)
-`else
-	`ifdef TESTBENCH			
-		always @(posedge clk_sim)
+	`ifdef HIGH_SPEED
+		`ifdef USE_SERDES
+			always @(posedge clk_serdes)
+		`else
+			always @(posedge ck)			
+		`endif
 	`else
-		always @(posedge clk)
+		`ifdef TESTBENCH			
+			always @(posedge clk_sim)
+		`else
+			always @(posedge clk)
+		`endif
 	`endif
-`endif
 	begin
 	`ifdef HIGH_SPEED
 		if((reset) || (locked_previous && need_to_assert_reset))
@@ -442,11 +456,18 @@ reg done_writing, done_reading;
 			// both at 90 degrees before and after positive edge of 'ck'
 			(clk180_slow_posedge | clk_slow_posedge) &&
 		`endif
-			(~done_writing) && (main_state == STATE_WRITE_DATA))  // write operation has higher priority in loopback mechanism
+			(~done_writing) && 
+			// write operation has higher priority in loopback mechanism
+			(main_state == STATE_WRITE_DATA)) 
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
-			test_data <= test_data + 1; // + SERDES_RATIO;
+			`ifdef USE_SERDES
+				test_data <= test_data + SERDES_RATIO;
+			`else
+				test_data <= test_data + UNIQUE_DQ_OUTPUT;
+			`endif
+			
 			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
 			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // starts the readback operation
 			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
@@ -469,12 +490,8 @@ reg done_writing, done_reading;
 			
 			done_writing <= done_writing;
 			
-			`ifdef USE_x16			
-			if(data_from_ram[0 +: (DQ_BITWIDTH >> 1)] >=
-			 									 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
-			`else
-			if(data_from_ram[0 +: DQ_BITWIDTH] >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))
-			`endif			
+			if(data_from_ram[0 +: DQ_BITWIDTH] >=
+			  	 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))		
 			begin
 				done_reading <= 1;
 			end
@@ -580,7 +597,7 @@ reg done_writing, done_reading;
 ddr3_memory_controller 
 #(
 	.MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED)
-	`ifdef HIGH_SPEED
+	`ifdef USE_SERDES
 		, .SERDES_RATIO(SERDES_RATIO)
 	`endif
 )
