@@ -352,7 +352,7 @@ reg done_writing, done_reading;
 			`ifdef USE_SERDES
 				always @(posedge clk_serdes)
 			`else
-				always @(posedge ck)			
+				always @(posedge ck_n)			
 			`endif
 		`else
 			`ifdef TESTBENCH			
@@ -423,7 +423,7 @@ reg done_writing, done_reading;
 		`ifdef USE_SERDES
 			always @(posedge clk_serdes)
 		`else
-			always @(posedge ck)			
+			always @(posedge ck_n)			
 		`endif
 	`else
 		`ifdef TESTBENCH			
