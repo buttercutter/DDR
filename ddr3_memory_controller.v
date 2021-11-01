@@ -177,7 +177,7 @@ module ddr3_memory_controller
 
 	`ifdef TESTBENCH
 		output ck_90,
-		output ck_180,
+		output ck_270,
 		
 		output [DQ_BITWIDTH-1:0] dq_iobuf_enable,
 		output ldqs_iobuf_enable,
@@ -188,7 +188,7 @@ module ddr3_memory_controller
 	
 	`ifdef HIGH_SPEED
 		output clk_serdes,  // 87.5MHz
-		output ck_270,  // 350MHz with 270 phase shift
+		output ck_180,  // 350MHz with 180 phase shift
 		output reg locked_previous,
 		output need_to_assert_reset,
 	`endif
@@ -649,7 +649,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	
 	`ifndef TESTBENCH
 		wire ck_90;
-		wire ck_180;
+		wire ck_270;
 	`endif
 	
 	wire ck_180_out;
@@ -2487,12 +2487,7 @@ always @(posedge ck_180)
 always @(posedge clk)
 `endif
 begin
-`ifdef HIGH_SPEED
-	if((reset) || (locked_previous &&
-	   need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]))
-`else
 	if(reset)
-`endif
 	begin
 		main_state <= STATE_RESET;
 		previous_main_state <= STATE_RESET;

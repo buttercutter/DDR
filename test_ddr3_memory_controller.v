@@ -300,7 +300,7 @@ wire clk180_slow_posedge;  // for dq phase shifting purpose
 
 `ifdef TESTBENCH
 wire ck_90;  // for dq phase shifting purpose
-wire ck_180;
+wire ck_270;
 
 wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 wire udqs_iobuf_enable;
@@ -312,7 +312,7 @@ wire data_read_is_ongoing;
 `ifdef HIGH_SPEED
 // for clk_serdes clock domain
 wire clk_serdes;  // 87.5MHz
-wire ck_270;  // 350MHz with 270 phase shift
+wire ck_180;  // 350MHz with 180 phase shift
 wire locked_previous;
 wire need_to_assert_reset;
 `endif
@@ -352,7 +352,7 @@ reg done_writing, done_reading;
 			`ifdef USE_SERDES
 				always @(posedge clk_serdes)
 			`else
-				always @(posedge ck_270)  // positive edge of ck_270 is right after WRITE operation starts
+				always @(posedge ck_180)  // positive edge of ck_180 is right after WRITE operation starts
 			`endif
 		`else
 			`ifdef TESTBENCH			
@@ -362,11 +362,7 @@ reg done_writing, done_reading;
 			`endif
 		`endif
 			begin
-			`ifdef HIGH_SPEED
-				if((reset) || (locked_previous && need_to_assert_reset))
-			`else
 				if(reset)
-			`endif
 				begin
 					`ifdef USE_SERDES
 						data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
@@ -423,7 +419,7 @@ reg done_writing, done_reading;
 		`ifdef USE_SERDES
 			always @(posedge clk_serdes)
 		`else
-			always @(posedge ck_270)  // positive edge of ck_270 is right after WRITE operation starts
+			always @(posedge ck_180)  // positive edge of ck_180 is right after WRITE operation starts
 		`endif
 	`else
 		`ifdef TESTBENCH			
@@ -433,11 +429,7 @@ reg done_writing, done_reading;
 		`endif
 	`endif
 	begin
-	`ifdef HIGH_SPEED
-		if((reset) || (locked_previous && need_to_assert_reset))
-	`else
 		if(reset)
-	`endif
 		begin
 			i_user_data_address <= 0;
 			test_data <= STARTING_VALUE_OF_TEST_DATA;
@@ -637,7 +629,7 @@ ddr3_control
 
 	`ifdef TESTBENCH
 		.ck_90(ck_90),
-		.ck_180(ck_180),
+		.ck_270(ck_270),
 		
 		.dq_iobuf_enable(dq_iobuf_enable),
 		.udqs_iobuf_enable(udqs_iobuf_enable),
@@ -648,7 +640,7 @@ ddr3_control
 	
 	`ifdef HIGH_SPEED
 		.clk_serdes(clk_serdes),  // 87.5MHz
-		.ck_270(ck_270),  // 350MHz with 270 phase shift
+		.ck_180(ck_180),  // 350MHz with 180 phase shift
 		.locked_previous(locked_previous),
 		.need_to_assert_reset(need_to_assert_reset),
 	`endif
