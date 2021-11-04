@@ -2590,7 +2590,7 @@ begin
 			begin
 				ck_en <= 0;
 			
-				if(wait_count > TIME_INITIAL_RESET_ACTIVE-1)
+				if(wait_count[$clog2(TIME_INITIAL_RESET_ACTIVE):0] > TIME_INITIAL_RESET_ACTIVE-1)
 				begin
 					reset_n <= 1;  // reset inactive
 					main_state <= STATE_RESET_FINISH;
@@ -2727,7 +2727,7 @@ begin
 					begin
 						MPR_Read_had_finished <= 1;
 					
-						if(wait_count > TIME_TMOD-1) begin
+						if(wait_count[$clog2(TIME_TMOD):0] > TIME_TMOD-1) begin
 							main_state <= STATE_IDLE;
 							
 							// NOP command in next 'ck' cycle, transition to IDLE command
@@ -2747,7 +2747,7 @@ begin
 					// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3599352/#msg3599352
 					else begin
 					
-						if(wait_count > TIME_TMRD-1) begin
+						if(wait_count[$clog2(TIME_TMRD):0] > TIME_TMRD-1) begin
 							// prepare necessary parameters for next MRS				
 							main_state <= STATE_INIT_MRS_1;
 							bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
