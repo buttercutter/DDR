@@ -41,7 +41,7 @@
 
 `ifndef XILINX
 /* verilator lint_off VARHIDDEN */
-localparam NUM_OF_DDR_STATES = 21;
+localparam NUM_OF_DDR_STATES = 22;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE = 500000ns/CK_PERIOD = 500000ns/350MHz = 175000;
@@ -348,6 +348,7 @@ localparam STATE_INIT_MRS_3 = 17;
 localparam STATE_INIT_MRS_1 = 18;
 localparam STATE_INIT_MRS_0 = 19;
 localparam STATE_WAIT_AFTER_MPR = 20;
+localparam STATE_MRS3_TO_MRS1 = 21;
 
 
 // just to avoid https://github.com/YosysHQ/yosys/issues/2718
@@ -2708,6 +2709,48 @@ begin
 				end		
 			end
 
+			STATE_MRS3_TO_MRS1 :
+			begin				
+				// no more NOP command in next 'ck' cycle, transition to MR1 command
+				cs_n <= 0;
+				ras_n <= 0;
+				cas_n <= 0;
+				we_n <= 0;				
+								
+				if(wait_count[$clog2(TIME_TMRD):0] > TIME_TMRD-1) begin
+					// prepare necessary parameters for next MRS				
+					main_state <= STATE_INIT_MRS_1;
+					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+					
+					wait_count <= 0;
+					
+
+					`ifdef USE_x16
+					
+						`ifdef RAM_SIZE_1GB
+							address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_2GB
+							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_4GB
+							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						`endif
+					`else
+						
+						`ifdef RAM_SIZE_1GB
+							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_2GB
+							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+							
+						`elsif RAM_SIZE_4GB
+							address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						`endif
+					`endif		
+				end
+			end
+
 			STATE_WAIT_AFTER_MPR :
 			begin
 				// NOP command in next 'ck' cycle, transition to IDLE command
@@ -2751,44 +2794,7 @@ begin
 					// See Figure 48 on the DDR RAM initialization sequence
 					// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3599352/#msg3599352
 					else begin
-					
-						if(wait_count[$clog2(TIME_TMRD):0] > TIME_TMRD-1) begin
-							// prepare necessary parameters for next MRS				
-							main_state <= STATE_INIT_MRS_1;
-							bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
-
-							`ifdef USE_x16
-							
-								`ifdef RAM_SIZE_1GB
-									address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_2GB
-									address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_4GB
-									address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								`endif
-							`else
-								
-								`ifdef RAM_SIZE_1GB
-									address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_2GB
-									address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-									
-								`elsif RAM_SIZE_4GB
-									address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
-								`endif
-							`endif
-							
-							wait_count <= 0;
-							
-							// no more NOP command in next 'ck' cycle, transition to MR1 command
-							cs_n <= 0;
-							ras_n <= 0;
-							cas_n <= 0;
-							we_n <= 0;						
-						end					
+						main_state <= STATE_MRS3_TO_MRS1;			
 					end
 				end
 				
