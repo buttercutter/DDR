@@ -1986,7 +1986,7 @@ endgenerate
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C1"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
@@ -1995,8 +1995,8 @@ endgenerate
 			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -2050,7 +2050,7 @@ endgenerate
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C1"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
