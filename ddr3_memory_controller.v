@@ -41,7 +41,7 @@
 
 `ifndef XILINX
 /* verilator lint_off VARHIDDEN */
-localparam NUM_OF_DDR_STATES = 20;
+localparam NUM_OF_DDR_STATES = 21;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE = 500000ns/CK_PERIOD = 500000ns/350MHz = 175000;
@@ -347,6 +347,7 @@ localparam STATE_INIT_MRS_2 = 16;
 localparam STATE_INIT_MRS_3 = 17;
 localparam STATE_INIT_MRS_1 = 18;
 localparam STATE_INIT_MRS_0 = 19;
+localparam STATE_WAIT_AFTER_MPR = 20;
 
 
 // just to avoid https://github.com/YosysHQ/yosys/issues/2718
@@ -2707,6 +2708,22 @@ begin
 				end		
 			end
 
+			STATE_WAIT_AFTER_MPR :
+			begin
+				// NOP command in next 'ck' cycle, transition to IDLE command
+				cs_n <= 0;
+				ras_n <= 1;
+				cas_n <= 1;
+				we_n <= 1;
+			
+				if(wait_count[$clog2(TIME_TMOD):0] > TIME_TMOD-1) begin
+					main_state <= STATE_IDLE;							
+					wait_count <= 0;
+					
+					MPR_Read_had_finished <= 0;
+				end
+			end
+
 			STATE_INIT_MRS_3 :
 			begin
 				ck_en <= 1;
@@ -2727,19 +2744,7 @@ begin
 					begin
 						MPR_Read_had_finished <= 1;
 					
-						if(wait_count[$clog2(TIME_TMOD):0] > TIME_TMOD-1) begin
-							main_state <= STATE_IDLE;
-							
-							// NOP command in next 'ck' cycle, transition to IDLE command
-							cs_n <= 0;
-							ras_n <= 1;
-							cas_n <= 1;
-							we_n <= 1;								
-							
-							wait_count <= 0;
-							
-							MPR_Read_had_finished <= 0;
-						end								
+						main_state <= STATE_WAIT_AFTER_MPR;						
 					end
 					
 					// must fully initialize the DDR3 chip, right past the ZQCL before we can read the MPR.
