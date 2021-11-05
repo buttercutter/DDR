@@ -39,15 +39,15 @@
 	`endif
 `endif
 
-`ifndef XILINX
+//`ifndef XILINX
 /* verilator lint_off VARHIDDEN */
-localparam NUM_OF_DDR_STATES = 22;
+localparam NUM_OF_DDR_STATES = 23;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE = 500000ns/CK_PERIOD = 500000ns/350MHz = 175000;
 localparam MAX_TIMING = 175000;  // just for initial development stage, will refine the value later
 /* verilator lint_on VARHIDDEN */
-`endif
+//`endif
 
 // write data to RAM and then read them back from RAM
 `define LOOPBACK 1
@@ -317,6 +317,8 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 	reg [4:0] previous_main_state;
 `endif
 
+// for PLL lock issue
+reg [$clog2(NUM_OF_DDR_STATES)-1:0] state_to_be_restored;
 
 `ifndef USE_ILA
 	`ifndef XILINX
@@ -349,6 +351,7 @@ localparam STATE_INIT_MRS_1 = 18;
 localparam STATE_INIT_MRS_0 = 19;
 localparam STATE_WAIT_AFTER_MPR = 20;
 localparam STATE_MRS3_TO_MRS1 = 21;
+localparam STATE_PLL_LOCK_ISSUE = 22;
 
 
 // just to avoid https://github.com/YosysHQ/yosys/issues/2718
@@ -2483,6 +2486,13 @@ assign need_to_assert_reset =
 
 `endif
 
+
+// to solve STA setup timing violation due to 'wait_count'
+localparam COUNTER_INCREMENT_VALUE = 512;
+reg [$clog2(COUNTER_INCREMENT_VALUE):0] counter_state;
+reg [$clog2(MAX_TIMING/COUNTER_INCREMENT_VALUE):0] num_of_increment_done;
+
+
 `ifdef HIGH_SPEED
 always @(posedge ck_180)
 `else
@@ -2510,6 +2520,8 @@ begin
 		address <= 0;
 		bank_address <= 0;
 		wait_count <= 0;
+		counter_state <= 0;
+		num_of_increment_done <= 0;
 		refresh_Queue <= 0;
 		postponed_refresh_timing_count <= 0;
 		refresh_timing_count <= 0;
@@ -2531,11 +2543,7 @@ begin
 	end
 
 `ifdef HIGH_SPEED
-	`ifdef XILINX
-		else if(locked)
-	`else
-		else
-	`endif
+	else
 `else
 	// DDR signals are 90 degrees phase-shifted in advance
 	// with reference to outgoing 'clk' (clk_slow) signal to DDR RAM
@@ -2573,12 +2581,20 @@ begin
 		else refresh_timing_count <= refresh_timing_count + 1;
 
 
+		if(~locked &&  // PLL outputs are not locked to desired frequencies
+		   (main_state != STATE_PLL_LOCK_ISSUE)  // just encountered PLL issue
+		  )
+		begin
+			state_to_be_restored <= main_state;  // for restoring state before entering PLL debug state		
+			main_state <= STATE_PLL_LOCK_ISSUE;  // PLL debug state
+		end
+	
+
 		// defaults the command signals high & only pulse low for the 1 clock when need to issue a command.
 		cs_n <= 1;			
 		ras_n <= 1;
 		cas_n <= 1;
 		we_n <= 1;
-		
 						
 		// https://i.imgur.com/VUdYasX.png
 		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
@@ -2592,16 +2608,33 @@ begin
 			begin
 				ck_en <= 0;
 			
-				if(wait_count[$clog2(TIME_INITIAL_RESET_ACTIVE):0] > TIME_INITIAL_RESET_ACTIVE-1)
+				//if(wait_count[$clog2(TIME_INITIAL_RESET_ACTIVE):0] > TIME_INITIAL_RESET_ACTIVE-1)
+				if(num_of_increment_done > (TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE))
 				begin
 					reset_n <= 1;  // reset inactive
 					main_state <= STATE_RESET_FINISH;
 					wait_count <= 0;
+					counter_state <= 0;
+					num_of_increment_done <= 0;
 				end
 				
 				else begin
 					reset_n <= 0;  // reset active
 					main_state <= STATE_RESET;
+				end
+				
+				// The following code is trying to solve the setup timing violation brought by
+				// large comparison hardware for signal with long bitwidth such as 'wait_count'
+				// In other words, the following code is doing increment for the 'wait_count' signal
+				// in multiple consecutive stages
+				if(counter_state == COUNTER_INCREMENT_VALUE)
+				begin
+					counter_state <= 1;
+					num_of_increment_done <= num_of_increment_done + 1;
+				end
+				
+				else begin
+					counter_state <= counter_state + 1;
 				end
 			end
 			
@@ -3534,6 +3567,12 @@ begin
 			STATE_WRITE_LEVELLING :
 			begin
 			
+			end
+
+			STATE_PLL_LOCK_ISSUE :
+			begin
+				if(locked)  // PLL outputs are now properly locked to their desired frequencies
+					main_state <= state_to_be_restored;  // continues at where the FSM is previously paused
 			end
 			
 			default : main_state <= STATE_IDLE;

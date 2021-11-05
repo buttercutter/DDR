@@ -168,7 +168,7 @@ module test_ddr3_memory_controller
 
 
 `ifndef XILINX
-localparam NUM_OF_DDR_STATES = 22;
+localparam NUM_OF_DDR_STATES = 23;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE = 152068;
