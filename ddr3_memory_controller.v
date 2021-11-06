@@ -2488,7 +2488,7 @@ assign need_to_assert_reset =
 
 
 // to solve STA setup timing violation due to 'wait_count'
-localparam COUNTER_INCREMENT_VALUE = 512;
+localparam [FIXED_POINT_BITWIDTH-1:0] COUNTER_INCREMENT_VALUE = 512;
 reg [$clog2(COUNTER_INCREMENT_VALUE):0] counter_state;
 reg [$clog2(MAX_TIMING/COUNTER_INCREMENT_VALUE):0] num_of_increment_done;
 
@@ -2609,7 +2609,8 @@ begin
 				ck_en <= 0;
 			
 				//if(wait_count[$clog2(TIME_INITIAL_RESET_ACTIVE):0] > TIME_INITIAL_RESET_ACTIVE-1)
-				if(num_of_increment_done > (TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE))
+				if(num_of_increment_done[$clog2(TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE):0] > 
+					(TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE))
 				begin
 					reset_n <= 1;  // reset inactive
 					main_state <= STATE_RESET_FINISH;
@@ -2649,14 +2650,20 @@ begin
 				
 				odt <= 0;  // tIs = 195ps (170ps+25ps) , this does not affect anything at low speed testing mode
 				
-				if(wait_count > TIME_INITIAL_CK_INACTIVE-1)
+				//if(wait_count > TIME_INITIAL_CK_INACTIVE-1)
+				if(num_of_increment_done[$clog2(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE):0] > 
+					(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE))
 				begin
 					ck_en <= 1;  // CK active
 					main_state <= STATE_INIT_CLOCK_ENABLE;
 					wait_count <= 0;
+					counter_state <= 0;
+					num_of_increment_done <= 0;					
 				end
 
-				else if(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1)  // setup timing of 'ck_en' with respect to 'ck'
+				//else if(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1)  // setup timing of 'ck_en' with respect to 'ck'
+				else if(num_of_increment_done[$clog2(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE):0] > 
+						(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE)-1)
 				begin
 					ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
 					main_state <= STATE_RESET_FINISH;
@@ -2674,7 +2681,21 @@ begin
 					else ck_en <= 0;  // CK inactive
 			
 					main_state <= STATE_RESET_FINISH;
-				end			
+				end		
+				
+				// The following code is trying to solve the setup timing violation brought by
+				// large comparison hardware for signal with long bitwidth such as 'wait_count'
+				// In other words, the following code is doing increment for the 'wait_count' signal
+				// in multiple consecutive stages
+				if(counter_state == COUNTER_INCREMENT_VALUE)
+				begin
+					counter_state <= 1;
+					num_of_increment_done <= num_of_increment_done + 1;
+				end
+				
+				else begin
+					counter_state <= counter_state + 1;
+				end					
 			end
 			
 			STATE_INIT_CLOCK_ENABLE :
