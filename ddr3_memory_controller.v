@@ -47,9 +47,9 @@ localparam NUM_OF_DDR_STATES = 23;
 // TIME_INITIAL_CK_INACTIVE = 500000ns/CK_PERIOD = 500000ns/350MHz = 175000;
 localparam MAX_TIMING = 175000;  // just for initial development stage, will refine the value later
 
-// TIME_TREFI = 7800ns/CK_PERIOD = 7800ns/350MHz = 2730
+// TIME_TZQINIT = 512
 // See also 'COUNTER_INCREMENT_VALUE' on why some of the large timing variables are not used in this case
-localparam MAX_WAIT_COUNT = 2730;
+localparam MAX_WAIT_COUNT = 512;
 /* verilator lint_on VARHIDDEN */
 //`endif
 
@@ -1431,7 +1431,7 @@ reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoi
 // to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
 reg can_proceed_to_read_data_state;
 always @(posedge ck_180)
-	can_proceed_to_read_data_state <= (wait_count > TIME_RL-TIME_TRPRE);
+	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE);
 
 
 // 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
