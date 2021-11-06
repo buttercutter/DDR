@@ -2658,21 +2658,13 @@ begin
 					main_state <= STATE_INIT_CLOCK_ENABLE;
 					wait_count <= 0;
 					counter_state <= 0;
-					num_of_increment_done <= 0;					
-				end
+					num_of_increment_done <= 0;		
 
-				//else if(wait_count > TIME_INITIAL_CK_INACTIVE-TIME_TIS-1)  // setup timing of 'ck_en' with respect to 'ck'
-				else if(num_of_increment_done[$clog2(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE):0] > 
-						(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE)-1)
-				begin
-					ck_en <= 1;  // CK active at tIs prior to TIME_INITIAL_CK_INACTIVE
-					main_state <= STATE_RESET_FINISH;
-					
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 					cs_n <= 0;
 					ras_n <= 1;
 					cas_n <= 1;
-					we_n <= 1;				
+					we_n <= 1;										
 				end
 						
 				else begin
@@ -2765,20 +2757,19 @@ begin
 
 			STATE_MRS3_TO_MRS1 :
 			begin				
-				// no more NOP command in next 'ck' cycle, transition to MR1 command
-				cs_n <= 0;
-				ras_n <= 0;
-				cas_n <= 0;
-				we_n <= 0;				
-								
-				if(wait_count[$clog2(TIME_TMRD):0] > TIME_TMRD-1) begin
+				if(wait_count > TIME_TMRD-1) begin
 					// prepare necessary parameters for next MRS				
 					main_state <= STATE_INIT_MRS_1;
 					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
 					
 					wait_count <= 0;
 					
-
+                    // no more NOP command in next 'ck' cycle, transition to MR1 command
+                    cs_n <= 0;
+                    ras_n <= 0;
+                    cas_n <= 0;
+                    we_n <= 0;
+				
 					`ifdef USE_x16
 					
 						`ifdef RAM_SIZE_1GB
