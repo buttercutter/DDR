@@ -46,6 +46,10 @@ localparam NUM_OF_DDR_STATES = 23;
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE = 500000ns/CK_PERIOD = 500000ns/350MHz = 175000;
 localparam MAX_TIMING = 175000;  // just for initial development stage, will refine the value later
+
+// TIME_TREFI = 7800ns/CK_PERIOD = 7800ns/350MHz = 2730
+// See also 'COUNTER_INCREMENT_VALUE' on why some of the large timing variables are not used in this case
+localparam MAX_WAIT_COUNT = 2730;
 /* verilator lint_on VARHIDDEN */
 //`endif
 
@@ -86,7 +90,7 @@ module ddr3_memory_controller
 	`endif
 	
 	`ifdef HIGH_SPEED
-		parameter CK_PERIOD = 3,  // 350MHz from PLL, 1/350MHz = 2.857143ns, round up to the nearest integer
+		parameter CK_PERIOD = 2.857143,  // 350MHz from PLL, 1/350MHz = 2.857143ns
 	`else
 		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`endif
@@ -221,15 +225,9 @@ module ddr3_memory_controller
 	output reg write_is_enabled,
 	output reg read_is_enabled,
 	
-	`ifndef XILINX
-	output reg [$clog2(MAX_TIMING):0] wait_count,
+	output reg [$clog2(MAX_WAIT_COUNT):0] wait_count,
 	output reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue,
 	output reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter,
-	`else
-	output reg [18:0] wait_count,
-	output reg [3:0] refresh_Queue,
-	output reg [1:0] dqs_counter,
-	`endif
 	
 	output dqs_rising_edge,
 	output dqs_falling_edge,
@@ -321,12 +319,7 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] state_to_be_restored;
 
 `ifndef USE_ILA
-	`ifndef XILINX
-	reg [$clog2(MAX_TIMING):0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
-	`else
-	// $clog2(17500) = 18
-	reg [18:0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
-	`endif
+	reg [$clog2(MAX_WAIT_COUNT):0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
 `endif
 
 
@@ -379,72 +372,33 @@ localparam STATE_PLL_LOCK_ISSUE = 22;
 	localparam TIME_TDLLK = 2;
 
 `else
+	
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CK_PERIOD)+1;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CK_PERIOD)+1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
-	`ifndef XILINX
-		`ifndef HIGH_SPEED
-		
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = $ceil(200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = $ceil(500000/CLK_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+	`ifdef RAM_SIZE_1GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CK_PERIOD)+1;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 
-			`ifdef RAM_SIZE_1GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+110)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+	`elsif RAM_SIZE_2GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CK_PERIOD)+1;
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
 
-			`elsif RAM_SIZE_2GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(160/CLK_PERIOD);
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+160)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
-
-			`elsif RAM_SIZE_4GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = $ceil(260/CLK_PERIOD);
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = $ceil((10+260)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
-			`endif
-
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = $ceil(7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
-			
-		`else
-		
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CK_PERIOD)+1;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CK_PERIOD)+1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
-
-			`ifdef RAM_SIZE_1GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CK_PERIOD)+1;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
-
-			`elsif RAM_SIZE_2GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CK_PERIOD)+1;
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
-
-			`elsif RAM_SIZE_4GB
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CK_PERIOD)+1;
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
-			`endif
-
-			localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CK_PERIOD)+1;  // 7.8μs = 7800ns, Maximum average periodic refresh
-			
-		`endif
-		
-	`else
-			
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = 70000;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = 175000;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
-
-		`ifdef RAM_SIZE_1GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 39;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 42;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
-
-		`elsif RAM_SIZE_2GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 56;
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 60;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
-
-		`elsif RAM_SIZE_4GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = 91;
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = 95;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
-		`endif
-
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = 2730;  // 7.8μs = 7800ns, Maximum average periodic refresh
-
+	`elsif RAM_SIZE_4GB
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CK_PERIOD)+1;
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
 	`endif
 
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CK_PERIOD)+1;  // 7.8μs = 7800ns, Maximum average periodic refresh
+	
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CK_PERIOD)+1;  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CK_PERIOD)+1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CK_PERIOD)+1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CK_PERIOD)+1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CK_PERIOD)+1;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CK_PERIOD)+1;  // Minimum 195ps, setup time
+		
+		
 	localparam TIME_TDLLK = 512;  // tDLLK = 512 clock cycles, DLL locking time
 	localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
 	localparam TIME_RL = 5;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
@@ -455,37 +409,6 @@ localparam STATE_PLL_LOCK_ISSUE = 22;
 
 `endif
 
-`ifndef XILINX
-	`ifndef HIGH_SPEED
-	
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = $rtoi($ceil(35/CLK_PERIOD));  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = $rtoi($ceil(13.91/CLK_PERIOD));  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = $ceil(15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = $ceil(50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = $rtoi($ceil(0.195/CLK_PERIOD));  // Minimum 195ps, setup time
-		
-	`else
-	
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CK_PERIOD)+1;  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CK_PERIOD)+1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CK_PERIOD)+1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CK_PERIOD)+1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CK_PERIOD)+1;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CK_PERIOD)+1;  // Minimum 195ps, setup time
-		
-	`endif
-	
-`else
-
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = 13;  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = 5;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = 5;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = 6;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = 18;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = 1;  // Minimum 195ps, setup time
-	
-`endif
 
 localparam TIME_TDAL = TIME_TWR + TIME_TRP;  // Auto precharge write recovery + precharge time
 localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
@@ -2581,11 +2504,8 @@ begin
 		else refresh_timing_count <= refresh_timing_count + 1;
 
 
-		if(~locked &&  // PLL outputs are not locked to desired frequencies
-		   (main_state != STATE_PLL_LOCK_ISSUE)  // just encountered PLL issue
-		  )
-		begin
-			state_to_be_restored <= main_state;  // for restoring state before entering PLL debug state		
+		if(~locked)  // PLL outputs are not locked to desired frequencies
+		begin	
 			main_state <= STATE_PLL_LOCK_ISSUE;  // PLL debug state
 		end
 	
@@ -2609,7 +2529,7 @@ begin
 				ck_en <= 0;
 			
 				//if(wait_count[$clog2(TIME_INITIAL_RESET_ACTIVE):0] > TIME_INITIAL_RESET_ACTIVE-1)
-				if(num_of_increment_done[$clog2(TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE):0] > 
+				if(num_of_increment_done[$clog2(TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE):0] >
 					(TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE))
 				begin
 					reset_n <= 1;  // reset inactive
@@ -3583,7 +3503,10 @@ begin
 
 			STATE_PLL_LOCK_ISSUE :
 			begin
-				if(locked)  // PLL outputs are now properly locked to their desired frequencies
+				if(previous_main_state != STATE_PLL_LOCK_ISSUE)  // just encountered PLL issue
+					state_to_be_restored <= previous_main_state;  // for restoring state before entering PLL debug state					
+			
+				else if(locked)  // PLL outputs are now properly locked to their desired frequencies
 					main_state <= state_to_be_restored;  // continues at where the FSM is previously paused
 			end
 			

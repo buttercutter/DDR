@@ -78,7 +78,7 @@ module test_ddr3_memory_controller
 	`endif
 
 	`ifdef HIGH_SPEED
-		parameter CK_PERIOD = 3,  // 350MHz from PLL, 1/350MHz = 2.857143ns, round up to the nearest integer
+		parameter CK_PERIOD = 2.857143,  // 350MHz from PLL, 1/350MHz = 2.857143ns
 	`else
 		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`endif
