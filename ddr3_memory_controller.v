@@ -2936,7 +2936,11 @@ begin
 				if(wait_count > TIME_TZQINIT-1)
 				begin
 					MPR_ENABLE <= MPR_EN;  // turns on MPR System Read Calibration
-					main_state <= STATE_IDLE;
+					
+					if(MPR_EN) main_state <= STATE_PRECHARGE;
+						
+					else main_state <= STATE_IDLE;
+					
 					wait_count <= 0;
 				end
 				
@@ -2968,9 +2972,7 @@ begin
 				end	
 
 
-				if ((MPR_ENABLE) ||
-		            (extra_read_or_write_cycles_had_passed & high_Priority_Refresh_Request) ||
-		        	((user_desired_extra_read_or_write_cycles == 0) & it_is_time_to_do_refresh_now))
+				if (high_Priority_Refresh_Request)
 		        begin
 					// need to do PRECHARGE before REFRESH, see tRP
 
@@ -3014,8 +3016,6 @@ begin
 		            
 		            wait_count <= 0;
 				end
-				
-				else main_state <= STATE_IDLE;
 				
 			end
 			
