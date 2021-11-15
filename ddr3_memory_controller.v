@@ -43,10 +43,6 @@
 /* verilator lint_off VARHIDDEN */
 localparam NUM_OF_DDR_STATES = 23;
 
-// https://www.systemverilog.io/understanding-ddr4-timing-parameters
-// TIME_INITIAL_CK_INACTIVE = 500000ns/CK_PERIOD = 500000ns/350MHz = 175000;
-localparam MAX_TIMING = 175000;  // just for initial development stage, will refine the value later
-
 // TIME_TZQINIT = 512
 // See also 'COUNTER_INCREMENT_VALUE' on why some of the large timing variables are not used in this case
 localparam MAX_WAIT_COUNT = 512;
@@ -155,11 +151,7 @@ module ddr3_memory_controller
 		output [(DQ_BITWIDTH << 1)-1:0] data_from_ram,  // the requested data being read from DDR RAM read operation
 	`endif
 	
-	`ifndef XILINX
-		input [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
-	`else
-		input [3:0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
-	`endif
+	input [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles,  // for the purpose of postponing refresh commands
 	
 	`ifndef HIGH_SPEED
 		output clk_slow_posedge,  // for dq phase shifting purpose
@@ -168,8 +160,8 @@ module ddr3_memory_controller
 	
 	
 	// these are to be fed into external DDR3 memory
-	output reg [ADDRESS_BITWIDTH-1:0] address,
-	output reg [BANK_ADDRESS_BITWIDTH-1:0] bank_address,
+	output [ADDRESS_BITWIDTH-1:0] address,
+	output [BANK_ADDRESS_BITWIDTH-1:0] bank_address,
 	
 	`ifdef HIGH_SPEED
 		output ck_obuf,  // CK
@@ -197,21 +189,17 @@ module ddr3_memory_controller
 		output need_to_assert_reset,
 	`endif
 			
-	output reg ck_en, // CKE
-	output reg cs_n, // chip select signal
-	output reg odt, // on-die termination
-	output reg ras_n, // RAS#
-	output reg cas_n, // CAS#
-	output reg we_n, // WE#
-	output reg reset_n,
+	output ck_en, // CKE
+	output cs_n, // chip select signal
+	output odt, // on-die termination
+	output ras_n, // RAS#
+	output cas_n, // CAS#
+	output we_n, // WE#
+	output reset_n,
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
 
-`ifndef XILINX
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
-`else
-	output reg [4:0] main_state,
-`endif
 	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
 `ifdef USE_ILA
@@ -309,11 +297,8 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 */
 
 
-`ifndef XILINX
-	reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
-`else
-	reg [4:0] previous_main_state;
-`endif
+reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
+reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state_ck_180;
 
 // for PLL lock issue
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] state_to_be_restored;
@@ -347,6 +332,10 @@ localparam STATE_MRS3_TO_MRS1 = 21;
 localparam STATE_PLL_LOCK_ISSUE = 22;
 
 
+// https://www.systemverilog.io/understanding-ddr4-timing-parameters
+// TIME_INITIAL_CK_INACTIVE
+localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development stage, will refine the value later
+
 // just to avoid https://github.com/YosysHQ/yosys/issues/2718
 `ifndef XILINX
 	localparam FIXED_POINT_BITWIDTH = $clog2(MAX_TIMING);
@@ -373,39 +362,39 @@ localparam STATE_PLL_LOCK_ISSUE = 22;
 
 `else
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CK_PERIOD)+1;  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CK_PERIOD)+1;  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
 	`ifdef RAM_SIZE_1GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CK_PERIOD)+1;  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 
 	`elsif RAM_SIZE_2GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CK_PERIOD)+1;
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CLK_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
 
 	`elsif RAM_SIZE_4GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CK_PERIOD)+1;
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CK_PERIOD)+1;  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CLK_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
 	`endif
 
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CK_PERIOD)+1;  // 7.8μs = 7800ns, Maximum average periodic refresh
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CK_PERIOD)+1;  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CK_PERIOD)+1;  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CK_PERIOD)+1;  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CK_PERIOD)+1;  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CK_PERIOD)+1;  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CK_PERIOD)+1;  // Minimum 195ps, setup time
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CLK_PERIOD);  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CLK_PERIOD);  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CLK_PERIOD);  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CLK_PERIOD);  // Minimum 195ps, setup time
 		
 		
-	localparam TIME_TDLLK = 512;  // tDLLK = 512 clock cycles, DLL locking time
-	localparam TIME_TZQINIT = 512;  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
-	localparam TIME_RL = 5;  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
-	localparam TIME_WL = 5;  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
-	localparam TIME_TBURST = 4;  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
-	localparam TIME_TMRD = 4;  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
-	localparam TIME_TMOD = 12;  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TDLLK = (512*CK_PERIOD/CLK_PERIOD);  // tDLLK = 512 clock cycles, DLL locking time
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TZQINIT = (512*CK_PERIOD/CLK_PERIOD);  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_RL = (5*CK_PERIOD/CLK_PERIOD);  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_WL = (5*CK_PERIOD/CLK_PERIOD);  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TBURST = (4*CK_PERIOD/CLK_PERIOD);  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMRD = (4*CK_PERIOD/CLK_PERIOD);  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMOD = (12*CK_PERIOD/CLK_PERIOD);  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
 
 `endif
 
@@ -417,6 +406,7 @@ localparam TIME_TWPRE = 1;  // this is for write pre-amble. It is the time betwe
 localparam TIME_TWPST = 1;  // this is for write post-amble. It is the time from when the last valid data strobe to when the strobe goes to HIGH, non-drive level.
 localparam TIME_TMPRR = 1;  // this is for MPR System Read Calibration.  It is the time between MULTIPURPOSE REGISTER READ burst end until mode register set for multipurpose register exit
 
+localparam TIME_WRITE_COMMAND_TO_DQS_VALID = TIME_WL-TIME_TWPRE;  // time between write command and valid DQS
 
 localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
 localparam ADDRESS_FOR_MODE_REGISTER_1 = 1;
@@ -512,11 +502,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	reg clk_slow;
 	localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 
-	`ifndef XILINX
 	reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] counter;
-	`else
-	reg [1:0] counter;
-	`endif
 
 	reg counter_reset;
 
@@ -596,7 +582,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.clk_pll(clk_pll),  // OUT 50MHz, 0 phase shift, for solving CDC issues
+			.clk_pll(clk_pll),  // OUT 50MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz
@@ -853,7 +839,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.inclk0(clk),  // IN 50MHz
 			
 			// Clock out ports
-			//.clk_pll(clk_pll),  // OUT 50MHz, 0 phase shift, for solving CDC issues
+			//.clk_pll(clk_pll),  // OUT 50MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz
@@ -934,11 +920,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	// with reference to outgoing 'ck' DDR signal
 	// the reason is to sample at the middle of incoming `dq` signal
 	`ifndef USE_ILA
-		`ifndef XILINX
-			reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
-		`else
-			reg [1:0] dqs_counter;
-		`endif
+		reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
 	`endif
 
 	always @(posedge clk)
@@ -1431,7 +1413,7 @@ reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoi
 // to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
 reg can_proceed_to_read_data_state;
 always @(posedge ck_180)
-	can_proceed_to_read_data_state <= (wait_count[$clog2(TIME_RL-TIME_TRPRE):0] > TIME_RL-TIME_TRPRE);
+	can_proceed_to_read_data_state <= (wait_count > TIME_RL-TIME_TRPRE);
 
 
 // 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
@@ -1455,7 +1437,7 @@ begin
 	end
 end
 
-wire data_write_is_ongoing = ((wait_count > TIME_WL-TIME_TWPRE) && 
+wire data_write_is_ongoing = ((wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID) && 
 		    				  ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP))) || 
 							  (main_state == STATE_WRITE_DATA);
 
@@ -2271,11 +2253,7 @@ endgenerate
 
 
 `ifndef USE_ILA
-	`ifndef XILINX
 	reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
-	`else
-	reg [3:0] refresh_Queue;
-	`endif
 `endif
 
 
@@ -2300,13 +2278,8 @@ endgenerate
 `endif
 
 
-`ifndef XILINX
 reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED*TIME_TREFI)-1:0] postponed_refresh_timing_count;
 reg [$clog2(TIME_TREFI)-1:0] refresh_timing_count;
-`else
-reg [11:0] postponed_refresh_timing_count;
-reg [8:0] refresh_timing_count;
-`endif
 
 wire extra_read_or_write_cycles_had_passed  // to allow burst read or write operations to proceed first
 		= (postponed_refresh_timing_count == 
@@ -2416,32 +2389,137 @@ reg [$clog2(COUNTER_INCREMENT_VALUE):0] counter_state;
 reg [$clog2(MAX_TIMING/COUNTER_INCREMENT_VALUE):0] num_of_increment_done;
 
 
-`ifdef HIGH_SPEED
+// See https://www.eevblog.com/forum/fpga/brianhg_ddr3_controller-open-source-ddr3-controller/msg3805064/#msg3805064
+// for an explanation of using half-rate on the commands generation, 
+// but still achieving full-rate DRAM commands transaction with the usage of 
+// either (an OSERDES with a serialization factor of 2) or (2 words ck/2 in, ck out FIFO),
+// and command enqueue/dequeue signal which take into account of the number of ck cycles had passed.
+// This is to get around the STA setup timing violation issues related to commands generation block.
+
+// to generate a signal that only enqueues the 350MHz FIFO with 50MHz input ONCE
+// 350MHz (ck_180) and 50MHz (clk_pll) have the same 180 phase shift and are generated from the same PLL
+// hence eliminates the need for asynchronous FIFO and its complicated CDC issue
+
+reg enqueue_dram_command_bits;
+reg previous_enqueue_dram_command_bits;
+
+always @(posedge ck_180) 
+	previous_enqueue_dram_command_bits <= enqueue_dram_command_bits;
+
+
+wire fifo_command_is_empty;
+
+// prepends the DDR command signals with "r_" so as to 
+// differentiate between the stored FIFO signals and actual signals sent to DRAM
+reg r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt;
+reg [ADDRESS_BITWIDTH-1:0] r_address;
+reg [BANK_ADDRESS_BITWIDTH-1:0] r_bank_address;
+
+localparam NUM_OF_DRAM_COMMAND_BITS = 7 + ADDRESS_BITWIDTH + BANK_ADDRESS_BITWIDTH;
+
+wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits = 
+					{r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt, r_address, r_bank_address};
+
+// {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address}
+reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_to_be_sent_to_dram; 
+					
+wire [NUM_OF_DRAM_COMMAND_BITS-1:0] fifo_command_dequeue_value;					
+
+wire [NUM_OF_DRAM_COMMAND_BITS-1:0] NOP_DRAM_COMMAND_BITS = 
+   {r_ck_en, 1'b0, 1'b1, 1'b1, 1'b1, r_reset_n, r_odt, {ADDRESS_BITWIDTH{1'b0}}, {BANK_ADDRESS_BITWIDTH{1'b0}}};
+
+
+reg issue_actual_rdap_command_now, previous_issue_actual_rdap_command_now;
+
 always @(posedge ck_180)
-`else
-always @(posedge clk)
-`endif
+	issue_actual_rdap_command_now <= ((main_state == STATE_READ_AP) && 
+ 		   	 (wait_count == (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+ 		   	  NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)));
+ 		   	  
+always @(posedge ck_180)
+	previous_issue_actual_rdap_command_now <= issue_actual_rdap_command_now;
+
+
+always @(*)					
+begin
+	if((previous_main_state_ck_180 == main_state) && 
+	   (issue_actual_rdap_command_now == previous_issue_actual_rdap_command_now))
+	begin
+		dram_command_bits_to_be_sent_to_dram <= NOP_DRAM_COMMAND_BITS;  // sends NOP command to DRAM
+			
+		//else dram_command_bits_to_be_sent_to_dram <= fifo_command_dequeue_value;  // keep the DRAM command unchanged 
+	end
+				
+	else dram_command_bits_to_be_sent_to_dram <= dram_command_bits;  // new DRAM command
+end
+
+assign {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address} = 								
+									dram_command_bits_to_be_sent_to_dram;
+									
+									
+// the purpose of using FIFO instead of just a register is 
+// to allow stuffing multiple user request commands where permitted in between command execution inside DRAM
+// One example would be where a new bank may be activated while a previous write was just sent 
+// and a write burst is taking place.
+sync_fifo
+#(
+	.WIDTH(NUM_OF_DRAM_COMMAND_BITS),
+	.SIZE(4),
+	.ALMOST_FULL_THRESHOLD(1)
+	//.ALMOST_EMPTY_THRESHOLD(1)
+)
+fifo_command
+(
+    .clk(ck_180),  // 350MHz
+    .reset(reset),
+    .full(),
+    .almost_full(),
+    
+    // such that 50MHz signal is only sampled once, assuming there is no immediate consecutive DRAM commands
+    .enqueue_en(~previous_enqueue_dram_command_bits & enqueue_dram_command_bits),
+    
+    .enqueue_value(dram_command_bits),
+    .empty(fifo_command_is_empty),
+    //.almost_empty(),
+    
+    // it is always dequeued to satisfy DRAM manufacturer timing, 
+    // but need to change for tRRD (ACTIVATE command when write burst is still ongoing) later
+    .dequeue_en(1'b1),
+    .dequeue_value(fifo_command_dequeue_value)
+);
+
+always @(posedge ck_180)
+begin
+	if(reset) previous_main_state_ck_180 <= STATE_RESET;
+	
+	else previous_main_state_ck_180 <= main_state;
+end
+
+always @(posedge clk_pll)  // 50MHz
 begin
 	if(reset)
 	begin
 		main_state <= STATE_RESET;
 		previous_main_state <= STATE_RESET;
-		ck_en <= 0;
+
+		enqueue_dram_command_bits <= 1;
+		
+		r_ck_en <= 0;
 		
 		// low-level signals (except reset_n) are asserted high initially
-		cs_n <= 1;			
-		ras_n <= 1;
-		cas_n <= 1;
-		we_n <= 1;
+		r_cs_n <= 1;			
+		r_ras_n <= 1;
+		r_cas_n <= 1;
+		r_we_n <= 1;
 		
 		// 200 us is required before RST_N goes inactive.
 		// CKE must be maintained inactive for 10 ns before RST_N goes inactive.
-		reset_n <= 0;
+		r_reset_n <= 0;
 
-		odt <= 0;
+		r_odt <= 0;
 		
-		address <= 0;
-		bank_address <= 0;
+		r_address <= 0;
+		r_bank_address <= 0;
 		wait_count <= 0;
 		counter_state <= 0;
 		num_of_increment_done <= 0;
@@ -2511,11 +2589,13 @@ begin
 	
 
 		// defaults the command signals high & only pulse low for the 1 clock when need to issue a command.
-		cs_n <= 1;			
-		ras_n <= 1;
-		cas_n <= 1;
-		we_n <= 1;
-						
+		r_cs_n <= 1;			
+		r_ras_n <= 1;
+		r_cas_n <= 1;
+		r_we_n <= 1;
+		
+		enqueue_dram_command_bits <= 0;
+								
 		// https://i.imgur.com/VUdYasX.png
 		// See https://www.systemverilog.io/ddr4-initialization-and-calibration
 		case(main_state)
@@ -2526,22 +2606,26 @@ begin
 			
 			STATE_RESET :  // https://i.imgur.com/ePuqhsY.png
 			begin
-				ck_en <= 0;
+				r_ck_en <= 0;
 			
 				//if(wait_count[$clog2(TIME_INITIAL_RESET_ACTIVE):0] > TIME_INITIAL_RESET_ACTIVE-1)
 				if(num_of_increment_done[$clog2(TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE):0] >
 					(TIME_INITIAL_RESET_ACTIVE/COUNTER_INCREMENT_VALUE))
 				begin
-					reset_n <= 1;  // reset inactive
+					r_reset_n <= 1;  // reset inactive
 					main_state <= STATE_RESET_FINISH;
 					wait_count <= 0;
 					counter_state <= 0;
 					num_of_increment_done <= 0;
+					
+					enqueue_dram_command_bits <= 1;
 				end
 				
 				else begin
-					reset_n <= 0;  // reset active
+					r_reset_n <= 0;  // reset active
 					main_state <= STATE_RESET;
+					
+					enqueue_dram_command_bits <= 0;
 				end
 				
 				// The following code is trying to solve the setup timing violation brought by
@@ -2568,31 +2652,31 @@ begin
 				// as well as the JESD79-3F DDR3 SDRAM Standard which adds further derating which means
 				// another 25 ps to account for the earlier reference point
 				
-				odt <= 0;  // tIs = 195ps (170ps+25ps) , this does not affect anything at low speed testing mode
+				r_odt <= 0;  // tIs = 195ps (170ps+25ps) , this does not affect anything at low speed testing mode
 				
 				//if(wait_count > TIME_INITIAL_CK_INACTIVE-1)
 				if(num_of_increment_done[$clog2(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE):0] > 
 					(TIME_INITIAL_CK_INACTIVE/COUNTER_INCREMENT_VALUE))
 				begin
-					ck_en <= 1;  // CK active
+					r_ck_en <= 1;  // CK active
 					main_state <= STATE_INIT_CLOCK_ENABLE;
 					wait_count <= 0;
 					counter_state <= 0;
 					num_of_increment_done <= 0;		
 
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 1;										
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;	
+					
+					enqueue_dram_command_bits <= 1;									
 				end
 						
 				else begin
-					if(ck_en) ck_en <= 1;  // continue to be active after first transition to active logic high
-					
-					else ck_en <= 0;  // CK inactive
-			
 					main_state <= STATE_RESET_FINISH;
+					
+					enqueue_dram_command_bits <= 0;
 				end		
 				
 				// The following code is trying to solve the setup timing violation brought by
@@ -2612,66 +2696,74 @@ begin
 			
 			STATE_INIT_CLOCK_ENABLE :
 			begin
-				ck_en <= 1;  // CK active
+				r_ck_en <= 1;  // CK active
 
 				// The clock must be present and valid for at least 10ns (and a minimum of five clocks)			
 				if(wait_count > TIME_TXPR-1)
 				begin
 					// prepare necessary parameters for next state
 					main_state <= STATE_INIT_MRS_2;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
-			        address <= 0;  // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled					
+					r_bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
+			        r_address <= 0;  // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled					
 					
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to MR2 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;					
+					r_cs_n <= 0;
+					r_ras_n <= 0;
+					r_cas_n <= 0;
+					r_we_n <= 0;
+					
+					enqueue_dram_command_bits <= 1;					
 				end
 				
 				else begin
 					main_state <= STATE_INIT_CLOCK_ENABLE;
+					
+					enqueue_dram_command_bits <= 0;
 				end				
 			end
 			
 			STATE_INIT_MRS_2 :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 
 		        // CWL=5; ASR disabled; SRT=normal; dynamic ODT disabled
-		        address <= 0;
+		        r_address <= 0;
 		                    			
 				if(wait_count > TIME_TMRD-1)
 				begin
 					// prepare necessary parameters for MR3 state				
 					main_state <= STATE_INIT_MRS_3;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+					r_bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
 					
 					// MPR Read function enabled
-					address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+					r_address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
 								MPR_ENABLE, MPR_READ_FUNCTION};					
 					
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to MR3 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;						
+					r_cs_n <= 0;
+					r_ras_n <= 0;
+					r_cas_n <= 0;
+					r_we_n <= 0;	
+					
+					enqueue_dram_command_bits <= 1;					
 				end
 				
 				else begin
 					main_state <= STATE_INIT_MRS_2;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
+					r_bank_address <= ADDRESS_FOR_MODE_REGISTER_2;
+					
+					enqueue_dram_command_bits <= 0;
 				end		
 			end
 
@@ -2680,68 +2772,84 @@ begin
 				if(wait_count > TIME_TMRD-1) begin
 					// prepare necessary parameters for next MRS				
 					main_state <= STATE_INIT_MRS_1;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+					r_bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
 					
 					wait_count <= 0;
 					
                     // no more NOP command in next 'ck' cycle, transition to MR1 command
-                    cs_n <= 0;
-                    ras_n <= 0;
-                    cas_n <= 0;
-                    we_n <= 0;
+                    r_cs_n <= 0;
+                    r_ras_n <= 0;
+                    r_cas_n <= 0;
+                    r_we_n <= 0;
+                    
+                    enqueue_dram_command_bits <= 1;
 				
 					`ifdef USE_x16
 					
 						`ifdef RAM_SIZE_1GB
-							address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						r_address <= {Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 							
 						`elsif RAM_SIZE_2GB
-							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						r_address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 							
 						`elsif RAM_SIZE_4GB
-							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						r_address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 						`endif
 					`else
 						
 						`ifdef RAM_SIZE_1GB
-							address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						r_address <= {1'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 							
 						`elsif RAM_SIZE_2GB
-							address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						r_address <= {2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 							
 						`elsif RAM_SIZE_4GB
-							address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+						r_address <= {MR1[0], 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 						`endif
 					`endif		
 				end
+				
+				else begin
+					main_state <= STATE_MRS3_TO_MRS1;
+					
+					enqueue_dram_command_bits <= 0;
+				end					
 			end
 
 			STATE_WAIT_AFTER_MPR :
 			begin
 				// NOP command in next 'ck' cycle, transition to IDLE command
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;
 			
 				if(wait_count[$clog2(TIME_TMOD):0] > TIME_TMOD-1) begin
 					main_state <= STATE_IDLE;							
 					wait_count <= 0;
 					
 					MPR_Read_had_finished <= 0;
+					
+					enqueue_dram_command_bits <= 1;
 				end
+				
+				else begin
+					main_state <= STATE_WAIT_AFTER_MPR;
+					
+					enqueue_dram_command_bits <= 0;
+				end					
 			end
 
 			STATE_INIT_MRS_3 :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 				
 
 				if(MPR_ENABLE == 0)
@@ -2761,6 +2869,8 @@ begin
 					else begin
 						main_state <= STATE_MRS3_TO_MRS1;			
 					end
+					
+					enqueue_dram_command_bits <= 0;
 				end
 				
 				// Issues READ command at tMOD after MRS command is issued
@@ -2769,14 +2879,16 @@ begin
 					// MPR System READ calibration is a must for all Micron DDR RAM, 
 					// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
 					// but transition to RDAP state first
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 1;
+					r_ck_en <= 1;
+					r_cs_n <= 0;			
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;
+
+					enqueue_dram_command_bits <= 1;
 											
 					main_state <= STATE_READ_AP;
-					address[2:0] <= 0;  // required by spec, see Figure 59 or https://i.imgur.com/K1qrMME.png
+					r_address <= 0;  // required by spec, see Figure 59 or https://i.imgur.com/K1qrMME.png
 
 					/*
 					• A[1:0] must be set to 00 as the burst order is fixed per nibble.
@@ -2790,19 +2902,25 @@ begin
 					*/
 					
 					wait_count <= 0;
-				end		
+				end	
+				
+				else begin
+					main_state <= STATE_INIT_MRS_3;
+					
+					enqueue_dram_command_bits <= 0;
+				end						
 			end
 			
 			STATE_INIT_MRS_1 :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 
 				// enable DLL; 34ohm output driver; no additive latency (AL); write leveling disabled;
 		        // termination resistors disabled; TDQS disabled; output enabled
@@ -2812,40 +2930,40 @@ begin
 		        //       it is set to value of 0 for now.
 		        // 		 See https://blog.csdn.net/xingqingly/article/details/48997879 and
 		        //       https://application-notes.digchip.com/024/24-19971.pdf for more context on AL
-		        // address <= {1'b0, MR1, 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
+		        //r_address <= {1'b0, MR1, 2'b0, Q_OFF, TDQS, 1'b0, RTT_9, 1'b0, WL, RTT_6, ODS_5, AL, RTT_2, ODS_2, DLL_EN};
 		                    			
 				if(wait_count > TIME_TMRD-1)
 				begin
 					// prepare necessary parameters for next state				
 					main_state <= STATE_INIT_MRS_0;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
+					r_bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
 
 					`ifdef USE_x16
 					
 						`ifdef RAM_SIZE_1GB
-							address <= {PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+						r_address <= {PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
 									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 							
 						`elsif RAM_SIZE_2GB
-							address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+						r_address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
 									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 							
 						`elsif RAM_SIZE_4GB
-							address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+						r_address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
 									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 						`endif
 					`else
 						
 						`ifdef RAM_SIZE_1GB
-							address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+						r_address <= {1'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
 									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 							
 						`elsif RAM_SIZE_2GB
-							address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+						r_address <= {2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
 									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 							
 						`elsif RAM_SIZE_4GB
-							address <= {MR0[0], 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+						r_address <= {MR0[0], 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
 									READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 						`endif
 					`endif
@@ -2853,28 +2971,32 @@ begin
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to MR0 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;						
+					r_cs_n <= 0;
+					r_ras_n <= 0;
+					r_cas_n <= 0;
+					r_we_n <= 0;	
+					
+					enqueue_dram_command_bits <= 1;					
 				end
 				
 				else begin
 					main_state <= STATE_INIT_MRS_1;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+					r_bank_address <= ADDRESS_FOR_MODE_REGISTER_1;
+					
+					enqueue_dram_command_bits <= 0;
 				end	
 			end
 
 			STATE_INIT_MRS_0 :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating MRS command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 
 		        // fixed burst length 8; sequential burst; CL=5; DLL reset yes
 		        // write recovery=5; precharge PD: DLL on
@@ -2900,7 +3022,7 @@ begin
 		        // See https://i.imgur.com/iuS45ld.png where tDQSCK starts AL + CL - 1 cycles 
 		        // after the READ command. 
 
-				//address <= {1'b0, MR0, 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
+				//r_address <= {1'b0, MR0, 2'b0, PRECHARGE_PD, WRITE_RECOVERY, DLL_RESET, 1'b0, CAS_LATENCY_46, 
 				//			READ_BURST_TYPE, CAS_LATENCY_2, BURST_LENGTH};
 				
 				if(wait_count > TIME_TMOD-1)
@@ -2909,29 +3031,33 @@ begin
 					wait_count <= 0;
 					
 					// no more NOP command in next 'ck' cycle, transition to ZQCL command
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 0;	
-					address[A10] <= 1;					
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 0;	
+					r_address[A10] <= 1;	
+					
+					enqueue_dram_command_bits <= 1;				
 				end
 				
 				else begin
 					main_state <= STATE_INIT_MRS_0;
-					bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
+					r_bank_address <= ADDRESS_FOR_MODE_REGISTER_0;
+					
+					enqueue_dram_command_bits <= 0;
 				end				
 			end
 			
 			STATE_ZQ_CALIBRATION :  // https://i.imgur.com/n4VU0MF.png
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating ZQCL command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 	
 				if(wait_count > TIME_TZQINIT-1)
 				begin
@@ -2942,10 +3068,14 @@ begin
 					else main_state <= STATE_IDLE;
 					
 					wait_count <= 0;
+					
+					enqueue_dram_command_bits <= 1;
 				end
 				
 				else begin
 					main_state <= STATE_ZQ_CALIBRATION;
+					
+					enqueue_dram_command_bits <= 0;
 				end					
 			end
 			
@@ -2976,28 +3106,32 @@ begin
 		        begin
 					// need to do PRECHARGE before REFRESH, see tRP
 
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 0;
-					cas_n <= 1;
-					we_n <= 0;
-					address[A10] <= 0;
+					r_ck_en <= 1;
+					r_cs_n <= 0;			
+					r_ras_n <= 0;
+					r_cas_n <= 1;
+					r_we_n <= 0;
+					r_address[A10] <= 0;
 		            main_state <= STATE_PRECHARGE;
+		            
+		            enqueue_dram_command_bits <= 1;
 		            
 		            wait_count <= 0;
 		        end
 		        
 		        else if (write_is_enabled | read_is_enabled)
 		        begin
-		        	ck_en <= 1;
-		        	cs_n <= 0;
-		        	ras_n <= 0;
-		        	cas_n <= 1;
-		        	we_n <= 1;
+		        	r_ck_en <= 1;
+		        	r_cs_n <= 0;
+		        	r_ras_n <= 0;
+		        	r_cas_n <= 1;
+		        	r_we_n <= 1;
 		        	
-		        	bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+		        	r_bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 		        		
 		            main_state <= STATE_ACTIVATE;
+		            
+		            enqueue_dram_command_bits <= 1;
 		            
 		            wait_count <= 0;
 		        end
@@ -3006,29 +3140,36 @@ begin
 		        begin
 					// need to do PRECHARGE before REFRESH, see tRP
 
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 0;
-					cas_n <= 1;
-					we_n <= 0;
-					address[A10] <= 0;
+					r_ck_en <= 1;
+					r_cs_n <= 0;			
+					r_ras_n <= 0;
+					r_cas_n <= 1;
+					r_we_n <= 0;
+					r_address[A10] <= 0;
 		            main_state <= STATE_PRECHARGE;
+		            
+		            enqueue_dram_command_bits <= 1;
 		            
 		            wait_count <= 0;
 				end
-				
+
+				else begin
+					main_state <= STATE_IDLE;
+					
+					enqueue_dram_command_bits <= 0;
+				end					
 			end
 			
 			STATE_ACTIVATE :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 				
 				// need to make sure that 'i_user_data_address' remains unchanged for at least tRRD
 				// because according to the definition of tRAS and tRC, it is legal within the same bank, 
@@ -3038,9 +3179,9 @@ begin
 				// will implement multiple consecutive ACT commands (TIME_RRD) in later stage of project
 				// However, tRRD mentioned "Time ACT to ACT, different banks, no PRE between" ?
 				
-				bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+				r_bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 				
-				address <= 	// column address
+				r_address <= 	// column address
 						   	{
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
@@ -3059,68 +3200,88 @@ begin
 					if(write_is_enabled)  // write operation has higher priority during loopback test
 					begin					
 						// no more NOP command in next 'ck' cycle, transition to WRAP command
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 0;
-						we_n <= 0;
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 0;
+						r_we_n <= 0;
 						
 						`ifdef LOOPBACK
 							// for data loopback, auto-precharge will close the bank, 
 							// which means read operation could not proceeed without reopening the bank
-							address[A10] <= 0;
 							main_state <= STATE_WRITE;
+							
+							r_address <= 	// column address
+									   	{
+									   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+									   		
+									   		1'b1,  // A12 : no burst-chop
+											i_user_data_address[A10+1], 
+											1'b0,  // A10 : no auto-precharge
+											i_user_data_address[A10-1:0]
+										};							
 						`else
-							address[A10] <= 1;
 							main_state <= STATE_WRITE_AP;
+							
+							r_address <= 	// column address
+									   	{
+									   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+									   		
+									   		1'b1,  // A12 : no burst-chop
+											i_user_data_address[A10+1], 
+											1'b1,  // A10 : use auto-precharge
+											i_user_data_address[A10-1:0]
+										};							
 						`endif
 						
 						wait_count <= 0;
+						
+						enqueue_dram_command_bits <= 1;
 					end
 						
 					else if(read_is_enabled) 
 					begin
 						// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
 						// but transition to RDAP state first
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 1;
-						we_n <= 1;
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 1;
+						r_we_n <= 1;
 						
 						main_state <= STATE_READ_AP;
 						
 						wait_count <= 0;
+						
+						enqueue_dram_command_bits <= 1;
 					end
+					
+					else begin
+						main_state <= STATE_ACTIVATE;
+						
+						enqueue_dram_command_bits <= 0;
+					end						
 				end
 				
 				else begin
 					main_state <= STATE_ACTIVATE;
+					
+					enqueue_dram_command_bits <= 0;
 				end				
 			end
 						
 			STATE_WRITE :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;
 				
-				address <= 	// column address
-						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		
-						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
-								1'b0,  // A10 : no auto-precharge
-								i_user_data_address[A10-1:0]
-							};
-				
-				if(wait_count > (TIME_WL-TIME_TWPRE)-1)
+				if(wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
@@ -3136,26 +3297,16 @@ begin
 				// https://www.systemverilog.io/understanding-ddr4-timing-parameters#write
 				// will implement multiple consecutive WRITE commands (TIME_TCCD) in later stage of project
 			
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
-								
-				address <= 	// column address
-						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-						   		
-						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
-								1'b1,  // A10 : use auto-precharge
-								i_user_data_address[A10-1:0]
-							};
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 				
-				if(wait_count > (TIME_WL-TIME_TWPRE)-1)
+				if(wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
@@ -3168,29 +3319,30 @@ begin
 			
 			STATE_WRITE_DATA :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;				
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;				
+
+				enqueue_dram_command_bits <= 0;
 							
 				if(wait_count > (TIME_TBURST+TIME_TDAL)-1)
 				begin
 					`ifdef LOOPBACK
 						// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
 						// but transition to RDAP state first
-						ck_en <= 1;
-						cs_n <= 0;			
-						ras_n <= 1;
-						cas_n <= 1;
-						we_n <= 1;
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 1;
+						r_we_n <= 1;
 						
-						main_state <= STATE_READ_AP;
-						
-						wait_count <= 0;					
+						main_state <= STATE_READ_AP;						
+						wait_count <= 0;				
 					`else
 						main_state <= STATE_IDLE;
 						wait_count <= 0;
@@ -3210,29 +3362,29 @@ begin
 						
 			STATE_READ :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				if(wait_count > (NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
 					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 1;
-					cas_n <= 0;
-					we_n <= 1;
+					r_ck_en <= 1;
+					r_cs_n <= 0;			
+					r_ras_n <= 1;
+					r_cas_n <= 0;
+					r_we_n <= 1;
 				end
 
 				else begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 1;	
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;	
 				end
 				
-				address <= 	// column address
+				r_address <= 	// column address
 						   	{
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
@@ -3257,9 +3409,9 @@ begin
 					
 			STATE_READ_AP :
 			begin
-				ck_en <= 1;
+				r_ck_en <= 1;
 				
-				address <= 	// column address
+				r_address <= 	// column address
 						   	{
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
@@ -3275,13 +3427,15 @@ begin
 				begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 1;	
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;	
 									
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
+					
+					enqueue_dram_command_bits <= 1;
 				end
 
 				else if(wait_count ==  
@@ -3289,26 +3443,27 @@ begin
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
 					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
-					ck_en <= 1;
-					cs_n <= 0;			
-					ras_n <= 1;
-					cas_n <= 0;
-					we_n <= 1;
-
-					address[A10] <= 1;									
+					r_cs_n <= 0;			
+					r_ras_n <= 1;
+					r_cas_n <= 0;
+					r_we_n <= 1;
+									
 					main_state <= STATE_READ_AP;
+					
+					enqueue_dram_command_bits <= 1;
 				end
 								
 				else begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					cs_n <= 0;
-					ras_n <= 1;
-					cas_n <= 1;
-					we_n <= 1;	
-
-					address[A10] <= 1;									
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;	
+									
 					main_state <= STATE_READ_AP;
+					
+					enqueue_dram_command_bits <= 0;
 				end						
 			end
 
@@ -3318,6 +3473,8 @@ begin
 				// For read, we get the unshifted DQS from the RAM and have to phase-shift it ourselves before 
 				// using it as a clock strobe signal to sample (or capture) DQ signal
 			
+				enqueue_dram_command_bits <= 0;
+			
 				if(wait_count > (TIME_TBURST + TIME_TRPST + TIME_TMPRR)-1)
 				begin
 
@@ -3325,16 +3482,18 @@ begin
 					
 					// MPR_ENABLE is already set to ZERO in the next-IF block
 					// MPR Read function disabled					
-					address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+					r_address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
 								MPR_ENABLE, MPR_READ_FUNCTION};	
 														
 					// no more NOP command in next 'ck' cycle, transition to MR3 command
-					cs_n <= 0;
-					ras_n <= 0;
-					cas_n <= 0;
-					we_n <= 0;				
+					r_cs_n <= 0;
+					r_ras_n <= 0;
+					r_cas_n <= 0;
+					r_we_n <= 0;				
 					
-					wait_count <= 0;				
+					wait_count <= 0;	
+					
+					enqueue_dram_command_bits <= 1;			
 				end
 
 				else if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
@@ -3344,10 +3503,10 @@ begin
 						main_state <= STATE_IDLE;
 						
 						// NOP command in next 'ck' cycle, transition to IDLE command
-						cs_n <= 0;
-						ras_n <= 1;
-						cas_n <= 1;
-						we_n <= 1;								
+						r_cs_n <= 0;
+						r_ras_n <= 1;
+						r_cas_n <= 1;
+						r_we_n <= 1;								
 					end
 					
 					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished		
@@ -3411,12 +3570,12 @@ begin
 			begin
 				// need to do PRECHARGE before REFRESH, see tRP
 
-				ck_en <= 1;
-				cs_n <= 0;			
-				ras_n <= 0;
-				cas_n <= 1;
-				we_n <= 0;
-				address[A10] <= 1;  // precharge ALL banks
+				r_ck_en <= 1;
+				r_cs_n <= 0;			
+				r_ras_n <= 0;
+				r_cas_n <= 1;
+				r_we_n <= 0;
+				r_address[A10] <= 1;  // precharge ALL banks
 				
 				if(wait_count > TIME_TRP-1)
 				begin
@@ -3424,19 +3583,21 @@ begin
 					begin
 						// prepare necessary parameters for next state				
 						main_state <= STATE_INIT_MRS_3;
-						bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
+						r_bank_address <= ADDRESS_FOR_MODE_REGISTER_3;
 						
 						// MPR Read function enabled
-						address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+						r_address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
 									MPR_ENABLE, MPR_READ_FUNCTION};					
 						
 						wait_count <= 0;
 						
 						// no more NOP command in next 'ck' cycle, transition to MR3 command
-						cs_n <= 0;
-						ras_n <= 0;
-						cas_n <= 0;
-						we_n <= 0;					
+						r_cs_n <= 0;
+						r_ras_n <= 0;
+						r_cas_n <= 0;
+						r_we_n <= 0;	
+						
+						enqueue_dram_command_bits <= 1;				
 					end
 					
 					else begin					
@@ -3444,16 +3605,20 @@ begin
 						wait_count <= 0;
 						
 						// no more NOP command in next 'ck' cycle, transition to REF command
-						ck_en <= 1;
-						cs_n <= 0;
-						ras_n <= 0;
-						cas_n <= 0;
-						we_n <= 1;
+						r_ck_en <= 1;
+						r_cs_n <= 0;
+						r_ras_n <= 0;
+						r_cas_n <= 0;
+						r_we_n <= 1;
+						
+						enqueue_dram_command_bits <= 1;
 					end
 				end
 				
 				else begin
 					main_state <= STATE_PRECHARGE;
+					
+					enqueue_dram_command_bits <= 0;
 				end				
 			end
 						
@@ -3473,14 +3638,16 @@ begin
 				// issue a refresh, so if we leave the precharge command any later, the max refresh constraints 
 				// would not be obeyed anymore
 
-				ck_en <= 1;
+				r_ck_en <= 1;
 
 				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 				// only a single, non-repeating ACT command is executed, and followed by NOP commands
-				cs_n <= 0;
-				ras_n <= 1;
-				cas_n <= 1;
-				we_n <= 1;	
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
+
+				enqueue_dram_command_bits <= 0;
 
 				if(refresh_Queue > 0)
 					refresh_Queue <= refresh_Queue - 1;  // a countdown trigger for precharge/refresh operation

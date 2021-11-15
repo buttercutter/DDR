@@ -464,14 +464,17 @@ reg done_writing, done_reading;
 			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // starts the readback operation
 			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
 			done_reading <= 0;
+			
+			if(test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))  // finished writing data
+			begin
+				i_user_data_address <= 0;  // read from the first piece of data written
+				read_enable <= 1;  // prepare to read data
+			end
 		end
 		
-		else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
-			if(done_writing && 
-				(test_data > 0)) // such that it would only reset address only ONCE
-				i_user_data_address <= 0;  // read from the first piece of data written
-			
-			else i_user_data_address <= i_user_data_address + 1;
+		else if((done_writing) && (main_state == STATE_READ_DATA))  // read operation
+		begin
+			i_user_data_address <= i_user_data_address + 1;
 			
 			test_data <= 0;  // not related to DDR read operation, only for DDR write operation
 			write_enable <= 0;
