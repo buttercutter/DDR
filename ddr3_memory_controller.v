@@ -13,7 +13,7 @@
 `define VIVADO 1  // for 7-series and above
 
 `define USE_x16 1
-//`define USE_SERDES 1
+`define USE_SERDES 1
 
 // `define TDQS 1
 
@@ -1131,7 +1131,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
 		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
 
-		// reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
+		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
 
 		
 		genvar data_index_iserdes;
@@ -1356,8 +1356,6 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 		// to synchronize signal in ck_dynamic domain to ck domain
 		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
-
-		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;	
 
 	`else
 		wire [DQ_BITWIDTH-1:0] dq_w_d0 = data_to_ram[0 +: DQ_BITWIDTH];
@@ -2429,12 +2427,24 @@ wire [NUM_OF_DRAM_COMMAND_BITS-1:0] NOP_DRAM_COMMAND_BITS =
    {r_ck_en, 1'b0, 1'b1, 1'b1, 1'b1, r_reset_n, r_odt, {ADDRESS_BITWIDTH{1'b0}}, {BANK_ADDRESS_BITWIDTH{1'b0}}};
 
 
+reg is_STATE_READ_AP;
+
+always @(posedge ck_180) is_STATE_READ_AP <= (main_state == STATE_READ_AP);
+
+reg about_to_issue_rdap_command;
+
+always @(posedge ck_180)
+begin
+	about_to_issue_rdap_command <= (wait_count[$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+ 		   	  									NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0]
+ 		   	  						== (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+ 		   	  									NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN));
+end
+	   	  
 reg issue_actual_rdap_command_now, previous_issue_actual_rdap_command_now;
 
 always @(posedge ck_180)
-	issue_actual_rdap_command_now <= ((main_state == STATE_READ_AP) && 
- 		   	 (wait_count == (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
- 		   	  NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)));
+	issue_actual_rdap_command_now <= (is_STATE_READ_AP && about_to_issue_rdap_command);
  		   	  
 always @(posedge ck_180)
 	previous_issue_actual_rdap_command_now <= issue_actual_rdap_command_now;

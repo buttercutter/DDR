@@ -4,7 +4,7 @@
 `define VIVADO 1  // for 7-series and above
 
 `define USE_x16 1
-//`define USE_SERDES 1
+`define USE_SERDES 1
 
 // `define TDQS 1
 
