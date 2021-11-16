@@ -167,23 +167,17 @@ module test_ddr3_memory_controller
 );
 
 
-`ifndef XILINX
 localparam NUM_OF_DDR_STATES = 23;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
-// TIME_INITIAL_CK_INACTIVE = 152068;
-localparam MAX_TIMING = 152068;  // just for initial development stage, will refine the value later
-`endif
+// TIME_INITIAL_CK_INACTIVE
+localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development stage, will refine the value later
 
 localparam STATE_WRITE = 6;
 localparam STATE_WRITE_DATA = 8;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
-`ifndef XILINX
-	wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-`else
-	wire [4:0] main_state;
-`endif
+wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 		
 
 // for STATE_IDLE transition into STATE_REFRESH
@@ -281,11 +275,7 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 `endif
 
 
-`ifndef XILINX
-	wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles;  // for the purpose of postponing refresh commands
-`else
-	wire [3:0] user_desired_extra_read_or_write_cycles;  // for the purpose of postponing refresh commands
-`endif
+wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] user_desired_extra_read_or_write_cycles;  // for the purpose of postponing refresh commands
 
 assign user_desired_extra_read_or_write_cycles = MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED;
 
@@ -381,7 +371,7 @@ reg done_writing, done_reading;
 				`endif
 					(~done_writing) &&
 					// write operation has higher priority in loopback mechanism
-					(main_state == STATE_WRITE_DATA))
+					(main_state == STATE_WRITE))
 				begin					
 					`ifdef USE_SERDES							
 						`ifdef USE_x16
@@ -450,7 +440,7 @@ reg done_writing, done_reading;
 		`endif
 			(~done_writing) && 
 			// write operation has higher priority in loopback mechanism
-			(main_state == STATE_WRITE_DATA)) 
+			(main_state == STATE_WRITE)) 
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -510,12 +500,12 @@ reg done_writing, done_reading;
 	
 	wire dqs_rising_edge;
 	wire dqs_falling_edge;
+
+    wire [$clog2(MAX_TIMING)-1:0] wait_count;
+    wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
+    wire [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
 		
 	`ifdef XILINX
-		//wire [4:0] main_state;
-		wire [14:0] wait_count;
-		wire [3:0] refresh_Queue;
-		wire [1:0] dqs_counter;
 	
 		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
 		wire [35:0] CONTROL0;
@@ -579,11 +569,6 @@ reg done_writing, done_reading;
 		// https://github.com/promach/internal_logic_analyzer
 		
 		localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
-		
-		//wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-		wire [$clog2(MAX_TIMING)-1:0] wait_count;
-		wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
-		wire [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
 		
 	`endif
 `endif

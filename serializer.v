@@ -1,7 +1,8 @@
 module serializer 
 #(
 	parameter D = 8,  // data bitwidth
-	parameter S = 4	  // serialization ratio
+	parameter S = 4,  // serialization ratio
+	parameter INITIAL_S = 0  // initial serialization ratio, defaults to 0
 )
 (
 	input reset,
@@ -14,7 +15,7 @@ reg [$clog2(S)-1:0] serialization_ratio;
 
 always @(posedge high_speed_clock)
 begin
-	if(reset) serialization_ratio <= 0;
+	if(reset) serialization_ratio <= INITIAL_S;
 
 	else serialization_ratio <= serialization_ratio + 1;
 end
@@ -25,3 +26,4 @@ begin
 end
 
 endmodule
+

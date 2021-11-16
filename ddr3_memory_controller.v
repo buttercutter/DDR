@@ -362,8 +362,8 @@ localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development st
 
 `else
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PERIOD);  // 200μs = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PERIOD);  // 500μs = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PERIOD);  // 200?s = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PERIOD);  // 500?s = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
 	`ifdef RAM_SIZE_1GB
 		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
@@ -378,7 +378,7 @@ localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development st
 		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
 	`endif
 
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CLK_PERIOD);  // 7.8μs = 7800ns, Maximum average periodic refresh
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CLK_PERIOD);  // 7.8?s = 7800ns, Maximum average periodic refresh
 	
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CLK_PERIOD);  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CLK_PERIOD);  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
@@ -1248,7 +1248,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 
 		
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)-1))
 		dq_oserdes_0
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -1261,7 +1261,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_out(dq_w_oserdes_0)
 		);
 
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)-1))
 		dq_oserdes_1
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -3291,7 +3291,7 @@ begin
 				r_cas_n <= 1;
 				r_we_n <= 1;
 				
-				if(wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID)
+				if(wait_count == TIME_WRITE_COMMAND_TO_DQS_VALID)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
