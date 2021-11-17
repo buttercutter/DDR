@@ -301,7 +301,7 @@ wire data_read_is_ongoing;
 
 `ifdef HIGH_SPEED
 // for clk_serdes clock domain
-wire clk_serdes;  // 87.5MHz
+wire clk_serdes;  // 50MHz with 0 phase shift
 wire ck_180;  // 350MHz with 180 phase shift
 wire locked_previous;
 wire need_to_assert_reset;
@@ -627,7 +627,7 @@ ddr3_control
 	`endif
 	
 	`ifdef HIGH_SPEED
-		.clk_serdes(clk_serdes),  // 87.5MHz
+		.clk_serdes(clk_serdes),  // 50MHz with 0 phase shift
 		.ck_180(ck_180),  // 350MHz with 180 phase shift
 		.locked_previous(locked_previous),
 		.need_to_assert_reset(need_to_assert_reset),

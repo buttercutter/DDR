@@ -74,7 +74,6 @@ module ddr3_memory_controller
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
-		parameter CLK_SERDES_PERIOD = 11.4285714,  // 11.4285714ns, 87.5MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -183,7 +182,7 @@ module ddr3_memory_controller
 	`endif
 	
 	`ifdef HIGH_SPEED
-		output clk_serdes,  // 87.5MHz
+		output clk_serdes,  // 50MHz with 0 phase shift
 		output ck_180,  // 350MHz with 180 phase shift
 		output reg locked_previous,
 		output need_to_assert_reset,
@@ -585,8 +584,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk_pll(clk_pll),  // OUT 50MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
-			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz
-			.clk_serdes(clk_serdes),  // OUT 87.5MHz, 0 phase shift, for SERDES use
+			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz, but we use 50MHz
+			.clk_serdes(clk_serdes),  // OUT 50MHz, 0 phase shift, for SERDES use
 			
 			.ck(ck),  // OUT 350MHz, 0 phase shift
 			.ck_90(ck_90),  // OUT 350MHz, 90 phase shift, for dq phase shifting purpose
@@ -842,8 +841,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			//.clk_pll(clk_pll),  // OUT 50MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
-			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz
-			.c4(clk_serdes),  // OUT 87.5MHz, 0 phase shift, for SERDES use
+			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz, but we use 50MHz
+			.c4(clk_serdes),  // OUT 50MHz, 0 phase shift, for SERDES use
 			
 			.c0(ck),  // OUT 350MHz, 0 phase shift
 			.c1(ck_90),  // OUT 350MHz, 90 phase shift, for dq phase shifting purpose
@@ -1894,7 +1893,7 @@ endgenerate
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("C1"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
@@ -1903,8 +1902,8 @@ endgenerate
 			.C0(ck),  // 1-bit clock input
 			.C1(ck_180),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -1958,7 +1957,7 @@ endgenerate
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("C1"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
@@ -2469,7 +2468,7 @@ assign {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address} =
 									
 // the purpose of using FIFO instead of just a register is 
 // to allow stuffing multiple user request commands where permitted in between command execution inside DRAM
-// One example would be where a new bank may be activated while a previous write was just sent 
+// One example would be where other banks may be activated while a write command was just sent 
 // and a write burst is taking place.
 sync_fifo
 #(
