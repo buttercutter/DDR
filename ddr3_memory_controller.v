@@ -2412,6 +2412,56 @@ reg r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt;
 reg [ADDRESS_BITWIDTH-1:0] r_address;
 reg [BANK_ADDRESS_BITWIDTH-1:0] r_bank_address;
 
+
+// https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
+localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN = 3;
+
+// to synchronize signal in clk_pll domain to ck_180 domain
+reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1:0] wait_count_ck_180 [$clog2(MAX_WAIT_COUNT):0];
+reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1:0] main_state_ck_180 [$clog2(NUM_OF_DDR_STATES)-1:0];
+reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1:0] enqueue_dram_command_bits_ck_180;
+
+genvar ff_clk_pll_ck_180;
+
+generate
+	for(ff_clk_pll_ck_180 = 0; 
+	    ff_clk_pll_ck_180 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN;
+	    ff_clk_pll_ck_180 = ff_clk_pll_ck_180 + 1)
+	begin: clk_pll_to_ck_180
+	
+		always @(posedge ck_180)
+		begin
+			if(reset) 
+			begin
+				wait_count_ck_180[ff_clk_pll_ck_180] <= 0;
+				main_state_ck_180[ff_clk_pll_ck_180] <= 0;
+				enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <= 0;
+			end
+			
+			else begin
+				if(ff_clk_pll_ck_180 == 0) 
+				begin
+					wait_count_ck_180[ff_clk_pll_ck_180] <= wait_count;
+					main_state_ck_180[ff_clk_pll_ck_180] <= main_state;
+					enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <= enqueue_dram_command_bits;
+				end
+				
+				else begin
+					wait_count_ck_180[ff_clk_pll_ck_180] <=
+				 		wait_count_ck_180[ff_clk_pll_ck_180-1];
+				 		
+					main_state_ck_180[ff_clk_pll_ck_180] <=
+				 		main_state_ck_180[ff_clk_pll_ck_180-1];				 		
+				 		
+					enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <=
+				 		enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180-1];					 		
+				 end
+			end
+		end
+	end		
+endgenerate
+
+
 localparam NUM_OF_DRAM_COMMAND_BITS = 7 + ADDRESS_BITWIDTH + BANK_ADDRESS_BITWIDTH;
 
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits = 
@@ -2432,12 +2482,20 @@ always @(posedge ck_180) is_STATE_READ_AP <= (main_state == STATE_READ_AP);
 
 reg about_to_issue_rdap_command;
 
+wire [$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+		NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0] wait_count_180 =
+ 	wait_count_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1];
+
+wire [$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+	NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0] wait_count_bit_select_180 =
+	 	wait_count_180[$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0];
+						
 always @(posedge ck_180)
 begin
-	about_to_issue_rdap_command <= (wait_count[$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
- 		   	  									NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0]
- 		   	  						== (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
- 		   	  									NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN));
+	about_to_issue_rdap_command <= 
+						(wait_count_bit_select_180 == (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN));
 end
 	   	  
 reg issue_actual_rdap_command_now, previous_issue_actual_rdap_command_now;
@@ -2448,11 +2506,25 @@ always @(posedge ck_180)
 always @(posedge ck_180)
 	previous_issue_actual_rdap_command_now <= issue_actual_rdap_command_now;
 
+reg after_new_command_is_issued;
+reg main_state_remains_the_same;
+reg no_need_to_issue_rdap_command;
+
+always @(posedge ck_180)
+	main_state_remains_the_same <=
+	 	//~enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1]; 
+		(previous_main_state_ck_180 ==
+		 main_state_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1]);
+	
+always @(posedge ck_180)  // rdap command needs to be issued only ONCE
+	no_need_to_issue_rdap_command <= (issue_actual_rdap_command_now == previous_issue_actual_rdap_command_now);
+	
+always @(posedge ck_180)
+	after_new_command_is_issued <= (main_state_remains_the_same) && (no_need_to_issue_rdap_command);
 
 always @(*)					
 begin
-	if((previous_main_state_ck_180 == main_state) && 
-	   (issue_actual_rdap_command_now == previous_issue_actual_rdap_command_now))
+	if(after_new_command_is_issued)
 	begin
 		dram_command_bits_to_be_sent_to_dram <= NOP_DRAM_COMMAND_BITS;  // sends NOP command to DRAM
 			
@@ -2462,7 +2534,7 @@ begin
 	else dram_command_bits_to_be_sent_to_dram <= dram_command_bits;  // new DRAM command
 end
 
-assign {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address} = 								
+assign {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address} = 
 									dram_command_bits_to_be_sent_to_dram;
 									
 									
@@ -2501,7 +2573,8 @@ always @(posedge ck_180)
 begin
 	if(reset) previous_main_state_ck_180 <= STATE_RESET;
 	
-	else previous_main_state_ck_180 <= main_state;
+	else previous_main_state_ck_180 <=
+				main_state_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1];
 end
 
 always @(posedge clk_pll)  // 50MHz
