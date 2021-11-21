@@ -1276,6 +1276,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	
 		// The following Xilinx-specific IOSERDES primitives are not used due to placement blockage restrictions
 		// See https://forums.xilinx.com/t5/Implementation/Xilinx-ISE-implementation-stage-issues/m-p/1255587/highlight/true#M30717
+		// or https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3592301/#msg3592301
 
 		// DDR Data Reception Using Two BUFIO2s
 		// See Figure 6 of https://www.xilinx.com/support/documentation/application_notes/xapp1064.pdf#page=5
@@ -2483,19 +2484,19 @@ always @(posedge ck_180) is_STATE_READ_AP <= (main_state == STATE_READ_AP);
 reg about_to_issue_rdap_command;
 
 wire [$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
-		NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0] wait_count_180 =
+		NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1):0] wait_count_180 =
  	wait_count_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1];
 
 wire [$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
-	NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0] wait_count_bit_select_180 =
+	NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1):0] wait_count_bit_select_180 =
 	 	wait_count_180[$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
-						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN):0];
+						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1):0];
 						
 always @(posedge ck_180)
 begin
 	about_to_issue_rdap_command <= 
 						(wait_count_bit_select_180 == (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
-						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN));
+						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1));
 end
 	   	  
 reg issue_actual_rdap_command_now, previous_issue_actual_rdap_command_now;
