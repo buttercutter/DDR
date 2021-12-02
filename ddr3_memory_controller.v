@@ -74,6 +74,7 @@ module ddr3_memory_controller
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
+		parameter CLK_PLL_PERIOD = 20,  // 20ns, 50MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -361,8 +362,8 @@ localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development st
 
 `else
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PERIOD);  // 200?s = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PERIOD);  // 500?s = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PERIOD);  // 200us = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PERIOD);  // 500us = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
 	`ifdef RAM_SIZE_1GB
 		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
@@ -1402,7 +1403,7 @@ assign data_from_ram =
 //					  		 (main_state == STATE_READ_DATA);
 
 // for pipelining in order to solve STA setup timing violation issue
-localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 4;
+localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 4;  // see 'data_read_is_ongoing' long logic level
 `ifndef TESTBENCH
 reg data_read_is_ongoing;
 `endif
@@ -1416,7 +1417,7 @@ always @(posedge ck_180)
 
 // 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
 // The logic immediately below is not for clock domain synchronization, 
-// it is just to split a single long combinational logic path into smaller multiple paths
+// it is just to split a single long combinational logic path into multiple shorter logic paths
 always @(posedge ck_180)
 begin
 	if(reset)
@@ -2378,8 +2379,6 @@ endgenerate
 assign need_to_assert_reset =
 	   need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1];
 
-`endif
-
 
 // to solve STA setup timing violation due to 'wait_count'
 localparam [FIXED_POINT_BITWIDTH-1:0] COUNTER_INCREMENT_VALUE = 512;
@@ -2407,19 +2406,11 @@ always @(posedge ck_180)
 
 wire fifo_command_is_empty;
 
-// prepends the DDR command signals with "r_" so as to 
-// differentiate between the stored FIFO signals and actual signals sent to DRAM
-reg r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt;
-reg [ADDRESS_BITWIDTH-1:0] r_address;
-reg [BANK_ADDRESS_BITWIDTH-1:0] r_bank_address;
-
 
 // https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
 localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN = 3;
 
 // to synchronize signal in clk_pll domain to ck_180 domain
-reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1:0] wait_count_ck_180 [$clog2(MAX_WAIT_COUNT):0];
-reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1:0] main_state_ck_180 [$clog2(NUM_OF_DDR_STATES)-1:0];
 reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1:0] enqueue_dram_command_bits_ck_180;
 
 genvar ff_clk_pll_ck_180;
@@ -2434,26 +2425,16 @@ generate
 		begin
 			if(reset) 
 			begin
-				wait_count_ck_180[ff_clk_pll_ck_180] <= 0;
-				main_state_ck_180[ff_clk_pll_ck_180] <= 0;
 				enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <= 0;
 			end
 			
 			else begin
 				if(ff_clk_pll_ck_180 == 0) 
 				begin
-					wait_count_ck_180[ff_clk_pll_ck_180] <= wait_count;
-					main_state_ck_180[ff_clk_pll_ck_180] <= main_state;
 					enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <= enqueue_dram_command_bits;
 				end
 				
 				else begin
-					wait_count_ck_180[ff_clk_pll_ck_180] <=
-				 		wait_count_ck_180[ff_clk_pll_ck_180-1];
-				 		
-					main_state_ck_180[ff_clk_pll_ck_180] <=
-				 		main_state_ck_180[ff_clk_pll_ck_180-1];				 		
-				 		
 					enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <=
 				 		enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180-1];					 		
 				 end
@@ -2463,10 +2444,13 @@ generate
 endgenerate
 
 
-localparam NUM_OF_DRAM_COMMAND_BITS = 7 + ADDRESS_BITWIDTH + BANK_ADDRESS_BITWIDTH;
+parameter NUM_OF_DRAM_COMMAND_BITS = 7 + ADDRESS_BITWIDTH + BANK_ADDRESS_BITWIDTH;
 
-wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits = 
-					{r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt, r_address, r_bank_address};
+// prepends the DDR command signals with "r_" so as to 
+// differentiate between the stored FIFO signals and actual signals sent to DRAM
+reg r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt;
+reg [ADDRESS_BITWIDTH-1:0] r_address;
+reg [BANK_ADDRESS_BITWIDTH-1:0] r_bank_address;
 
 // {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address}
 reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_to_be_sent_to_dram; 
@@ -2477,25 +2461,60 @@ wire [NUM_OF_DRAM_COMMAND_BITS-1:0] NOP_DRAM_COMMAND_BITS =
    {r_ck_en, 1'b0, 1'b1, 1'b1, 1'b1, r_reset_n, r_odt, {ADDRESS_BITWIDTH{1'b0}}, {BANK_ADDRESS_BITWIDTH{1'b0}}};
 
 
+// to synchronize signal in clk_pll domain to ck_180 domain
+wire [$clog2(MAX_WAIT_COUNT):0] wait_count_ck_180;
+wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_ck_180;
+
+wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_clk_pll = 
+					{r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt, r_address, r_bank_address};
+					
+wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_ck_180;
+
+
+// for synchronizing multi-bits 'main_state' and 'dram_command_bits_clk_pll' signals 
+// from clk_pll domain to ck_180 domain
+wire afifo_main_state_and_dram_command_bits_is_empty;
+wire afifo_main_state_and_dram_command_bits_is_full;
+
+parameter CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK = CLK_PLL_PERIOD/CK_PERIOD;
+//parameter num_of_afifo_main_state_entries = 1 << $clog2(CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK);
+
+async_fifo 
+#(
+	.WIDTH($clog2(NUM_OF_DDR_STATES) + NUM_OF_DRAM_COMMAND_BITS),
+	.NUM_ENTRIES()
+) 
+// combines into a single asynchronous FIFO due to concern of clock tree placement, 
+// which might results in unpredictable outcome for two separate asynchronous FIFOs
+afifo_main_state_and_dram_command_bits
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(ck_180),
+    .read_en(1'b1),
+    .read_data({main_state_ck_180, dram_command_bits_ck_180}),
+    .empty(afifo_main_state_and_dram_command_bits_is_empty),
+
+    // Write
+    .write_clk(clk_pll),
+    .write_en(1'b1),
+    .full(afifo_main_state_and_dram_command_bits_is_full),
+    .write_data({main_state, dram_command_bits_clk_pll})
+);
+
+
 reg is_STATE_READ_AP;
 
 always @(posedge ck_180) is_STATE_READ_AP <= (main_state == STATE_READ_AP);
 
 reg about_to_issue_rdap_command;
-
-wire [$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
-		NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1):0] wait_count_180 =
- 	wait_count_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1];
-
-wire [$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
-	NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1):0] wait_count_bit_select_180 =
-	 	wait_count_180[$clog2(NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
-						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1):0];
 						
 always @(posedge ck_180)
 begin
 	about_to_issue_rdap_command <= 
-						(wait_count_bit_select_180 == (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
+						(wait_count_ck_180 == (NUM_OF_READ_PIPELINE_REGISTER_ADDED + 
 						NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1));
 end
 	   	  
@@ -2511,11 +2530,17 @@ reg after_new_command_is_issued;
 reg main_state_remains_the_same;
 reg no_need_to_issue_rdap_command;
 
+reg previous_enqueue_dram_command_bits_ck_180;
+
+always @(posedge ck_180)
+	previous_enqueue_dram_command_bits_ck_180 <=
+	 	enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1];
+
 always @(posedge ck_180)
 	main_state_remains_the_same <=
-	 	//~enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1]; 
-		(previous_main_state_ck_180 ==
-		 main_state_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1]);
+	 	//(enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1] &&
+	 	// ~previous_enqueue_dram_command_bits_ck_180);  // not used due to post P&R STA setup timing violation
+		(previous_main_state_ck_180 == main_state_ck_180);
 	
 always @(posedge ck_180)  // rdap command needs to be issued only ONCE
 	no_need_to_issue_rdap_command <= (issue_actual_rdap_command_now == previous_issue_actual_rdap_command_now);
@@ -2523,7 +2548,7 @@ always @(posedge ck_180)  // rdap command needs to be issued only ONCE
 always @(posedge ck_180)
 	after_new_command_is_issued <= (main_state_remains_the_same) && (no_need_to_issue_rdap_command);
 
-always @(*)					
+always @(posedge ck_180)					
 begin
 	if(after_new_command_is_issued)
 	begin
@@ -2532,7 +2557,7 @@ begin
 		//else dram_command_bits_to_be_sent_to_dram <= fifo_command_dequeue_value;  // keep the DRAM command unchanged 
 	end
 				
-	else dram_command_bits_to_be_sent_to_dram <= dram_command_bits;  // new DRAM command
+	else dram_command_bits_to_be_sent_to_dram <= dram_command_bits_ck_180;  // new DRAM command
 end
 
 assign {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address} = 
@@ -2574,11 +2599,16 @@ always @(posedge ck_180)
 begin
 	if(reset) previous_main_state_ck_180 <= STATE_RESET;
 	
-	else previous_main_state_ck_180 <=
-				main_state_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1];
+	else previous_main_state_ck_180 <= main_state_ck_180;
 end
 
+`endif
+
+`ifdef HIGH_SPEED
 always @(posedge clk_pll)  // 50MHz
+`else
+always @(posedge clk)
+`endif
 begin
 	if(reset)
 	begin
