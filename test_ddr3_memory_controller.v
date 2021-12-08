@@ -167,7 +167,13 @@ module test_ddr3_memory_controller
 );
 
 
+/* verilator lint_off VARHIDDEN */
 localparam NUM_OF_DDR_STATES = 23;
+
+// TIME_TZQINIT = 512
+// See also 'COUNTER_INCREMENT_VALUE' on why some of the large timing variables are not used in this case
+localparam MAX_WAIT_COUNT = 512;
+/* verilator lint_on VARHIDDEN */
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE
@@ -178,6 +184,7 @@ localparam STATE_WRITE_DATA = 8;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
 wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+wire [$clog2(MAX_WAIT_COUNT):0] wait_count;
 		
 
 // for STATE_IDLE transition into STATE_REFRESH
@@ -371,7 +378,7 @@ reg done_writing, done_reading;
 				`endif
 					(~done_writing) &&
 					// write operation has higher priority in loopback mechanism
-					(main_state == STATE_WRITE))
+					(main_state == STATE_WRITE_DATA) && (wait_count[0]))  // (wait_count == 1), for better STA setup timing
 				begin					
 					`ifdef USE_SERDES							
 						`ifdef USE_x16
@@ -440,7 +447,7 @@ reg done_writing, done_reading;
 		`endif
 			(~done_writing) && 
 			// write operation has higher priority in loopback mechanism
-			(main_state == STATE_WRITE)) 
+			(main_state == STATE_WRITE_DATA) && (wait_count[0]))  // (wait_count == 1), for better STA setup timing
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -644,6 +651,7 @@ ddr3_control
 	.dq(dq), // Data input/output
 
 	.main_state(main_state),
+	.wait_count(wait_count),
 	
 `ifdef USE_ILA
 	.dq_w(dq_w),
@@ -652,7 +660,6 @@ ddr3_control
 	.high_Priority_Refresh_Request(high_Priority_Refresh_Request),
 	.write_is_enabled(write_is_enabled),
 	.read_is_enabled(read_is_enabled),
-	.wait_count(wait_count),
 	.refresh_Queue(refresh_Queue),
 	.dqs_counter(dqs_counter),
 	.dqs_rising_edge(dqs_rising_edge),

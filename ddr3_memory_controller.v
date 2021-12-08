@@ -201,6 +201,9 @@ module ddr3_memory_controller
 
 	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
 	
+	// for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
+	output reg [$clog2(MAX_WAIT_COUNT):0] wait_count,
+	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
 `ifdef USE_ILA
 	output [DQ_BITWIDTH-1:0] dq_w,  // port I
@@ -213,7 +216,6 @@ module ddr3_memory_controller
 	output reg write_is_enabled,
 	output reg read_is_enabled,
 	
-	output reg [$clog2(MAX_WAIT_COUNT):0] wait_count,
 	output reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue,
 	output reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter,
 	
@@ -222,8 +224,8 @@ module ddr3_memory_controller
 `endif
 
 `ifdef USE_x16
-	output ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
-	output udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
+	output reg ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
+	output reg udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
 	inout ldqs, // lower byte data strobe
 	inout ldqs_n,
 	inout udqs, // upper byte data strobe
@@ -297,15 +299,16 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 */
 
 
+// to synchronize signal in clk_pll domain to ck_180 domain
+wire [$clog2(MAX_WAIT_COUNT):0] wait_count_ck_180;
+wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_ck_180;
+
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state_ck_180;
 
+
 // for PLL lock issue
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] state_to_be_restored;
-
-`ifndef USE_ILA
-	reg [$clog2(MAX_WAIT_COUNT):0] wait_count;  // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
-`endif
 
 
 localparam STATE_RESET = 0;
@@ -2272,8 +2275,11 @@ endgenerate
 `endif
 
 `ifdef USE_x16
-	 assign ldm = (main_state != STATE_WRITE_DATA);
-	 assign udm = (main_state != STATE_WRITE_DATA);
+	always @(posedge ck_180)
+	begin
+	 	ldm <= (main_state_ck_180 != STATE_WRITE_DATA);
+	 	udm <= (main_state_ck_180 != STATE_WRITE_DATA);
+	end
 `endif
 
 
@@ -2454,16 +2460,13 @@ reg [BANK_ADDRESS_BITWIDTH-1:0] r_bank_address;
 
 // {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address}
 reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_to_be_sent_to_dram; 
+reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_sent_to_dram;  // data alignment due to write AL latency
 					
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] fifo_command_dequeue_value;					
 
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] NOP_DRAM_COMMAND_BITS = 
    {r_ck_en, 1'b0, 1'b1, 1'b1, 1'b1, r_reset_n, r_odt, {ADDRESS_BITWIDTH{1'b0}}, {BANK_ADDRESS_BITWIDTH{1'b0}}};
 
-
-// to synchronize signal in clk_pll domain to ck_180 domain
-wire [$clog2(MAX_WAIT_COUNT):0] wait_count_ck_180;
-wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_ck_180;
 
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_clk_pll = 
 					{r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt, r_address, r_bank_address};
@@ -2560,8 +2563,11 @@ begin
 	else dram_command_bits_to_be_sent_to_dram <= dram_command_bits_ck_180;  // new DRAM command
 end
 
+// data alignment due to write AL latency
+always @(posedge ck_180)  dram_command_bits_sent_to_dram <= dram_command_bits_to_be_sent_to_dram;
+
 assign {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address} = 
-									dram_command_bits_to_be_sent_to_dram;
+									dram_command_bits_sent_to_dram;
 									
 									
 // the purpose of using FIFO instead of just a register is 
@@ -2594,6 +2600,7 @@ fifo_command
     .dequeue_en(1'b1),
     .dequeue_value(fifo_command_dequeue_value)
 );
+
 
 always @(posedge ck_180)
 begin
