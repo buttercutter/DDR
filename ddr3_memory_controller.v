@@ -742,8 +742,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_ldqs_w(
 				.Q(ldqs_w),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
+				.C0(ck),  // 1-bit clock input
+				.C1(ck_180),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -758,8 +758,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_udqs_w(
 				.Q(udqs_w),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
+				.C0(ck),  // 1-bit clock input
+				.C1(ck_180),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -774,8 +774,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_ldqs_n_w(
 				.Q(ldqs_n_w),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
+				.C0(ck),  // 1-bit clock input
+				.C1(ck_180),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b0),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b1),    // 1-bit DDR data input (associated with C1)			
@@ -790,8 +790,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			)
 			ODDR2_udqs_n_w(
 				.Q(udqs_n_w),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
+				.C0(ck),  // 1-bit clock input
+				.C1(ck_180),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b0),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b1),    // 1-bit DDR data input (associated with C1)			
@@ -802,14 +802,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		`else
 		
 			ODDR2 #(
-				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 			)
 			ODDR2_dqs_w(
 				.Q(dqs_w),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
+				.C0(ck),  // 1-bit clock input
+				.C1(ck_180),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -818,14 +818,14 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			);
 			
 			ODDR2 #(
-				.DDR_ALIGNMENT("NONE"),  // Sets output alignment to "NONE", "C0" or "C1"
+				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
 				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 				.SRTYPE("SYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 			)
 			ODDR2_dqs_n_w(
 				.Q(dqs_n_w),  // 1-bit DDR output data
-				.C0(ck_270),  // 1-bit clock input
-				.C1(ck_90),  // 1-bit clock input
+				.C0(ck),  // 1-bit clock input
+				.C1(ck_180),  // 1-bit clock input
 				.CE(1'b1),  // 1-bit clock enable input
 				.D0(1'b1),    // 1-bit DDR data input (associated with C0)
 				.D1(1'b0),    // 1-bit DDR data input (associated with C1)			
@@ -1731,145 +1731,75 @@ endgenerate
 			end		
 		endgenerate
 		
-		`ifdef VIVADO
-		
-			// see https://www.xilinx.com/support/documentation/sw_manuals/xilinx14_3/7series_hdl.pdf#page=327
-			// 'data_read_is_ongoing' signal is not of double-data-rate signals,
-			// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
-			// thus the purpose of having the following ODDR primitives
-					
-			ODDR #(
-				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR_ldqs_iobuf_en(
-				.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
-				.C(ck_90),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D2(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);	
+        // see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
+        // 'data_read_is_ongoing' signal is not of double-data-rate signals,
+        // but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
+        // thus the purpose of having the following ODDR2 primitives
+                
+        ODDR2 #(
+            .DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+            .INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+            .SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+        )
+        ODDR2_ldqs_iobuf_en(
+            .Q(ldqs_iobuf_enable),  // 1-bit DDR output data
+            .C0(ck),  // 1-bit clock input
+            .C1(ck_180),  // 1-bit clock input
+            .CE(1'b1),  // 1-bit clock enable input
+            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .R(1'b0),    // 1-bit reset input
+            .S(1'b0)     // 1-bit set input
+        );	
 
-			ODDR #(
-				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR_ldqs_n_iobuf_en(
-				.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
-				.C(ck_90),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D2(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);
-			
-			ODDR #(
-				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR_udqs_iobuf_en(
-				.Q(udqs_iobuf_enable),  // 1-bit DDR output data
-				.C(ck_90),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D2(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);	
+        ODDR2 #(
+            .DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+            .INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+            .SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+        )
+        ODDR2_ldqs_n_iobuf_en(
+            .Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
+            .C0(ck),  // 1-bit clock input
+            .C1(ck_180),  // 1-bit clock input
+            .CE(1'b1),  // 1-bit clock enable input
+            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .R(1'b0),    // 1-bit reset input
+            .S(1'b0)     // 1-bit set input
+        );
+        
+        ODDR2 #(
+            .DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+            .INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+            .SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+        )
+        ODDR2_udqs_iobuf_en(
+            .Q(udqs_iobuf_enable),  // 1-bit DDR output data
+            .C0(ck),  // 1-bit clock input
+            .C1(ck_180),  // 1-bit clock input
+            .CE(1'b1),  // 1-bit clock enable input
+            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .R(1'b0),    // 1-bit reset input
+            .S(1'b0)     // 1-bit set input
+        );	
 
-			ODDR #(
-				.DDR_CLK_EDGE("SAME_EDGE"),  // "OPPOSITE_EDGE" or "SAME_EDGE"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR_udqs_n_iobuf_en(
-				.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
-				.C(ck_90),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D2(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);	
-			
-		`else		
-		
-			// see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
-			// 'data_read_is_ongoing' signal is not of double-data-rate signals,
-			// but it is connected to T port of IOBUF where its I port is fed in with double-data-rate DQS signals,
-			// thus the purpose of having the following ODDR2 primitives
-					
-			ODDR2 #(
-				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR2_ldqs_iobuf_en(
-				.Q(ldqs_iobuf_enable),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);	
-
-			ODDR2 #(
-				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR2_ldqs_n_iobuf_en(
-				.Q(ldqs_n_iobuf_enable),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);
-			
-			ODDR2 #(
-				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR2_udqs_iobuf_en(
-				.Q(udqs_iobuf_enable),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);	
-
-			ODDR2 #(
-				.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
-				.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
-				.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
-			)
-			ODDR2_udqs_n_iobuf_en(
-				.Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
-				.C0(ck_90),  // 1-bit clock input
-				.C1(ck_270),  // 1-bit clock input
-				.CE(1'b1),  // 1-bit clock enable input
-				.D0(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-				.D1(data_read_is_ongoing_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
-				.R(1'b0),    // 1-bit reset input
-				.S(1'b0)     // 1-bit set input
-			);
+        ODDR2 #(
+            .DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+            .INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
+            .SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
+        )
+        ODDR2_udqs_n_iobuf_en(
+            .Q(udqs_n_iobuf_enable),  // 1-bit DDR output data
+            .C0(ck),  // 1-bit clock input
+            .C1(ck_180),  // 1-bit clock input
+            .CE(1'b1),  // 1-bit clock enable input
+            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .R(1'b0),    // 1-bit reset input
+            .S(1'b0)     // 1-bit set input
+        );
 				
-		`endif
 	`endif
 		
 
@@ -1898,17 +1828,17 @@ endgenerate
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C1"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_dq_iobuf_en(
 			.Q(dq_iobuf_enable[dq_index]),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
+			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -1962,14 +1892,14 @@ endgenerate
 		// Xilinx HDL Libraries Guide, version 14.7
 
 		ODDR2 #(
-			.DDR_ALIGNMENT("C0"),  // Sets output alignment to "NONE", "C0" or "C1"
+			.DDR_ALIGNMENT("C1"),  // Sets output alignment to "NONE", "C0" or "C1"
 			.INIT(1'b0),  // Sets initial state of the Q output to 1'b0 or 1'b1
 			.SRTYPE("ASYNC")  // Specifies "SYNC" or "ASYNC" set/reset
 		)
 		ODDR2_dq_w(
 			.Q(dq_w[dq_index]),  // 1-bit DDR output data
-			.C0(ck),  // 1-bit clock input
-			.C1(ck_180),  // 1-bit clock input
+			.C0(ck_90),  // 1-bit clock input
+			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D0(dq_w_d0[dq_index]),    // 1-bit DDR data input (associated with C0)
 			.D1(dq_w_d1[dq_index]),    // 1-bit DDR data input (associated with C1)
