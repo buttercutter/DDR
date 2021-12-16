@@ -333,6 +333,8 @@ localparam STATE_INIT_MRS_0 = 19;
 localparam STATE_WAIT_AFTER_MPR = 20;
 localparam STATE_MRS3_TO_MRS1 = 21;
 localparam STATE_PLL_LOCK_ISSUE = 22;
+localparam STATE_READ_ACTUAL = 23;
+localparam STATE_READ_AP_ACTUAL = 24;
 
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
@@ -2406,20 +2408,20 @@ wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_ck_180;
 
 // for synchronizing multi-bits 'main_state' and 'dram_command_bits_clk_pll' signals 
 // from clk_pll domain to ck_180 domain
-wire afifo_main_state_and_dram_command_bits_is_empty;
-wire afifo_main_state_and_dram_command_bits_is_full;
+wire afifo_main_state_is_empty;
+wire afifo_main_state_is_full;
+wire afifo_dram_command_bits_is_empty;
+wire afifo_dram_command_bits_is_full;
 
 parameter CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK = CLK_PLL_PERIOD/CK_PERIOD;
 //parameter num_of_afifo_main_state_entries = 1 << $clog2(CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK);
 
 async_fifo 
 #(
-	.WIDTH($clog2(NUM_OF_DDR_STATES) + NUM_OF_DRAM_COMMAND_BITS),
+	.WIDTH($clog2(NUM_OF_DDR_STATES)),
 	.NUM_ENTRIES()
 ) 
-// combines into a single asynchronous FIFO due to concern of clock tree placement, 
-// which might results in unpredictable outcome for two separate asynchronous FIFOs
-afifo_main_state_and_dram_command_bits
+afifo_main_state
 (
 	.write_reset(reset),
     .read_reset(reset),
@@ -2427,14 +2429,37 @@ afifo_main_state_and_dram_command_bits
     // Read.
     .read_clk(ck_180),
     .read_en(1'b1),
-    .read_data({main_state_ck_180, dram_command_bits_ck_180}),
-    .empty(afifo_main_state_and_dram_command_bits_is_empty),
+    .read_data(main_state_ck_180),
+    .empty(afifo_main_state_is_empty),
 
     // Write
     .write_clk(clk_pll),
     .write_en(1'b1),
-    .full(afifo_main_state_and_dram_command_bits_is_full),
-    .write_data({main_state, dram_command_bits_clk_pll})
+    .full(afifo_main_state_is_full),
+    .write_data(main_state)
+);
+
+async_fifo 
+#(
+	.WIDTH(NUM_OF_DRAM_COMMAND_BITS),
+	.NUM_ENTRIES()
+) 
+afifo_dram_command_bits
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(ck_180),
+    .read_en(1'b1),
+    .read_data(dram_command_bits_ck_180),
+    .empty(afifo_dram_command_bits_is_empty),
+
+    // Write
+    .write_clk(clk_pll),
+    .write_en(1'b1),
+    .full(afifo_dram_command_bits_is_full),
+    .write_data(dram_command_bits_clk_pll)
 );
 
 
@@ -2479,7 +2504,7 @@ always @(posedge ck_180)  // rdap command needs to be issued only ONCE
 	no_need_to_issue_rdap_command <= (issue_actual_rdap_command_now == previous_issue_actual_rdap_command_now);
 	
 always @(posedge ck_180)
-	after_new_command_is_issued <= (main_state_remains_the_same) && (no_need_to_issue_rdap_command);
+	after_new_command_is_issued <= (main_state_remains_the_same);// && (no_need_to_issue_rdap_command);
 
 always @(posedge ck_180)					
 begin
@@ -3413,18 +3438,33 @@ begin
 			STATE_READ :
 			begin
 				r_ck_en <= 1;
-
-				if(wait_count > (NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+				
+				r_address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								1'b0,  // A10 : no auto-precharge
+								i_user_data_address[A10-1:0]
+							};			
+			
+				if(wait_count >=  
+						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
-					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
-					r_ck_en <= 1;
+					// no more NOP command in next 'ck' cycle, issue the actual RD command
 					r_cs_n <= 0;			
 					r_ras_n <= 1;
 					r_cas_n <= 0;
 					r_we_n <= 1;
-				end
-
+									
+					main_state <= STATE_READ_ACTUAL;
+					wait_count <= 0;
+					
+					enqueue_dram_command_bits <= 1;
+				end	
+				
 				else begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 					// only a single, non-repeating ACT command is executed, and followed by NOP commands
@@ -3432,7 +3472,16 @@ begin
 					r_ras_n <= 1;
 					r_cas_n <= 1;
 					r_we_n <= 1;	
-				end
+									
+					main_state <= STATE_READ;
+					
+					enqueue_dram_command_bits <= 0;
+				end							
+			end
+					
+			STATE_READ_ACTUAL :
+			begin
+				r_ck_en <= 1;
 				
 				r_address <= 	// column address
 						   	{
@@ -3444,20 +3493,80 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > 
-						(TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
-						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
+				if(wait_count > (TIME_RL-TIME_TRPRE-1))
 				begin
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;	
+									
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
+					
+					enqueue_dram_command_bits <= 1;
 				end
+								
+				else begin
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;	
+									
+					main_state <= STATE_READ_ACTUAL;
+					
+					enqueue_dram_command_bits <= 0;
+				end						
+			end
+
+			STATE_READ_AP :
+			begin
+				r_ck_en <= 1;
+				
+				r_address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								1'b1,  // A10 : use auto-precharge
+								i_user_data_address[A10-1:0]
+							};			
+			
+				if(wait_count >=  
+						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
+				begin
+					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
+					r_cs_n <= 0;			
+					r_ras_n <= 1;
+					r_cas_n <= 0;
+					r_we_n <= 1;
+									
+					main_state <= STATE_READ_AP_ACTUAL;
+					wait_count <= 0;
+					
+					enqueue_dram_command_bits <= 1;
+				end	
 				
 				else begin
-					main_state <= STATE_READ;
-				end				
+					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+					// only a single, non-repeating ACT command is executed, and followed by NOP commands
+					r_cs_n <= 0;
+					r_ras_n <= 1;
+					r_cas_n <= 1;
+					r_we_n <= 1;	
+									
+					main_state <= STATE_READ_AP;
+					
+					enqueue_dram_command_bits <= 0;
+				end							
 			end
 					
-			STATE_READ_AP :
+			STATE_READ_AP_ACTUAL :
 			begin
 				r_ck_en <= 1;
 				
@@ -3471,9 +3580,7 @@ begin
 								i_user_data_address[A10-1:0]
 							};
 				
-				if(wait_count > 
-						(TIME_RL-TIME_TRPRE+NUM_OF_READ_PIPELINE_REGISTER_ADDED+
-						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
+				if(wait_count >= (TIME_RL-TIME_TRPRE))
 				begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
 					// only a single, non-repeating ACT command is executed, and followed by NOP commands
@@ -3487,21 +3594,6 @@ begin
 					
 					enqueue_dram_command_bits <= 1;
 				end
-
-				else if(wait_count ==  
-						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
-						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
-				begin
-					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
-					r_cs_n <= 0;			
-					r_ras_n <= 1;
-					r_cas_n <= 0;
-					r_we_n <= 1;
-									
-					main_state <= STATE_READ_AP;
-					
-					enqueue_dram_command_bits <= 1;
-				end
 								
 				else begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
@@ -3511,7 +3603,7 @@ begin
 					r_cas_n <= 1;
 					r_we_n <= 1;	
 									
-					main_state <= STATE_READ_AP;
+					main_state <= STATE_READ_AP_ACTUAL;
 					
 					enqueue_dram_command_bits <= 0;
 				end						
