@@ -66,7 +66,8 @@ module test_ddr3_memory_controller
 		// clock period of 'clk' = 0.8225ns , clock period of 'ck' = 3.3ns
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
-		parameter CLK_PERIOD = 20,  // 20ns
+		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
+		parameter CLK_PLL_PERIOD = 9,  // 9ns, 111.111MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -78,7 +79,7 @@ module test_ddr3_memory_controller
 	`endif
 
 	`ifdef HIGH_SPEED
-		parameter CK_PERIOD = 2.857143,  // 350MHz from PLL, 1/350MHz = 2.857143ns
+		parameter CK_PERIOD = 3,  // 333.333MHz from PLL, 1/333.333MHz = 3ns
 	`else
 		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`endif
@@ -167,6 +168,15 @@ module test_ddr3_memory_controller
 );
 
 
+`ifdef HIGH_SPEED
+// for clk_serdes clock domain
+wire clk_serdes;  // 111.111MHz with 0 phase shift
+wire ck_180;  // 333.333MHz with 180 phase shift
+wire locked_previous;
+wire need_to_assert_reset;
+`endif
+
+
 /* verilator lint_off VARHIDDEN */
 localparam NUM_OF_DDR_STATES = 23;
 
@@ -177,15 +187,31 @@ localparam MAX_WAIT_COUNT = 512;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE
-localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development stage, will refine the value later
+localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial development stage, will refine the value later
 
+localparam STATE_ACTIVATE = 5;
 localparam STATE_WRITE = 6;
 localparam STATE_WRITE_DATA = 8;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
-wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
-wire [$clog2(MAX_WAIT_COUNT):0] wait_count;
-		
+wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_clk_serdes;
+reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state_clk_serdes;
+
+always @(posedge clk_serdes) previous_main_state_clk_serdes <= main_state_clk_serdes;
+
+
+reg [$clog2(MAX_WAIT_COUNT):0] wait_count_clk_serdes;
+
+always @(posedge clk_serdes)
+begin
+    if(previous_main_state_clk_serdes != main_state_clk_serdes)
+    begin
+        wait_count_clk_serdes <= 0;
+    end
+    
+    else wait_count_clk_serdes <= wait_count_clk_serdes + 1;
+end
+
 
 // for STATE_IDLE transition into STATE_REFRESH
 parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
@@ -273,7 +299,7 @@ parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one execute
 
 	// note that sensitive list is omitted in always block
 	// therefore always-block run forever
-	// clock period = 3.3 ns , frequency = 303 MHz
+	// clock period = 20ns , frequency = 50MHz
 	always #((CLK_PERIOD*PICO_TO_NANO_CONVERSION_FACTOR)/2) clk_sim = ~clk_sim;  // clock edge transition every half clock cycle period
 
 	wire reset = ~resetn_sim;  // just for convenience of verilog syntax
@@ -304,14 +330,6 @@ wire udqs_iobuf_enable;
 wire ldqs_iobuf_enable;
 
 wire data_read_is_ongoing;
-`endif
-
-`ifdef HIGH_SPEED
-// for clk_serdes clock domain
-wire clk_serdes;  // 50MHz with 0 phase shift
-wire ck_180;  // 350MHz with 180 phase shift
-wire locked_previous;
-wire need_to_assert_reset;
 `endif
 
 
@@ -378,7 +396,7 @@ reg done_writing, done_reading;
 				`endif
 					(~done_writing) &&
 					// write operation has higher priority in loopback mechanism
-					(main_state == STATE_WRITE_DATA) && (wait_count[0]))  // (wait_count == 1), for better STA setup timing
+					(main_state_clk_serdes == STATE_ACTIVATE) && (wait_count_clk_serdes[0]))  // (wait_count_clk_serdes == 1), for better STA setup timing
 				begin					
 					`ifdef USE_SERDES							
 						`ifdef USE_x16
@@ -397,7 +415,7 @@ reg done_writing, done_reading;
 					`endif
 				end
 				
-				else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
+				else if((done_writing) && (main_state_clk_serdes == STATE_READ_DATA)) begin  // read operation
 
 				end
 			end
@@ -447,7 +465,7 @@ reg done_writing, done_reading;
 		`endif
 			(~done_writing) && 
 			// write operation has higher priority in loopback mechanism
-			(main_state == STATE_WRITE_DATA) && (wait_count[0]))  // (wait_count == 1), for better STA setup timing
+			(main_state_clk_serdes == STATE_ACTIVATE) && (wait_count_clk_serdes[0]))  // (wait_count_clk_serdes == 1), for better STA setup timing
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -469,7 +487,7 @@ reg done_writing, done_reading;
 			end
 		end
 		
-		else if((done_writing) && (main_state == STATE_READ_DATA))  // read operation
+		else if((done_writing) && (main_state_clk_serdes == STATE_READ_DATA))  // read operation
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -508,7 +526,6 @@ reg done_writing, done_reading;
 	wire dqs_rising_edge;
 	wire dqs_falling_edge;
 
-    wire [$clog2(MAX_TIMING)-1:0] wait_count;
     wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
     wire [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
 		
@@ -560,7 +577,7 @@ reg done_writing, done_reading;
 			.CLK(clk), // IN
 			.TRIG0({low_Priority_Refresh_Request, high_Priority_Refresh_Request,
 					write_is_enabled, read_is_enabled, write_enable, read_enable, 
-				   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
+				   	main_state_clk_serdes, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
 		);
 
 		ila_64_bits ila_states_and_wait_count (
@@ -568,7 +585,7 @@ reg done_writing, done_reading;
 			.CLK(clk), // IN
 			.TRIG0({data_to_ram, data_from_ram, low_Priority_Refresh_Request, high_Priority_Refresh_Request,
 			 		write_enable, read_enable, dqs_counter, dqs_rising_edge, dqs_falling_edge, 
-					main_state, wait_count, refresh_Queue}) // IN BUS [63:0]
+					main_state_clk_serdes, wait_count_clk_serdes, refresh_Queue}) // IN BUS [63:0]
 		);
 
 	`else
@@ -634,8 +651,8 @@ ddr3_control
 	`endif
 	
 	`ifdef HIGH_SPEED
-		.clk_serdes(clk_serdes),  // 50MHz with 0 phase shift
-		.ck_180(ck_180),  // 350MHz with 180 phase shift
+		.clk_serdes(clk_serdes),  // 111.111MHz with 0 phase shift
+		.ck_180(ck_180),  // 333.333MHz with 180 phase shift
 		.locked_previous(locked_previous),
 		.need_to_assert_reset(need_to_assert_reset),
 	`endif
@@ -650,8 +667,7 @@ ddr3_control
 	
 	.dq(dq), // Data input/output
 
-	.main_state(main_state),
-	.wait_count(wait_count),
+	.main_state_clk_serdes(main_state_clk_serdes),
 	
 `ifdef USE_ILA
 	.dq_w(dq_w),
@@ -826,4 +842,5 @@ ddr3 mem(
 `endif
 
 endmodule
+
 

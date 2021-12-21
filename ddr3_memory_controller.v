@@ -74,7 +74,7 @@ module ddr3_memory_controller
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
-		parameter CLK_PLL_PERIOD = 20,  // 20ns, 50MHz
+		parameter CLK_PLL_PERIOD = 9,  // 9ns, 111.111MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -86,7 +86,7 @@ module ddr3_memory_controller
 	`endif
 	
 	`ifdef HIGH_SPEED
-		parameter CK_PERIOD = 2.857143,  // 350MHz from PLL, 1/350MHz = 2.857143ns
+		parameter CK_PERIOD = 3,  // 333.333MHz from PLL, 1/333.333MHz = 3ns
 	`else
 		parameter CK_PERIOD = (CLK_PERIOD*DIVIDE_RATIO),
 	`endif
@@ -183,8 +183,8 @@ module ddr3_memory_controller
 	`endif
 	
 	`ifdef HIGH_SPEED
-		output clk_serdes,  // 50MHz with 0 phase shift
-		output ck_180,  // 350MHz with 180 phase shift
+		output clk_serdes,  // 111.111MHz with 0 phase shift
+		output ck_180,  // 333.333MHz with 180 phase shift
 		output reg locked_previous,
 		output need_to_assert_reset,
 	`endif
@@ -199,10 +199,8 @@ module ddr3_memory_controller
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
 
-	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
-	
-	// for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
-	output reg [$clog2(MAX_WAIT_COUNT):0] wait_count,
+	// for synchronizing multi-bits signals from clk_pll domain to clk_serdes domain
+	output [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_clk_serdes,
 	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
 `ifdef USE_ILA
@@ -299,10 +297,14 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 */
 
 
+// for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
+reg [$clog2(MAX_WAIT_COUNT):0] wait_count;
+
 // to synchronize signal in clk_pll domain to ck_180 domain
 wire [$clog2(MAX_WAIT_COUNT):0] wait_count_ck_180;
 wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_ck_180;
 
+reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state_ck_180;
 
@@ -313,8 +315,8 @@ reg [$clog2(NUM_OF_DDR_STATES)-1:0] state_to_be_restored;
 
 localparam STATE_RESET = 0;
 localparam STATE_RESET_FINISH = 1;
-localparam STATE_ZQ_CALIBRATION = 2;
-localparam STATE_IDLE = 4;
+localparam STATE_ZQ_CALIBRATION = 23;
+localparam STATE_IDLE = 24;
 localparam STATE_ACTIVATE = 5;
 localparam STATE_WRITE = 6;
 localparam STATE_WRITE_AP = 7;
@@ -333,13 +335,13 @@ localparam STATE_INIT_MRS_0 = 19;
 localparam STATE_WAIT_AFTER_MPR = 20;
 localparam STATE_MRS3_TO_MRS1 = 21;
 localparam STATE_PLL_LOCK_ISSUE = 22;
-localparam STATE_READ_ACTUAL = 23;
-localparam STATE_READ_AP_ACTUAL = 24;
+localparam STATE_READ_ACTUAL = 2;
+localparam STATE_READ_AP_ACTUAL = 4;
 
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE
-localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development stage, will refine the value later
+localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial development stage, will refine the value later
 
 // just to avoid https://github.com/YosysHQ/yosys/issues/2718
 `ifndef XILINX
@@ -367,39 +369,39 @@ localparam MAX_TIMING = (500000/CLK_PERIOD);  // just for initial development st
 
 `else
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PERIOD);  // 200us = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PERIOD);  // 500us = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PLL_PERIOD);  // 200us = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PLL_PERIOD);  // 500us = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
 	`ifdef RAM_SIZE_1GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CLK_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CLK_PLL_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CLK_PLL_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 
 	`elsif RAM_SIZE_2GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CLK_PERIOD);
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CLK_PLL_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CLK_PLL_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
 
 	`elsif RAM_SIZE_4GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CLK_PERIOD);
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CLK_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CLK_PLL_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CLK_PLL_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
 	`endif
 
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CLK_PERIOD);  // 7.8?s = 7800ns, Maximum average periodic refresh
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CLK_PLL_PERIOD);  // 7.8?s = 7800ns, Maximum average periodic refresh
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CLK_PERIOD);  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CLK_PERIOD);  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CLK_PERIOD);  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CLK_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CLK_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CLK_PERIOD);  // Minimum 195ps, setup time
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CLK_PLL_PERIOD);  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CLK_PLL_PERIOD);  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CLK_PLL_PERIOD);  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CLK_PLL_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CLK_PLL_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CLK_PLL_PERIOD);  // Minimum 195ps, setup time
 		
 		
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TDLLK = (512*CK_PERIOD/CLK_PERIOD);  // tDLLK = 512 clock cycles, DLL locking time
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TZQINIT = (512*CK_PERIOD/CLK_PERIOD);  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_RL = (5*CK_PERIOD/CLK_PERIOD);  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_WL = (5*CK_PERIOD/CLK_PERIOD);  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TBURST = (4*CK_PERIOD/CLK_PERIOD);  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMRD = (4*CK_PERIOD/CLK_PERIOD);  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMOD = (12*CK_PERIOD/CLK_PERIOD);  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TDLLK = (512*CK_PERIOD/CLK_PLL_PERIOD);  // tDLLK = 512 clock cycles, DLL locking time
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TZQINIT = (512*CK_PERIOD/CLK_PLL_PERIOD);  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_RL = (5*CK_PERIOD/CLK_PLL_PERIOD);  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_WL = (5*CK_PERIOD/CLK_PLL_PERIOD);  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TBURST = (4*CK_PERIOD/CLK_PLL_PERIOD);  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMRD = (4*CK_PERIOD/CLK_PLL_PERIOD);  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMOD = (12*CK_PERIOD/CLK_PLL_PERIOD);  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
 
 `endif
 
@@ -587,16 +589,16 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.clk_pll(clk_pll),  // OUT 50MHz, 180 phase shift, for solving STA issues
+			.clk_pll(clk_pll),  // OUT 111.111MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
-			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz, but we use 50MHz
-			.clk_serdes(clk_serdes),  // OUT 50MHz, 0 phase shift, for SERDES use
+			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.33325MHz, but we use 111.111MHz
+			.clk_serdes(clk_serdes),  // OUT 111.111MHz, 0 phase shift, for SERDES use
 			
-			.ck(ck),  // OUT 350MHz, 0 phase shift
-			.ck_90(ck_90),  // OUT 350MHz, 90 phase shift, for dq phase shifting purpose
-			.ck_180(ck_180),  // OUT 350MHz, 180 phase shift
-			.ck_270(ck_270),  // OUT 350MHz, 270 phase shift, for dq phase shifting purpose
+			.ck(ck),  // OUT 333.333MHz, 0 phase shift
+			.ck_90(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
+			.ck_180(ck_180),  // OUT 333.333MHz, 180 phase shift
+			.ck_270(ck_270),  // OUT 333.333MHz, 270 phase shift, for dq phase shifting purpose
 			
 			// Status and control signals
 			.reset(reset),  // IN
@@ -645,8 +647,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.ck_dynamic(ck_dynamic),  // OUT 350MHz, 0 phase shift
-			.ck_dynamic_180(ck_dynamic_180),  // OUT 350MHz, 180 phase shift
+			.ck_dynamic(ck_dynamic),  // OUT 333.333MHz, 0 phase shift
+			.ck_dynamic_180(ck_dynamic_180),  // OUT 333.333MHz, 180 phase shift
 								
 			// Dynamic phase shift ports
 			.psclk(udqs_r),  // IN
@@ -844,16 +846,16 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.inclk0(clk),  // IN 50MHz
 			
 			// Clock out ports
-			//.clk_pll(clk_pll),  // OUT 50MHz, 180 phase shift, for solving STA issues
+			//.clk_pll(clk_pll),  // OUT 111.111MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
-			// So, 350MHz divided by (SERDES_RATIO >> 1) equals 87.5MHz, but we use 50MHz
-			.c4(clk_serdes),  // OUT 50MHz, 0 phase shift, for SERDES use
+			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.33325MHz, but we use 111.111MHz
+			.c4(clk_serdes),  // OUT 111.111MHz, 0 phase shift, for SERDES use
 			
-			.c0(ck),  // OUT 350MHz, 0 phase shift
-			.c1(ck_90),  // OUT 350MHz, 90 phase shift, for dq phase shifting purpose
-			.c2(ck_180),  // OUT 350MHz, 180 phase shift
-			.c3(ck_270),  // OUT 350MHz, 270 phase shift, for dq phase shifting purpose
+			.c0(ck),  // OUT 333.333MHz, 0 phase shift
+			.c1(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
+			.c2(ck_180),  // OUT 333.333MHz, 180 phase shift
+			.c3(ck_270),  // OUT 333.333MHz, 270 phase shift, for dq phase shifting purpose
 			
 			// Status and control signals
 			.areset(reset),  // IN
@@ -870,8 +872,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.phasestep(psen),  // IN
 			.phaseupdown(1'b1),  // IN
 			.scanclk(clk),  // IN
-			.c0(ck_dynamic),  // OUT 350MHz, 0 phase shift
-			.c1(ck_dynamic_180),  // OUT 350MHz, 180 phase shift
+			.c0(ck_dynamic),  // OUT 333.333MHz, 0 phase shift
+			.c1(ck_dynamic_180),  // OUT 333.333MHz, 180 phase shift
 			.locked(locked_dynamic),  // OUT
 			.phasedone(psdone)  // OUT
 		);
@@ -1253,7 +1255,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 
 		
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
 		dq_oserdes_0
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -1266,7 +1268,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_out(dq_w_oserdes_0)
 		);
 
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
 		dq_oserdes_1
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -1417,7 +1419,7 @@ reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoi
 // to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
 reg can_proceed_to_read_data_state;
 always @(posedge ck_180)
-	can_proceed_to_read_data_state <= (wait_count > TIME_RL-TIME_TRPRE);
+	can_proceed_to_read_data_state <= (wait_count[0 +: (TIME_RL-TIME_TRPRE+1)] >= TIME_RL-TIME_TRPRE);
 
 
 // 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
@@ -1434,8 +1436,8 @@ begin
 	end
 	
 	else begin
-		data_read_is_ongoing_temp_3 <= (main_state == STATE_READ);
-		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state == STATE_READ_AP);
+		data_read_is_ongoing_temp_3 <= (main_state == STATE_READ_ACTUAL);
+		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state == STATE_READ_AP_ACTUAL);
 		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2 && can_proceed_to_read_data_state;
 		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state == STATE_READ_DATA);
 	end
@@ -2331,8 +2333,8 @@ reg [$clog2(MAX_TIMING/COUNTER_INCREMENT_VALUE):0] num_of_increment_done;
 // and command enqueue/dequeue signal which take into account of the number of ck cycles had passed.
 // This is to get around the STA setup timing violation issues related to commands generation block.
 
-// to generate a signal that only enqueues the 350MHz FIFO with 50MHz input ONCE
-// 350MHz (ck_180) and 50MHz (clk_pll) have the same 180 phase shift and are generated from the same PLL
+// to generate a signal that only enqueues the 333.333MHz FIFO with 111.111MHz input ONCE
+// 333.333MHz (ck_180) and 111.111MHz (clk_pll) have the same 180 phase shift and are generated from same PLL
 // hence eliminates the need for asynchronous FIFO and its complicated CDC issue
 
 reg enqueue_dram_command_bits;
@@ -2382,7 +2384,7 @@ generate
 endgenerate
 
 
-parameter NUM_OF_DRAM_COMMAND_BITS = 7 + ADDRESS_BITWIDTH + BANK_ADDRESS_BITWIDTH;
+parameter NUM_OF_DRAM_COMMAND_BITS = 7;
 
 // prepends the DDR command signals with "r_" so as to 
 // differentiate between the stored FIFO signals and actual signals sent to DRAM
@@ -2393,25 +2395,35 @@ reg [BANK_ADDRESS_BITWIDTH-1:0] r_bank_address;
 // {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address}
 reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_to_be_sent_to_dram; 
 reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_sent_to_dram;  // data alignment due to write AL latency
+reg [ADDRESS_BITWIDTH-1:0] dram_address_bits_to_be_sent_to_dram; 
+reg [ADDRESS_BITWIDTH-1:0] dram_address_bits_sent_to_dram;  // data alignment due to write AL latency
+reg [BANK_ADDRESS_BITWIDTH-1:0] dram_bank_address_bits_to_be_sent_to_dram; 
+reg [BANK_ADDRESS_BITWIDTH-1:0] dram_bank_address_bits_sent_to_dram;  // data alignment due to write AL latency
 					
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] fifo_command_dequeue_value;					
 
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] NOP_DRAM_COMMAND_BITS = 
-   {r_ck_en, 1'b0, 1'b1, 1'b1, 1'b1, r_reset_n, r_odt, {ADDRESS_BITWIDTH{1'b0}}, {BANK_ADDRESS_BITWIDTH{1'b0}}};
+    // keeps the values of 'r_ck_en' and 'r_reset_n' since they are at logic '0' during DRAM initialization
+		  	 			{r_ck_en, 1'b0, 1'b1, 1'b1, 1'b1, r_reset_n, 1'b0};
 
 
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_clk_pll = 
-					{r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt, r_address, r_bank_address};
+						{r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt};
 					
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_ck_180;
+wire [ADDRESS_BITWIDTH-1:0] dram_address_bits_ck_180;
+wire [BANK_ADDRESS_BITWIDTH-1:0] dram_bank_address_bits_ck_180;
 
 
-// for synchronizing multi-bits 'main_state' and 'dram_command_bits_clk_pll' signals 
-// from clk_pll domain to ck_180 domain
+// for synchronizing multi-bits signals from clk_pll domain to ck_180 domain
 wire afifo_main_state_is_empty;
 wire afifo_main_state_is_full;
 wire afifo_dram_command_bits_is_empty;
 wire afifo_dram_command_bits_is_full;
+wire afifo_dram_address_bits_is_empty;
+wire afifo_dram_address_bits_is_full;
+wire afifo_dram_bank_address_bits_is_empty;
+wire afifo_dram_bank_address_bits_is_full;
 
 parameter CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK = CLK_PLL_PERIOD/CK_PERIOD;
 //parameter num_of_afifo_main_state_entries = 1 << $clog2(CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK);
@@ -2460,6 +2472,52 @@ afifo_dram_command_bits
     .write_en(1'b1),
     .full(afifo_dram_command_bits_is_full),
     .write_data(dram_command_bits_clk_pll)
+);
+
+async_fifo 
+#(
+	.WIDTH(ADDRESS_BITWIDTH),
+	.NUM_ENTRIES()
+) 
+afifo_dram_address_bits
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(ck_180),
+    .read_en(1'b1),
+    .read_data(dram_address_bits_ck_180),
+    .empty(afifo_dram_address_bits_is_empty),
+
+    // Write
+    .write_clk(clk_pll),
+    .write_en(1'b1),
+    .full(afifo_dram_address_bits_is_full),
+    .write_data(r_address)
+);
+
+async_fifo 
+#(
+	.WIDTH(BANK_ADDRESS_BITWIDTH),
+	.NUM_ENTRIES()
+) 
+afifo_dram_bank_address_bits
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(ck_180),
+    .read_en(1'b1),
+    .read_data(dram_bank_address_bits_ck_180),
+    .empty(afifo_dram_bank_address_bits_is_empty),
+
+    // Write
+    .write_clk(clk_pll),
+    .write_en(1'b1),
+    .full(afifo_dram_bank_address_bits_is_full),
+    .write_data(r_bank_address)
 );
 
 
@@ -2511,18 +2569,26 @@ begin
 	if(after_new_command_is_issued)
 	begin
 		dram_command_bits_to_be_sent_to_dram <= NOP_DRAM_COMMAND_BITS;  // sends NOP command to DRAM
-			
+		dram_address_bits_to_be_sent_to_dram <= 0;  // don't care in NOP
+		dram_bank_address_bits_to_be_sent_to_dram <= 0;  // don't care in NOP
+		
 		//else dram_command_bits_to_be_sent_to_dram <= fifo_command_dequeue_value;  // keep the DRAM command unchanged 
 	end
 				
-	else dram_command_bits_to_be_sent_to_dram <= dram_command_bits_ck_180;  // new DRAM command
+	else begin
+		dram_command_bits_to_be_sent_to_dram <= dram_command_bits_ck_180;  // new DRAM command
+		dram_address_bits_to_be_sent_to_dram <= dram_address_bits_ck_180;  // new DRAM address
+		dram_bank_address_bits_to_be_sent_to_dram <= dram_bank_address_bits_ck_180;  // new DRAM bank address
+	end
 end
 
 // data alignment due to write AL latency
 always @(posedge ck_180)  dram_command_bits_sent_to_dram <= dram_command_bits_to_be_sent_to_dram;
+always @(posedge ck_180)  dram_address_bits_sent_to_dram <= dram_address_bits_to_be_sent_to_dram;
+always @(posedge ck_180)  dram_bank_address_bits_sent_to_dram <= dram_bank_address_bits_to_be_sent_to_dram;
 
 assign {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address} = 
-									dram_command_bits_sent_to_dram;
+		{dram_command_bits_sent_to_dram, dram_address_bits_sent_to_dram, dram_bank_address_bits_sent_to_dram};
 									
 									
 // the purpose of using FIFO instead of just a register is 
@@ -2538,12 +2604,12 @@ sync_fifo
 )
 fifo_command
 (
-    .clk(ck_180),  // 350MHz
+    .clk(ck_180),  // 333.333MHz
     .reset(reset),
     .full(),
     .almost_full(),
     
-    // such that 50MHz signal is only sampled once, assuming there is no immediate consecutive DRAM commands
+    // such that 111.111MHz signal is only sampled once, assuming no immediate consecutive DRAM commands
     .enqueue_en(~previous_enqueue_dram_command_bits & enqueue_dram_command_bits),
     
     .enqueue_value(dram_command_bits),
@@ -2564,10 +2630,39 @@ begin
 	else previous_main_state_ck_180 <= main_state_ck_180;
 end
 
+
+// for synchronizing multi-bits signals from clk_pll domain to clk_serdes domain
+wire afifo_main_state_clk_serdes_is_empty;
+wire afifo_main_state_clk_serdes_is_full;
+
+async_fifo 
+#(
+	.WIDTH($clog2(NUM_OF_DDR_STATES)),
+	.NUM_ENTRIES()
+) 
+afifo_main_state_serdes
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(clk_serdes),
+    .read_en(1'b1),
+    .read_data(main_state_clk_serdes),
+    .empty(afifo_main_state_clk_serdes_is_empty),
+
+    // Write
+    .write_clk(clk_pll),
+    .write_en(1'b1),
+    .full(afifo_main_state_clk_serdes_is_full),
+    .write_data(main_state)
+);
+
+
 `endif
 
 `ifdef HIGH_SPEED
-always @(posedge clk_pll)  // 50MHz
+always @(posedge clk_pll)  // 111.111MHz
 `else
 always @(posedge clk)
 `endif
@@ -3826,3 +3921,4 @@ begin
 end
 
 endmodule
+
