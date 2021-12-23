@@ -37,7 +37,7 @@ module async_fifo
 			parameter WIDTH = 32,		
 		`endif
 		
-		parameter NUM_ENTRIES = 8
+		parameter NUM_ENTRIES = 4
     )
 
     (input                  write_reset,
@@ -70,6 +70,15 @@ module async_fifo
     wire [ADDR_WIDTH:0] write_ptr_gray_nxt;
     wire reset_wsync;
     reg [WIDTH - 1:0] fifo_data[0:NUM_ENTRIES - 1];
+
+	`ifdef FORMAL
+	initial read_ptr = 0;
+	initial write_ptr = 0;
+	initial read_ptr_gray = 0;
+	initial write_ptr_gray = 0;
+	initial assume(read_en == 0);
+	initial assume(write_en == 0);	
+	`endif
 
     assign read_ptr_nxt = read_ptr + 1;
     assign read_ptr_gray_nxt = read_ptr_nxt ^ (read_ptr_nxt >> 1);
@@ -113,12 +122,16 @@ module async_fifo
     end
 
     //assign read_data = fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
-	// See https://www.edaboard.com/threads/asychronous-fifo-read_data-is-not-entirely-in-phase-with-read_ptr.400461/	
+	// See https://www.edaboard.com/threads/asychronous-fifo-read_data-is-not-entirely-in-phase-with-read_ptr.400461/
 	always @(posedge read_clk)
 	begin
+		`ifdef FORMAL
 		if(reset_rsync) read_data <= 0;
 	
-		else if(!empty) read_data <= fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
+		else 
+		`endif
+		
+		if(!empty) read_data <= fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
 	end
 
     //
@@ -130,7 +143,11 @@ module async_fifo
         .data_o(read_ptr_sync),
         .data_i(read_ptr_gray));
 
+
+	// As for why this is needed at all, see https://math.stackexchange.com/a/4314823/625099 and
+	// https://www.reddit.com/r/askmath/comments/r0hp2o/simple_gray_code_question/
 	reg [ADDR_WIDTH:0] full_check;
+	
     always @(posedge write_clk) 
     begin
     	if(full) full_check <= write_ptr_gray ^ read_ptr_sync;
@@ -138,8 +155,19 @@ module async_fifo
     	else full_check <= write_ptr_gray_nxt ^ read_ptr_sync;
     end
 
+	// compensates for the delay in synchronizer chain which results in 
+	// false-positive full detection
+	wire read_en_sync;
+
 	// See https://electronics.stackexchange.com/questions/596233/address-rollover-for-asynchronous-fifo    	
-    assign full = (full_check[ADDR_WIDTH] & full_check[ADDR_WIDTH-1]) && (full_check[0 +: (ADDR_WIDTH-1)] == 0);
+    assign full = (full_check[ADDR_WIDTH] & full_check[ADDR_WIDTH-1]) && (full_check[0 +: (ADDR_WIDTH-1)] == 0) && (~read_en_sync);
+
+
+    synchronizer #(.WIDTH(1)) read_en_synchronizer(
+        .clk(write_clk),
+        .reset(reset_wsync),
+        .data_o(read_en_sync),
+        .data_i(read_en));
 
     synchronizer #(.RESET_STATE(1)) write_reset_synchronizer(
         .clk(write_clk),
@@ -189,15 +217,25 @@ module async_fifo
 	always @($global_clock)
 		first_clock_had_passed <= 1;	
 
+	// to ensure proper initial reset
+	initial assume(write_clk == 0); 
+	initial assume(read_clk == 0);
+
 	always @(posedge write_clk)
-		first_write_clock_had_passed <= 1;
+		first_write_clock_had_passed <= first_clock_had_passed;
 
 	always @(posedge read_clk)
-		first_read_clock_had_passed <= 1;
+		first_read_clock_had_passed <= first_clock_had_passed;
 
 	//always @($global_clock)
 		//assert($rose(reset_wsync)==$rose(reset_rsync));  // comment this out for experiment
-
+/*
+	always @($global_clock) 
+	begin
+		if(first_write_clock_had_passed && first_read_clock_had_passed)
+			assert(~empty || ~full);  // ensures that only one condition is satisfied
+	end
+*/
 	initial assume(write_reset);
 	initial assume(read_reset);
 	//always @($global_clock) 
@@ -494,42 +532,27 @@ module async_fifo
 	// writes to FIFO for many clock cycles, then
 	// read from FIFO for many clock cycles
 	
-	// As for why this is needed at all, see https://math.stackexchange.com/a/4314823/625099 and
-	// https://www.reddit.com/r/askmath/comments/r0hp2o/simple_gray_code_question/
-	
 	// for this particular test, we need NUM_ENTRIES to be power of 2 
 	// since address rollover (MSB flipping) mechanism is used to check whether 
 	// every FIFO entries had been visited at least twice
 	localparam CYCLES_FOR_FULL_EMPTY_CHECK = NUM_ENTRIES; 
 	
-	reg [$clog2(CYCLES_FOR_FULL_EMPTY_CHECK):0] write_counter_loop_around_fifo;
-	reg [$clog2(CYCLES_FOR_FULL_EMPTY_CHECK):0] read_counter_loop_around_fifo;	
 	reg [$clog2(CYCLES_FOR_FULL_EMPTY_CHECK):0] previous_write_counter_loop_around_fifo;
 	reg [$clog2(CYCLES_FOR_FULL_EMPTY_CHECK):0] previous_read_counter_loop_around_fifo;	
-		
-	initial write_counter_loop_around_fifo = 0;
-	initial read_counter_loop_around_fifo = 0;
+
 	initial previous_write_counter_loop_around_fifo = 0;
 	initial previous_read_counter_loop_around_fifo = 0;
 	
 	always @(posedge write_clk)
 	begin
-		if(test_write_en)
-			write_counter_loop_around_fifo <= write_counter_loop_around_fifo + 1;
-			
-		else write_counter_loop_around_fifo <= 0;
-			
-		previous_write_counter_loop_around_fifo <= write_counter_loop_around_fifo;
+		if(reset_wsync_is_done)
+			previous_write_counter_loop_around_fifo <= write_ptr;
 	end
 
 	always @(posedge read_clk)
 	begin
-		if(test_read_en)
-			read_counter_loop_around_fifo <= read_counter_loop_around_fifo + 1;
-			
-		else read_counter_loop_around_fifo <= 0;
-		
-		previous_read_counter_loop_around_fifo <= read_counter_loop_around_fifo;
+		if(reset_rsync_is_done)
+			previous_read_counter_loop_around_fifo <= read_ptr;
 	end
 
 	
@@ -542,19 +565,21 @@ module async_fifo
 	reg [$clog2(CYCLES_FOR_FULL_EMPTY_CHECK):0] test_write_data;
 
 	wire finished_loop_writing;
-	reg had_finished_loop_writing;
-	initial had_finished_loop_writing = 0;
+	reg finished_loop_writing_previously;
+	initial finished_loop_writing_previously = 0;
 
 	always @(posedge write_clk) 
 	begin
-		if(reset_wsync) had_finished_loop_writing <= 0;
+		if(reset_wsync) finished_loop_writing_previously <= 0;
 	
-		else if(finished_loop_writing) had_finished_loop_writing <= 1;
+		else finished_loop_writing_previously <= finished_loop_writing;
 	end
 		
-	assign finished_loop_writing = (~had_finished_loop_writing) &&  // to make this a single clock pulse
-					// every FIFO entries had been visited at least twice
-					(write_counter_loop_around_fifo == 0) && (&previous_write_counter_loop_around_fifo);
+	assign finished_loop_writing = (~finished_loop_writing_previously) &&  // to make this a single clock pulse
+					// every FIFO entries had been visited at least once
+					(&previous_write_counter_loop_around_fifo);
+
+	wire test_write_enable = $anyseq;  // for synchronizing both 'test_write_en' and 'test_write_data' signals
 	
 	always @(posedge write_clk)
 	begin
@@ -564,26 +589,31 @@ module async_fifo
 			test_write_data <= 0;
 		end
 		
-		else begin
-			test_write_en <= second_data_is_read;  // starts after twin-write test
-			test_write_data <= test_write_data + second_data_is_read;  // for easy tracking on write test progress
+		else if(second_data_is_read)  // starts after twin-write test
+		begin
+			test_write_en <= test_write_enable;
+			
+			// for easy tracking on write test progress
+			test_write_data <= test_write_data + (!full && test_write_enable);
 		end
+		
+		else test_write_en <= 0;
 	end
 
 	wire finished_loop_reading;
-	reg had_finished_loop_reading;
-	initial had_finished_loop_reading = 0;
+	reg finished_loop_reading_previously;
+	initial finished_loop_reading_previously = 0;
 
 	always @(posedge read_clk) 
 	begin
-		if(reset_rsync) had_finished_loop_reading <= 0;
+		if(reset_rsync) finished_loop_reading_previously <= 0;
 	
-		else if(finished_loop_reading) had_finished_loop_reading <= 1;
+		else finished_loop_reading_previously <= finished_loop_reading;
 	end
 
-	assign finished_loop_reading = (~had_finished_loop_reading) &&  // to make this a single clock pulse
-					// every FIFO entries had been visited at least twice
-					(read_counter_loop_around_fifo == 0) && (&previous_read_counter_loop_around_fifo);
+	assign finished_loop_reading = (~finished_loop_reading_previously) &&  // to make this a single clock pulse
+					// every FIFO entries had been visited at least once
+					(&previous_read_counter_loop_around_fifo);
 
 	always @(posedge read_clk)
 	begin
@@ -592,36 +622,31 @@ module async_fifo
 			test_read_en <= 0;
 		end
 		
-		else begin
-			test_read_en <= ((second_data_is_read) &&  // starts after twin-write test
-							 (had_finished_loop_writing));  // finished write testing;	
+		else if(second_data_is_read)  // starts after twin-write test
+		begin
+			test_read_en <= $anyseq;
 		end
+		
+		else test_read_en <= 0;
 	end
 
-	reg [1:0] finished_one_loop_test;  // {read_test, write_test}
-	initial finished_one_loop_test = 2'b00;
+	reg finished_one_loop_test;
+	initial finished_one_loop_test = 0;
 	
 	always @($global_clock)
 	begin
-		if(&finished_one_loop_test)
-		begin
-			finished_one_loop_test <= 2'b00;
-		end
+		if(finished_one_loop_test) finished_one_loop_test <= 0;
 		
-		else begin
-			if(finished_loop_writing) finished_one_loop_test <= 2'b01;
-			
-			else if(finished_loop_reading && (finished_one_loop_test == 2'b01)) finished_one_loop_test <= 2'b11;
-		end
+		else if(finished_loop_reading) finished_one_loop_test <= 1;
 	end
 
-	localparam TOTAL_NUM_OF_LOOP_TESTS = 2;  // write -> read -> write -> read
+	localparam TOTAL_NUM_OF_LOOP_TESTS = 2;  // write and read operations occur concurrently for two FIFO loops
 	reg [$clog2(TOTAL_NUM_OF_LOOP_TESTS):0] num_of_loop_tests_done;
 	initial num_of_loop_tests_done = 0;
 	
 	always @($global_clock)
 	begin
-		num_of_loop_tests_done <= num_of_loop_tests_done + (&finished_one_loop_test);
+		num_of_loop_tests_done <= num_of_loop_tests_done + (finished_one_loop_test);
 	end
 
 	always @(posedge write_clk)
@@ -629,8 +654,12 @@ module async_fifo
 		if(test_write_en) 
 		begin
 			assume(write_en);
-			assume(!read_en);  // write testing first, followed by read testing
 			assume(write_data == test_write_data);
+		end
+		
+		else if(second_data_is_written)  // after twin-write test, but before full/empty coverage
+		begin
+			assume(!write_en);
 		end
 	end
 
@@ -641,7 +670,8 @@ module async_fifo
 
 	always @(*)
 	begin
-		if(test_write_en || test_read_en)
+		if(first_clock_had_passed &&  // only initial reset
+			(num_of_loop_tests_done <= TOTAL_NUM_OF_LOOP_TESTS))  // another reset after the initial reset
 		begin
 			assume(!write_reset);
 			assume(!read_reset);
