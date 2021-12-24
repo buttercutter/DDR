@@ -29,6 +29,9 @@
 // for writing and reading 2 different values into 2 different FIFO entry locations
 `define ENABLE_TWIN_WRITE_TEST 1
 
+// to simplify 'full' logic when the condition within read clock domain allows
+`define READ_CLOCK_IS_FASTER_AND_READ_EN_IS_ASSERTED_FOREVER 1
+
 module async_fifo
     #(
     	`ifdef FORMAL
@@ -155,19 +158,15 @@ module async_fifo
     	else full_check <= write_ptr_gray_nxt ^ read_ptr_sync;
     end
 
-	// compensates for the delay in synchronizer chain which results in 
-	// false-positive full detection
-	wire read_en_sync;
-
-	// See https://electronics.stackexchange.com/questions/596233/address-rollover-for-asynchronous-fifo    	
-    assign full = (full_check[ADDR_WIDTH] & full_check[ADDR_WIDTH-1]) && (full_check[0 +: (ADDR_WIDTH-1)] == 0) && (~read_en_sync);
-
-
-    synchronizer #(.WIDTH(1)) read_en_synchronizer(
-        .clk(write_clk),
-        .reset(reset_wsync),
-        .data_o(read_en_sync),
-        .data_i(read_en));
+	`ifdef READ_CLOCK_IS_FASTER_AND_READ_EN_IS_ASSERTED_FOREVER
+		// compensates for the delay in synchronizer chain which results in false-positive full detection
+		// However, careful selection of NUM_ENTRIES is necessary for proper operation
+		assign full = 0;
+	`else
+		// See https://electronics.stackexchange.com/questions/596233/address-rollover-for-asynchronous-fifo    	
+    	assign full = (full_check[ADDR_WIDTH] & full_check[ADDR_WIDTH-1]) && 
+    			  	  (full_check[0 +: (ADDR_WIDTH-1)] == 0);
+    `endif
 
     synchronizer #(.RESET_STATE(1)) write_reset_synchronizer(
         .clk(write_clk),
