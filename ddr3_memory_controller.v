@@ -1419,7 +1419,7 @@ reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoi
 // to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
 reg can_proceed_to_read_data_state;
 always @(posedge ck_180)
-	can_proceed_to_read_data_state <= (wait_count[0 +: (TIME_RL-TIME_TRPRE+1)] >= TIME_RL-TIME_TRPRE);
+	can_proceed_to_read_data_state <= (wait_count_ck_180[0 +: (TIME_RL-TIME_TRPRE+1)] >= TIME_RL-TIME_TRPRE);
 
 
 // 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
@@ -1436,10 +1436,10 @@ begin
 	end
 	
 	else begin
-		data_read_is_ongoing_temp_3 <= (main_state == STATE_READ_ACTUAL);
-		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state == STATE_READ_AP_ACTUAL);
+		data_read_is_ongoing_temp_3 <= (main_state_ck_180 == STATE_READ_ACTUAL);
+		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state_ck_180 == STATE_READ_AP_ACTUAL);
 		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2 && can_proceed_to_read_data_state;
-		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state == STATE_READ_DATA);
+		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state_ck_180 == STATE_READ_DATA);
 	end
 end
 
@@ -2520,6 +2520,28 @@ afifo_dram_bank_address_bits
     .write_data(r_bank_address)
 );
 
+async_fifo 
+#(
+	.WIDTH($clog2(MAX_WAIT_COUNT)),
+	.NUM_ENTRIES()
+) 
+afifo_wait_count
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(ck_180),
+    .read_en(1'b1),
+    .read_data(wait_count_ck_180),
+    .empty(afifo_wait_count_is_empty),
+
+    // Write
+    .write_clk(clk_pll),
+    .write_en(1'b1),
+    .full(afifo_wait_count_is_full),
+    .write_data(wait_count)
+);
 
 reg is_STATE_READ_AP;
 
