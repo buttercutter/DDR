@@ -56,6 +56,9 @@ localparam MAX_WAIT_COUNT = 512;
 // https://www.systemverilog.io/ddr4-basics
 module ddr3_memory_controller
 #(
+	parameter NUM_OF_WRITE_DATA = 32,  // 32 pieces of data are to be written to DRAM
+	parameter NUM_OF_READ_DATA = 32,  // 32 pieces of data are to be read from DRAM
+
 	`ifdef USE_SERDES
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
@@ -222,8 +225,8 @@ module ddr3_memory_controller
 `endif
 
 `ifdef USE_x16
-	output reg ldm,  // lower-byte data mask, to be asserted HIGH during data write activities into RAM
-	output reg udm, // upper-byte data mask, to be asserted HIGH during data write activities into RAM
+	output ldm,  // lower-byte data mask
+	output udm, // upper-byte data mask
 	inout ldqs, // lower byte data strobe
 	inout ldqs_n,
 	inout udqs, // upper byte data strobe
@@ -350,6 +353,7 @@ localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial developmen
 	localparam FIXED_POINT_BITWIDTH = 18;
 `endif
 
+localparam DATA_BURST_LENGTH = 8;  // eight data transfers per burst activity
 
 `ifdef FORMAL
 
@@ -399,7 +403,7 @@ localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial developmen
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TZQINIT = (512*CK_PERIOD/CLK_PLL_PERIOD);  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_RL = (5*CK_PERIOD/CLK_PLL_PERIOD);  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_WL = (5*CK_PERIOD/CLK_PLL_PERIOD);  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TBURST = (4*CK_PERIOD/CLK_PLL_PERIOD);  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TBURST = ((DATA_BURST_LENGTH >> 1)*CK_PERIOD/CLK_PLL_PERIOD);  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMRD = (4*CK_PERIOD/CLK_PLL_PERIOD);  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
 	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMOD = (12*CK_PERIOD/CLK_PLL_PERIOD);  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
 
@@ -2209,11 +2213,9 @@ endgenerate
 `endif
 
 `ifdef USE_x16
-	always @(posedge ck_180)
-	begin
-	 	ldm <= (main_state_ck_180 != STATE_WRITE_DATA);
-	 	udm <= (main_state_ck_180 != STATE_WRITE_DATA);
-	end
+	// no data masking
+ 	assign ldm = 0;
+	assign udm = 0;
 `endif
 
 
@@ -2522,7 +2524,7 @@ afifo_dram_bank_address_bits
 
 async_fifo 
 #(
-	.WIDTH($clog2(MAX_WAIT_COUNT)),
+	.WIDTH($clog2(MAX_WAIT_COUNT)+1),
 	.NUM_ENTRIES()
 ) 
 afifo_wait_count
@@ -2680,8 +2682,10 @@ afifo_main_state_serdes
     .write_data(main_state)
 );
 
-
 `endif
+
+reg [$clog2(NUM_OF_WRITE_DATA/DATA_BURST_LENGTH):0] num_of_data_write_burst_had_finished;
+
 
 `ifdef HIGH_SPEED
 always @(posedge clk_pll)  // 111.111MHz
@@ -2723,6 +2727,8 @@ begin
 		
 		write_is_enabled <= 0;
 		read_is_enabled <= 0;
+		
+		num_of_data_write_burst_had_finished <= 0;
 		
 		/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
 		`ifdef HIGH_SPEED
@@ -3541,14 +3547,59 @@ begin
 					`endif
 				end
 
-				else if(wait_count > TIME_TBURST-1)
-				begin
-					main_state <= STATE_WRITE_DATA;
-					write_is_enabled <= 0;
+				else if(wait_count > TIME_TBURST-1)  // just finished a single data write burst
+				begin					
+					if(num_of_data_write_burst_had_finished == (NUM_OF_WRITE_DATA/DATA_BURST_LENGTH))
+					begin
+						// finished all intended data write bursts
+						main_state <= STATE_WRITE_DATA;
+						write_is_enabled <= 0;
+						num_of_data_write_burst_had_finished <= 0;
+					end
+					
+					else begin
+						// continues data write bursts			
+						write_is_enabled <= 1;
+						wait_count <= 0;
+						num_of_data_write_burst_had_finished <= num_of_data_write_burst_had_finished + 1;																
+					end
 				end
 								
 				else begin
-					main_state <= STATE_WRITE_DATA;
+					
+					if(num_of_data_write_burst_had_finished < (NUM_OF_WRITE_DATA/DATA_BURST_LENGTH))
+					begin
+						`ifdef LOOPBACK
+							main_state <= STATE_WRITE;
+						`else
+							main_state <= STATE_WRITE_AP;
+						`endif
+											
+						// issues WR command again
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 0;
+						r_we_n <= 0;	
+
+						r_address <= 	// column address
+								   	{
+								   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+								   		
+								   		1'b1,  // A12 : no burst-chop
+										i_user_data_address[A10+1], 
+										
+										`ifdef LOOPBACK
+											1'b0,  // A10 : no auto-precharge
+										`else
+											1'b1,  // A10 : use auto-precharge
+										`endif
+										
+										i_user_data_address[A10-1:0]
+									};	
+					end	
+					
+					else main_state <= STATE_WRITE_DATA;					
 				end					
 			end
 						

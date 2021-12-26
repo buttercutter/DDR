@@ -49,6 +49,9 @@
 
 module test_ddr3_memory_controller
 #(
+	parameter NUM_OF_WRITE_DATA = 32,  // 32 pieces of data are to be written to DRAM
+	parameter NUM_OF_READ_DATA = 32,  // 32 pieces of data are to be read from DRAM
+
 	`ifdef USE_SERDES
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
 		// and the minimum operating frequency for Micron DDR3 memory is 303MHz
@@ -346,14 +349,13 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 
 reg write_enable, read_enable;
 reg done_writing, done_reading;
-
+	
 `ifdef LOOPBACK
 
 	reg [DQ_BITWIDTH-1:0] test_data;
 
 	assign done = (done_writing & done_reading);  // finish a data loopback transaction
 
-	localparam [DQ_BITWIDTH-1:0] NUM_OF_TEST_DATA = 8;  // only 8 pieces of data are used during data loopback integrity test
 	localparam STARTING_VALUE_OF_TEST_DATA = 5;  // starts from 5
 
 	`ifdef USE_SERDES
@@ -475,12 +477,12 @@ reg done_writing, done_reading;
 				test_data <= test_data + UNIQUE_DQ_OUTPUT;
 			`endif
 			
-			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // writes up to 'NUM_OF_TEST_DATA' pieces of data
-			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // starts the readback operation
-			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1));  // stops writing since readback operation starts
+			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1));  // writes up to 'NUM_OF_WRITE_DATA' pieces of data
+			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1));  // starts the readback operation
+			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1));  // stops writing since readback operation starts
 			done_reading <= 0;
 			
-			if(test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))  // finished writing data
+			if(test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1))  // finished writing data
 			begin
 				i_user_data_address <= 0;  // read from the first piece of data written
 				read_enable <= 1;  // prepare to read data
@@ -501,7 +503,7 @@ reg done_writing, done_reading;
 			done_writing <= done_writing;
 			
 			if(data_from_ram[0 +: DQ_BITWIDTH] >=
-			  	 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_TEST_DATA-1))		
+			  	 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_READ_DATA-1))		
 			begin
 				done_reading <= 1;
 			end
@@ -600,6 +602,9 @@ reg done_writing, done_reading;
 
 ddr3_memory_controller 
 #(
+	.NUM_OF_WRITE_DATA(NUM_OF_WRITE_DATA),
+	.NUM_OF_READ_DATA(NUM_OF_READ_DATA),
+	
 	.MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED)
 	`ifdef USE_SERDES
 		, .SERDES_RATIO(SERDES_RATIO)
