@@ -3575,9 +3575,10 @@ begin
 					num_of_data_write_burst_had_finished <= 0;
 				end
 
-				else if(wait_count > TIME_TBURST-1)  // just finished a single data write burst
-				begin					
-					if(num_of_data_write_burst_had_finished == (NUM_OF_WRITE_DATA/DATA_BURST_LENGTH))
+				else if(wait_count >= TIME_TBURST-1)  // just finished a single data write burst
+				begin
+					// minus 1 to avoid one extra data write burst operation					
+					if(num_of_data_write_burst_had_finished == (NUM_OF_WRITE_DATA/DATA_BURST_LENGTH)-1)
 					begin
 						// finished all intended data write bursts
 						main_state <= STATE_WRITE_DATA;
