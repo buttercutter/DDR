@@ -204,6 +204,7 @@ module ddr3_memory_controller
 
 	// for synchronizing multi-bits signals from clk_pll domain to clk_serdes domain
 	output [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_clk_serdes,
+	output [$clog2(MAX_WAIT_COUNT):0]wait_count_clk_serdes,
 	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
 `ifdef USE_ILA
@@ -2658,6 +2659,8 @@ end
 // for synchronizing multi-bits signals from clk_pll domain to clk_serdes domain
 wire afifo_main_state_clk_serdes_is_empty;
 wire afifo_main_state_clk_serdes_is_full;
+wire afifo_wait_count_clk_serdes_is_empty;
+wire afifo_wait_count_clk_serdes_is_full;
 
 async_fifo 
 #(
@@ -2680,6 +2683,29 @@ afifo_main_state_serdes
     .write_en(1'b1),
     .full(afifo_main_state_clk_serdes_is_full),
     .write_data(main_state)
+);
+
+async_fifo 
+#(
+	.WIDTH($clog2(MAX_WAIT_COUNT)+1),
+	.NUM_ENTRIES()
+) 
+afifo_wait_count_serdes
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(clk_serdes),
+    .read_en(1'b1),
+    .read_data(wait_count_clk_serdes),
+    .empty(afifo_wait_count_clk_serdes_is_empty),
+
+    // Write
+    .write_clk(clk_pll),
+    .write_en(1'b1),
+    .full(afifo_wait_count_clk_serdes_is_full),
+    .write_data(wait_count)
 );
 
 `endif
@@ -3545,6 +3571,8 @@ begin
 						main_state <= STATE_IDLE;
 						wait_count <= 0;
 					`endif
+					
+					num_of_data_write_burst_had_finished <= 0;
 				end
 
 				else if(wait_count > TIME_TBURST-1)  // just finished a single data write burst
@@ -3554,27 +3582,23 @@ begin
 						// finished all intended data write bursts
 						main_state <= STATE_WRITE_DATA;
 						write_is_enabled <= 0;
-						num_of_data_write_burst_had_finished <= 0;
+						
+						// do not reset the following value here to zero to avoid restarting data write bursts
+						//num_of_data_write_burst_had_finished <= 0;
 					end
 					
 					else begin
 						// continues data write bursts			
 						write_is_enabled <= 1;
 						wait_count <= 0;
-						num_of_data_write_burst_had_finished <= num_of_data_write_burst_had_finished + 1;																
-					end
-				end
-								
-				else begin
-					
-					if(num_of_data_write_burst_had_finished < (NUM_OF_WRITE_DATA/DATA_BURST_LENGTH))
-					begin
+						num_of_data_write_burst_had_finished <= num_of_data_write_burst_had_finished + 1;
+						
 						`ifdef LOOPBACK
 							main_state <= STATE_WRITE;
 						`else
 							main_state <= STATE_WRITE_AP;
 						`endif
-											
+										
 						// issues WR command again
 						r_ck_en <= 1;
 						r_cs_n <= 0;			
@@ -3596,11 +3620,9 @@ begin
 										`endif
 										
 										i_user_data_address[A10-1:0]
-									};	
-					end	
-					
-					else main_state <= STATE_WRITE_DATA;					
-				end					
+									};							
+					end
+				end			
 			end
 						
 			STATE_READ :

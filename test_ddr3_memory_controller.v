@@ -194,6 +194,7 @@ localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial developmen
 
 localparam STATE_ACTIVATE = 5;
 localparam STATE_WRITE = 6;
+localparam STATE_WRITE_AP = 7;
 localparam STATE_WRITE_DATA = 8;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
@@ -203,17 +204,7 @@ reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state_clk_serdes;
 always @(posedge clk_serdes) previous_main_state_clk_serdes <= main_state_clk_serdes;
 
 
-reg [$clog2(MAX_WAIT_COUNT):0] wait_count_clk_serdes;
-
-always @(posedge clk_serdes)
-begin
-    if(previous_main_state_clk_serdes != main_state_clk_serdes)
-    begin
-        wait_count_clk_serdes <= 0;
-    end
-    
-    else wait_count_clk_serdes <= wait_count_clk_serdes + 1;
-end
+wire [$clog2(MAX_WAIT_COUNT):0] wait_count_clk_serdes;
 
 
 // for STATE_IDLE transition into STATE_REFRESH
@@ -398,7 +389,13 @@ reg done_writing, done_reading;
 				`endif
 					(~done_writing) &&
 					// write operation has higher priority in loopback mechanism
-					(main_state_clk_serdes == STATE_ACTIVATE) && (wait_count_clk_serdes[0]))  // (wait_count_clk_serdes == 1), for better STA setup timing
+					((previous_main_state_clk_serdes == STATE_ACTIVATE) || 
+					`ifdef LOOPBACK
+					 	(previous_main_state_clk_serdes == STATE_WRITE) ||
+					`else
+						(previous_main_state_clk_serdes == STATE_WRITE_AP) ||
+					`endif
+					 (previous_main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
 				begin					
 					`ifdef USE_SERDES							
 						`ifdef USE_x16
@@ -465,9 +462,15 @@ reg done_writing, done_reading;
 			// both at 90 degrees before and after positive edge of 'ck'
 			(clk180_slow_posedge | clk_slow_posedge) &&
 		`endif
-			(~done_writing) && 
+			(~done_writing) &&
 			// write operation has higher priority in loopback mechanism
-			(main_state_clk_serdes == STATE_ACTIVATE) && (wait_count_clk_serdes[0]))  // (wait_count_clk_serdes == 1), for better STA setup timing
+			((previous_main_state_clk_serdes == STATE_ACTIVATE) || 
+			`ifdef LOOPBACK
+			 	(previous_main_state_clk_serdes == STATE_WRITE) ||
+			`else
+				(previous_main_state_clk_serdes == STATE_WRITE_AP) ||
+			`endif
+			 (previous_main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -673,6 +676,7 @@ ddr3_control
 	.dq(dq), // Data input/output
 
 	.main_state_clk_serdes(main_state_clk_serdes),
+	.wait_count_clk_serdes(wait_count_clk_serdes),
 	
 `ifdef USE_ILA
 	.dq_w(dq_w),
