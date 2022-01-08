@@ -1106,13 +1106,20 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		// splits 'dq_w_oserdes' SDR signal into two ('dq_w_d0', 'dq_w_d1') SDR signals for ODDR2
 		// Check the explanation below for the need of two separate OSERDES
 		reg [DQ_BITWIDTH-1:0] dq_w_d0;
-		reg [DQ_BITWIDTH-1:0] dq_w_d1;		
+		reg [DQ_BITWIDTH-1:0] dq_w_d1;	
+		reg [DQ_BITWIDTH-1:0] dq_w_d0_reg;
+		reg [DQ_BITWIDTH-1:0] dq_w_d1_reg;	
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
-		always @(posedge ck) dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-		always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
-	
+		always @(posedge ck) dq_w_d0_reg <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck) dq_w_d1_reg <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
+		
+		// for DQ signal starting position on AL alignment for DRAM write operation
+		// See https://www.edaboard.com/threads/additive-latency-for-dram-read-and-write-commands.400678/
+		always @(posedge ck) dq_w_d0 <= dq_w_d0_reg;
+		always @(posedge ck) dq_w_d1 <= dq_w_d1_reg;
+
 	
 		// why need IOSERDES primitives ?
 		// because you want a memory transaction rate much higher than the main clock frequency 
