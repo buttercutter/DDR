@@ -173,7 +173,7 @@ module test_ddr3_memory_controller
 
 `ifdef HIGH_SPEED
 // for clk_serdes clock domain
-wire clk_serdes;  // 111.111MHz with 0 phase shift
+wire clk_serdes;  // 83.333MHz with 45 phase shift
 wire ck_180;  // 333.333MHz with 180 phase shift
 wire locked_previous;
 wire need_to_assert_reset;
@@ -659,7 +659,7 @@ ddr3_control
 	`endif
 	
 	`ifdef HIGH_SPEED
-		.clk_serdes(clk_serdes),  // 111.111MHz with 0 phase shift
+		.clk_serdes(clk_serdes),  // 83.333MHz with 45 phase shift
 		.ck_180(ck_180),  // 333.333MHz with 180 phase shift
 		.locked_previous(locked_previous),
 		.need_to_assert_reset(need_to_assert_reset),

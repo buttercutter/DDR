@@ -186,7 +186,7 @@ module ddr3_memory_controller
 	`endif
 	
 	`ifdef HIGH_SPEED
-		output clk_serdes,  // 111.111MHz with 0 phase shift
+		output clk_serdes,  // 83.333MHz with 45 phase shift
 		output ck_180,  // 333.333MHz with 180 phase shift
 		output reg locked_previous,
 		output need_to_assert_reset,
@@ -597,8 +597,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk_pll(clk_pll),  // OUT 111.111MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
-			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.33325MHz, but we use 111.111MHz
-			.clk_serdes(clk_serdes),  // OUT 111.111MHz, 0 phase shift, for SERDES use
+			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
+			.clk_serdes(clk_serdes),  // OUT 83.333MHz, 45 phase shift, for SERDES use
 			
 			.ck(ck),  // OUT 333.333MHz, 0 phase shift
 			.ck_90(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
@@ -854,8 +854,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			//.clk_pll(clk_pll),  // OUT 111.111MHz, 180 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
-			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.33325MHz, but we use 111.111MHz
-			.c4(clk_serdes),  // OUT 111.111MHz, 0 phase shift, for SERDES use
+			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
+			.c4(clk_serdes),  // OUT 83.333MHz, 45 phase shift, for SERDES use
 			
 			.c0(ck),  // OUT 333.333MHz, 0 phase shift
 			.c1(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
@@ -2715,6 +2715,78 @@ afifo_wait_count_serdes
     .write_data(wait_count)
 );
 
+
+// for synchronizing multi-bits signals from clk_serdes domain to clk_pll domain
+wire afifo_user_data_address_clk_pll_is_empty;
+wire afifo_user_data_address_clk_serdes_is_full;
+
+wire [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address_clk_pll;
+
+async_fifo 
+#(
+	.WIDTH(BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH),
+	.NUM_ENTRIES()
+) 
+afifo_user_data_address
+(
+	.write_reset(reset),
+    .read_reset(reset),
+
+    // Read.
+    .read_clk(clk_pll),
+    .read_en(1'b1),
+    .read_data(i_user_data_address_clk_pll),
+    .empty(afifo_user_data_address_clk_pll_is_empty),
+
+    // Write
+    .write_clk(clk_serdes),
+    .write_en(1'b1),
+    .full(afifo_user_data_address_clk_serdes_is_full),
+    .write_data(i_user_data_address)
+);
+
+
+localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN = 3;
+
+// to synchronize signal in clk_serdes domain to clk_pll domain
+reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1:0] write_enable_clk_pll;
+reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1:0] read_enable_clk_pll;
+
+genvar ff_clk_serdes_clk_pll;
+
+generate
+	for(ff_clk_serdes_clk_pll = 0; 
+	    ff_clk_serdes_clk_pll < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN;
+	    ff_clk_serdes_clk_pll = ff_clk_serdes_clk_pll + 1)
+	begin: clk_serdes_to_clk_pll
+	
+		always @(posedge clk_pll)
+		begin
+			if(reset) 
+			begin
+				write_enable_clk_pll[ff_clk_serdes_clk_pll] <= 0;
+				read_enable_clk_pll[ff_clk_serdes_clk_pll] <= 0;
+			end
+			
+			else begin
+				if(ff_clk_serdes_clk_pll == 0)
+				begin
+					write_enable_clk_pll[ff_clk_serdes_clk_pll] <= write_enable;
+					read_enable_clk_pll[ff_clk_serdes_clk_pll] <= read_enable;					
+				end
+				
+				else begin
+					write_enable_clk_pll[ff_clk_serdes_clk_pll] <=
+					write_enable_clk_pll[ff_clk_serdes_clk_pll-1];
+					
+					read_enable_clk_pll[ff_clk_serdes_clk_pll] <=
+					read_enable_clk_pll[ff_clk_serdes_clk_pll-1];					
+				end
+			end
+		end
+	end		
+endgenerate
+		
 `endif
 
 reg [$clog2(NUM_OF_WRITE_DATA/DATA_BURST_LENGTH):0] num_of_data_write_burst_had_finished;
@@ -2792,8 +2864,16 @@ begin
 	else if(clk90_slow_posedge)  // generates new data at 180 degrees before positive edge of clk_slow
 `endif
 	begin
-		if(write_enable) write_is_enabled <= 1;
-		if(read_enable) read_is_enabled <= 1;
+		`ifdef HIGH_SPEED
+			if(write_enable_clk_pll[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1])
+			 	write_is_enabled <= 1;
+			 	
+			if(read_enable_clk_pll[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1]) 
+				read_is_enabled <= 1;
+		`else
+			if(write_enable) write_is_enabled <= 1;
+			if(read_enable) read_is_enabled <= 1;
+		`endif			
 	
 		wait_count <= wait_count + 1;
 		previous_main_state <= main_state;
@@ -3358,7 +3438,7 @@ begin
 		        	r_cas_n <= 1;
 		        	r_we_n <= 1;
 		        	
-		        	r_bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+		        	r_bank_address <= i_user_data_address_clk_pll[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 		        		
 		            main_state <= STATE_ACTIVATE;
 		            
@@ -3410,16 +3490,16 @@ begin
 				// will implement multiple consecutive ACT commands (TIME_RRD) in later stage of project
 				// However, tRRD mentioned "Time ACT to ACT, different banks, no PRE between" ?
 				
-				r_bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+				r_bank_address <= i_user_data_address_clk_pll[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
+								i_user_data_address_clk_pll[A10+1], 
 								1'b1,  // use auto-precharge, but it is don't care in this state
-								i_user_data_address[A10-1:0]
+								i_user_data_address_clk_pll[A10-1:0]
 							};
 
 												
@@ -3444,24 +3524,24 @@ begin
 							
 							r_address <= 	// column address
 									   	{
-									   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+									   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 									   		
 									   		1'b1,  // A12 : no burst-chop
-											i_user_data_address[A10+1], 
+											i_user_data_address_clk_pll[A10+1], 
 											1'b0,  // A10 : no auto-precharge
-											i_user_data_address[A10-1:0]
+											i_user_data_address_clk_pll[A10-1:0]
 										};							
 						`else
 							main_state <= STATE_WRITE_AP;
 							
 							r_address <= 	// column address
 									   	{
-									   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+									   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 									   		
 									   		1'b1,  // A12 : no burst-chop
-											i_user_data_address[A10+1], 
+											i_user_data_address_clk_pll[A10+1], 
 											1'b1,  // A10 : use auto-precharge
-											i_user_data_address[A10-1:0]
+											i_user_data_address_clk_pll[A10-1:0]
 										};							
 						`endif
 						
@@ -3616,10 +3696,10 @@ begin
 
 						r_address <= 	// column address
 								   	{
-								   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 								   		
 								   		1'b1,  // A12 : no burst-chop
-										i_user_data_address[A10+1], 
+										i_user_data_address_clk_pll[A10+1], 
 										
 										`ifdef LOOPBACK
 											1'b0,  // A10 : no auto-precharge
@@ -3627,7 +3707,7 @@ begin
 											1'b1,  // A10 : use auto-precharge
 										`endif
 										
-										i_user_data_address[A10-1:0]
+										i_user_data_address_clk_pll[A10-1:0]
 									};							
 					end
 				end			
@@ -3639,12 +3719,12 @@ begin
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
+								i_user_data_address_clk_pll[A10+1], 
 								1'b0,  // A10 : no auto-precharge
-								i_user_data_address[A10-1:0]
+								i_user_data_address_clk_pll[A10-1:0]
 							};			
 			
 				if(wait_count >=  
@@ -3683,12 +3763,12 @@ begin
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
+								i_user_data_address_clk_pll[A10+1], 
 								1'b0,  // A10 : no auto-precharge
-								i_user_data_address[A10-1:0]
+								i_user_data_address_clk_pll[A10-1:0]
 							};
 				
 				if(wait_count > (TIME_RL-TIME_TRPRE-1))
@@ -3726,12 +3806,12 @@ begin
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
+								i_user_data_address_clk_pll[A10+1], 
 								1'b1,  // A10 : use auto-precharge
-								i_user_data_address[A10-1:0]
+								i_user_data_address_clk_pll[A10-1:0]
 							};			
 			
 				if(wait_count >=  
@@ -3770,12 +3850,12 @@ begin
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address[A10+1], 
+								i_user_data_address_clk_pll[A10+1], 
 								1'b1,  // A10 : use auto-precharge
-								i_user_data_address[A10-1:0]
+								i_user_data_address_clk_pll[A10-1:0]
 							};
 				
 				if(wait_count >= (TIME_RL-TIME_TRPRE))
