@@ -187,7 +187,7 @@ module ddr3_memory_controller
 	`endif
 	
 	`ifdef HIGH_SPEED
-		output clk_serdes,  // 83.333MHz with 45 phase shift
+		output clk_serdes,  // 83.333MHz with 225 phase shift
 		output ck_180,  // 333.333MHz with 180 phase shift
 		output reg locked_previous,
 		output need_to_assert_reset,
@@ -595,11 +595,11 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.clk_pll(clk_pll),  // OUT 111.111MHz, 180 phase shift, for solving STA issues
+			.clk_pll(clk_pll),  // OUT 83.333MHz, 45 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
-			.clk_serdes(clk_serdes),  // OUT 83.333MHz, 45 phase shift, for SERDES use
+			.clk_serdes(clk_serdes),  // OUT 83.333MHz, 225 phase shift, for SERDES use
 			
 			.ck(ck),  // OUT 333.333MHz, 0 phase shift
 			.ck_90(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
@@ -852,11 +852,11 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.inclk0(clk),  // IN 50MHz
 			
 			// Clock out ports
-			//.clk_pll(clk_pll),  // OUT 111.111MHz, 180 phase shift, for solving STA issues
+			.clk_pll(clk_pll),  // OUT 83.333MHz, 45 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
-			.c4(clk_serdes),  // OUT 83.333MHz, 45 phase shift, for SERDES use
+			.c4(clk_serdes),  // OUT 83.333MHz, 225 phase shift, for SERDES use
 			
 			.c0(ck),  // OUT 333.333MHz, 0 phase shift
 			.c1(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
@@ -2352,8 +2352,8 @@ reg [$clog2(MAX_TIMING/COUNTER_INCREMENT_VALUE):0] num_of_increment_done;
 // and command enqueue/dequeue signal which take into account of the number of ck cycles had passed.
 // This is to get around the STA setup timing violation issues related to commands generation block.
 
-// to generate a signal that only enqueues the 333.333MHz FIFO with 111.111MHz input ONCE
-// 333.333MHz (ck_180) and 111.111MHz (clk_pll) have the same 180 phase shift and are generated from same PLL
+// to generate a signal that only enqueues the 333.333MHz FIFO with 83.333MHz input ONCE
+// 333.333MHz (ck_180) and 83.333MHz (clk_pll) have the same 180 phase shift and are generated from same PLL
 // hence eliminates the need for asynchronous FIFO and its complicated CDC issue
 
 reg enqueue_dram_command_bits;
@@ -2653,7 +2653,7 @@ fifo_command
     .full(),
     .almost_full(),
     
-    // such that 111.111MHz signal is only sampled once, assuming no immediate consecutive DRAM commands
+    // such that 83.333MHz signal is only sampled once, assuming no immediate consecutive DRAM commands
     .enqueue_en(~previous_enqueue_dram_command_bits & enqueue_dram_command_bits),
     
     .enqueue_value(dram_command_bits),
@@ -2805,7 +2805,7 @@ reg [$clog2(NUM_OF_WRITE_DATA/DATA_BURST_LENGTH):0] num_of_data_write_burst_had_
 
 
 `ifdef HIGH_SPEED
-always @(posedge clk_pll)  // 111.111MHz
+always @(posedge clk_pll)  // 83.333MHz
 `else
 always @(posedge clk)
 `endif
