@@ -51,6 +51,7 @@ module test_ddr3_memory_controller
 #(
 	parameter NUM_OF_WRITE_DATA = 32,  // 32 pieces of data are to be written to DRAM
 	parameter NUM_OF_READ_DATA = 32,  // 32 pieces of data are to be read from DRAM
+	parameter DATA_BURST_LENGTH = 8,  // eight data transfers per burst activity, please modify MR0 setting if none other than BL8
 
 	`ifdef USE_SERDES
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
@@ -70,7 +71,7 @@ module test_ddr3_memory_controller
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
-		parameter CLK_PLL_PERIOD = 9,  // 9ns, 111.111MHz
+		parameter CLK_PLL_PERIOD = 12,  // 12ns, 83.333MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -192,6 +193,8 @@ localparam MAX_WAIT_COUNT = 512;
 // TIME_INITIAL_CK_INACTIVE
 localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial development stage, will refine the value later
 
+localparam STATE_WAIT_AFTER_MPR = 20;
+localparam STATE_IDLE = 24;
 localparam STATE_ACTIVATE = 5;
 localparam STATE_WRITE = 6;
 localparam STATE_WRITE_AP = 7;
@@ -388,14 +391,15 @@ reg done_writing, done_reading;
 					(clk180_slow_posedge | clk_slow_posedge) &&
 				`endif
 					(~done_writing) &&
-					// write operation has higher priority in loopback mechanism
-					((previous_main_state_clk_serdes == STATE_ACTIVATE) || 
+                    // write operation has higher priority in loopback mechanism
+                    (((previous_main_state_clk_serdes == STATE_WAIT_AFTER_MPR) && (main_state_clk_serdes == STATE_IDLE)) ||
+                     (main_state_clk_serdes == STATE_ACTIVATE) ||
 					`ifdef LOOPBACK
-					 	(previous_main_state_clk_serdes == STATE_WRITE) ||
+					 	(main_state_clk_serdes == STATE_WRITE) ||
 					`else
-						(previous_main_state_clk_serdes == STATE_WRITE_AP) ||
+						(main_state_clk_serdes == STATE_WRITE_AP) ||
 					`endif
-					 (previous_main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
+					 (main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
 				begin					
 					`ifdef USE_SERDES							
 						`ifdef USE_x16
@@ -464,13 +468,14 @@ reg done_writing, done_reading;
 		`endif
 			(~done_writing) &&
 			// write operation has higher priority in loopback mechanism
-			((previous_main_state_clk_serdes == STATE_ACTIVATE) || 
+			(((previous_main_state_clk_serdes == STATE_WAIT_AFTER_MPR) && (main_state_clk_serdes == STATE_IDLE)) ||
+			 (main_state_clk_serdes == STATE_ACTIVATE) ||
 			`ifdef LOOPBACK
-			 	(previous_main_state_clk_serdes == STATE_WRITE) ||
+			 	(main_state_clk_serdes == STATE_WRITE) ||
 			`else
-				(previous_main_state_clk_serdes == STATE_WRITE_AP) ||
+				(main_state_clk_serdes == STATE_WRITE_AP) ||
 			`endif
-			 (previous_main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
+			 (main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -480,9 +485,9 @@ reg done_writing, done_reading;
 				test_data <= test_data + UNIQUE_DQ_OUTPUT;
 			`endif
 			
-			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1));  // writes up to 'NUM_OF_WRITE_DATA' pieces of data
-			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1));  // starts the readback operation
-			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1));  // stops writing since readback operation starts
+			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // writes up to 'NUM_OF_WRITE_DATA' pieces of data
+			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // starts the readback operation
+			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // stops writing since readback operation starts
 			done_reading <= 0;
 			
 			if(test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1))  // finished writing data
@@ -496,7 +501,7 @@ reg done_writing, done_reading;
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
-			test_data <= 0;  // not related to DDR read operation, only for DDR write operation
+			//test_data <= 0;  // not related to DDR read operation, only for DDR write operation
 			write_enable <= 0;
 			
 			if(done) read_enable <= 0;  // already finished reading all data
@@ -607,6 +612,7 @@ ddr3_memory_controller
 #(
 	.NUM_OF_WRITE_DATA(NUM_OF_WRITE_DATA),
 	.NUM_OF_READ_DATA(NUM_OF_READ_DATA),
+	.DATA_BURST_LENGTH(DATA_BURST_LENGTH),
 	
 	.MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED)
 	`ifdef USE_SERDES

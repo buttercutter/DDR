@@ -58,6 +58,7 @@ module ddr3_memory_controller
 #(
 	parameter NUM_OF_WRITE_DATA = 32,  // 32 pieces of data are to be written to DRAM
 	parameter NUM_OF_READ_DATA = 32,  // 32 pieces of data are to be read from DRAM
+	parameter DATA_BURST_LENGTH = 8,  // eight data transfers per burst activity, please modify MR0 setting if none other than BL8
 
 	`ifdef USE_SERDES
 		// why 8 ? because of FPGA development board is using external 50 MHz crystal
@@ -77,7 +78,7 @@ module ddr3_memory_controller
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
-		parameter CLK_PLL_PERIOD = 9,  // 9ns, 111.111MHz
+		parameter CLK_PLL_PERIOD = 12,  // 12ns, 83.333MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -354,7 +355,6 @@ localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial developmen
 	localparam FIXED_POINT_BITWIDTH = 18;
 `endif
 
-localparam DATA_BURST_LENGTH = 8;  // eight data transfers per burst activity
 
 `ifdef FORMAL
 
@@ -419,6 +419,7 @@ localparam TIME_TWPST = 1;  // this is for write post-amble. It is the time from
 localparam TIME_TMPRR = 1;  // this is for MPR System Read Calibration.  It is the time between MULTIPURPOSE REGISTER READ burst end until mode register set for multipurpose register exit
 
 localparam TIME_WRITE_COMMAND_TO_DQS_VALID = TIME_WL-TIME_TWPRE;  // time between write command and valid DQS
+localparam TIME_TCCD = (4*CK_PERIOD/CLK_PLL_PERIOD);  // CAS#-to-CAS# command delay, applicable for consecutive DRAM write or read operations
 
 localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
 localparam ADDRESS_FOR_MODE_REGISTER_1 = 1;
@@ -1108,7 +1109,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		reg [DQ_BITWIDTH-1:0] dq_w_d0;
 		reg [DQ_BITWIDTH-1:0] dq_w_d1;	
 		reg [DQ_BITWIDTH-1:0] dq_w_d0_reg;
-		reg [DQ_BITWIDTH-1:0] dq_w_d1_reg;	
+		reg [DQ_BITWIDTH-1:0] dq_w_d1_reg;
+		reg [DQ_BITWIDTH-1:0] dq_w_d0_reg_reg;
+		reg [DQ_BITWIDTH-1:0] dq_w_d1_reg_reg;				
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
@@ -1117,8 +1120,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		
 		// for DQ signal starting position on AL alignment for DRAM write operation
 		// See https://www.edaboard.com/threads/additive-latency-for-dram-read-and-write-commands.400678/
-		always @(posedge ck) dq_w_d0 <= dq_w_d0_reg;
-		always @(posedge ck) dq_w_d1 <= dq_w_d1_reg;
+		always @(posedge ck) dq_w_d0_reg_reg <= dq_w_d0_reg;
+		always @(posedge ck) dq_w_d1_reg_reg <= dq_w_d1_reg;
+		always @(posedge ck) dq_w_d0 <= dq_w_d0_reg_reg;
+		always @(posedge ck) dq_w_d1 <= dq_w_d1_reg_reg;
 
 	
 		// why need IOSERDES primitives ?
@@ -1267,7 +1272,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 
 		
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1) >> 1))
 		dq_oserdes_0
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -1280,7 +1285,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_out(dq_w_oserdes_0)
 		);
 
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1) >> 1))
 		dq_oserdes_1
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -1375,46 +1380,50 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		*/
 
 		// to synchronize signal in ck_dynamic domain to ck domain
-		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
+		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck;
 
 	`else
 		wire [DQ_BITWIDTH-1:0] dq_w_d0 = data_to_ram[0 +: DQ_BITWIDTH];
 		wire [DQ_BITWIDTH-1:0] dq_w_d1 = data_to_ram[DQ_BITWIDTH +: DQ_BITWIDTH];	
 		
 		// to synchronize signal in ck_dynamic domain to ck domain
-		reg [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck [NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1:0];
+		reg [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck;
 
 		wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck_dynamic = 
 					{dq_r_q1, dq_r_q0};	
 				
 	`endif
 
+// for synchronizing multi-bits signals from ck_dynamic domain to clk_serdes domain
+wire afifo_data_from_ram_clk_serdes_is_empty;
+wire afifo_data_from_ram_clk_serdes_is_full;
 
-genvar ff_ck_dynamic_ck;
+wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_clk_serdes;
 
-generate
-	for(ff_ck_dynamic_ck = 0;
-		ff_ck_dynamic_ck < NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN;
-		ff_ck_dynamic_ck = ff_ck_dynamic_ck + 1)
-	begin: ck_dynamic_to_ck
-	
-		always @(posedge ck)
-		begin
-			if(reset) data_from_ram_ck[ff_ck_dynamic_ck] <= 0;
-			
-			else begin
-				if(ff_ck_dynamic_ck == 0) 
-					data_from_ram_ck[ff_ck_dynamic_ck] <= data_from_ram_ck_dynamic;
-				
-				else data_from_ram_ck[ff_ck_dynamic_ck] <=
-				 	 data_from_ram_ck[ff_ck_dynamic_ck-1];
-			end
-		end
-	end
-endgenerate
+async_fifo 
+#(
+	.WIDTH(DQ_BITWIDTH*SERDES_RATIO),
+	.NUM_ENTRIES()
+) 
+afifo_data_from_ram_serdes
+(
+	.write_reset(reset),
+    .read_reset(reset),
 
-assign data_from_ram =
- 		data_from_ram_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN-1];
+    // Read.
+    .read_clk(clk_serdes),
+    .read_en(1'b1),
+    .read_data(data_from_ram_clk_serdes),
+    .empty(afifo_data_from_ram_clk_serdes_is_empty),
+
+    // Write
+    .write_clk(ck_dynamic),
+    .write_en(1'b1),
+    .full(afifo_data_from_ram_clk_serdes_is_full),
+    .write_data(data_from_ram_ck_dynamic)
+);
+
+assign data_from_ram = data_from_ram_clk_serdes;
 	 		
 
 // wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE) && 
@@ -2405,10 +2414,13 @@ reg [BANK_ADDRESS_BITWIDTH-1:0] r_bank_address;
 // {ck_en, cs_n, ras_n, cas_n, we_n, reset_n, odt, address, bank_address}
 reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_to_be_sent_to_dram; 
 reg [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_sent_to_dram;  // data alignment due to write AL latency
+
 reg [ADDRESS_BITWIDTH-1:0] dram_address_bits_to_be_sent_to_dram; 
 reg [ADDRESS_BITWIDTH-1:0] dram_address_bits_sent_to_dram;  // data alignment due to write AL latency
+
 reg [BANK_ADDRESS_BITWIDTH-1:0] dram_bank_address_bits_to_be_sent_to_dram; 
 reg [BANK_ADDRESS_BITWIDTH-1:0] dram_bank_address_bits_sent_to_dram;  // data alignment due to write AL latency
+
 					
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] fifo_command_dequeue_value;					
 
@@ -3592,10 +3604,49 @@ begin
 				r_cas_n <= 1;
 				r_we_n <= 1;
 				
-				if(wait_count == TIME_WRITE_COMMAND_TO_DQS_VALID)
+				if(wait_count >= TIME_TCCD-1)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
+					
+					// minus 1 to avoid one extra data write burst operation					
+					if(num_of_data_write_burst_had_finished == (NUM_OF_WRITE_DATA/DATA_BURST_LENGTH)-1)
+					begin
+						// finished all intended data write bursts
+						write_is_enabled <= 0;
+						
+						// do not reset the following value here to zero to avoid restarting data write bursts
+						//num_of_data_write_burst_had_finished <= 0;
+					end
+					
+					else begin
+						// continues data write bursts			
+						//write_is_enabled <= 1;
+						num_of_data_write_burst_had_finished <= num_of_data_write_burst_had_finished + 1;
+										
+						// issues WR command again
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 0;
+						r_we_n <= 0;	
+
+						r_address <= 	// column address
+								   	{
+								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+								   		
+								   		1'b1,  // A12 : no burst-chop
+										i_user_data_address_clk_pll[A10+1], 
+										
+										`ifdef LOOPBACK
+											1'b0,  // A10 : no auto-precharge
+										`else
+											1'b1,  // A10 : use auto-precharge
+										`endif
+										
+										i_user_data_address_clk_pll[A10-1:0]
+									};							
+                    end					
 				end
 				
 				else begin
@@ -3617,10 +3668,49 @@ begin
 				r_cas_n <= 1;
 				r_we_n <= 1;	
 				
-				if(wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID)
+				if(wait_count >= TIME_TCCD-1)
 				begin
 					main_state <= STATE_WRITE_DATA;
 					wait_count <= 0;
+					
+					// minus 1 to avoid one extra data write burst operation					
+					if(num_of_data_write_burst_had_finished == (NUM_OF_WRITE_DATA/DATA_BURST_LENGTH)-1)
+					begin
+						// finished all intended data write bursts
+						write_is_enabled <= 0;
+						
+						// do not reset the following value here to zero to avoid restarting data write bursts
+						//num_of_data_write_burst_had_finished <= 0;
+					end
+					
+					else begin
+						// continues data write bursts			
+						//write_is_enabled <= 1;
+						num_of_data_write_burst_had_finished <= num_of_data_write_burst_had_finished + 1;
+										
+						// issues WR command again
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 0;
+						r_we_n <= 0;	
+
+						r_address <= 	// column address
+								   	{
+								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+								   		
+								   		1'b1,  // A12 : no burst-chop
+										i_user_data_address_clk_pll[A10+1], 
+										
+										`ifdef LOOPBACK
+											1'b0,  // A10 : no auto-precharge
+										`else
+											1'b1,  // A10 : use auto-precharge
+										`endif
+										
+										i_user_data_address_clk_pll[A10-1:0]
+									};							
+                    end					
 				end
 				
 				else begin
@@ -3659,6 +3749,7 @@ begin
 						wait_count <= 0;
 					`endif
 					
+					write_is_enabled <= 0;
 					num_of_data_write_burst_had_finished <= 0;
 				end
 
@@ -3677,7 +3768,7 @@ begin
 					
 					else begin
 						// continues data write bursts			
-						write_is_enabled <= 1;
+						//write_is_enabled <= 1;
 						wait_count <= 0;
 						num_of_data_write_burst_had_finished <= num_of_data_write_burst_had_finished + 1;
 						
@@ -3726,6 +3817,8 @@ begin
 								1'b0,  // A10 : no auto-precharge
 								i_user_data_address_clk_pll[A10-1:0]
 							};			
+
+                write_is_enabled <= 0;
 			
 				if(wait_count >=  
 						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
@@ -3771,6 +3864,8 @@ begin
 								i_user_data_address_clk_pll[A10-1:0]
 							};
 				
+				write_is_enabled <= 0;
+				
 				if(wait_count > (TIME_RL-TIME_TRPRE-1))
 				begin
 					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
@@ -3813,6 +3908,8 @@ begin
 								1'b1,  // A10 : use auto-precharge
 								i_user_data_address_clk_pll[A10-1:0]
 							};			
+
+                write_is_enabled <= 0;
 			
 				if(wait_count >=  
 						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
@@ -3857,6 +3954,8 @@ begin
 								1'b1,  // A10 : use auto-precharge
 								i_user_data_address_clk_pll[A10-1:0]
 							};
+
+                write_is_enabled <= 0;
 				
 				if(wait_count >= (TIME_RL-TIME_TRPRE))
 				begin
@@ -3894,6 +3993,8 @@ begin
 				// using it as a clock strobe signal to sample (or capture) DQ signal
 			
 				enqueue_dram_command_bits <= 0;
+
+                write_is_enabled <= 0;
 			
 				if(wait_count > (TIME_TBURST + TIME_TRPST + TIME_TMPRR)-1)
 				begin
