@@ -410,6 +410,7 @@ localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial developmen
 
 `endif
 
+localparam TIME_TWTR = 4;  // Delay from start of internal WRITE transaction to internal READ command, MIN = greater of 4CK or 7.5ns;
 
 localparam TIME_TDAL = TIME_TWR + TIME_TRP;  // Auto precharge write recovery + precharge time
 localparam TIME_TRPRE = 1;  // this is for read pre-amble. It is the time between when the data strobe goes from non-valid (HIGH) to valid (LOW, initial drive level).
@@ -852,7 +853,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.inclk0(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.clk_pll(clk_pll),  // OUT 83.333MHz, 45 phase shift, for solving STA issues
+			//.clk_pll(clk_pll),  // OUT 83.333MHz, 45 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
@@ -2730,7 +2731,7 @@ afifo_wait_count_serdes
 
 // for synchronizing multi-bits signals from clk_serdes domain to clk_pll domain
 wire afifo_user_data_address_clk_pll_is_empty;
-wire afifo_user_data_address_clk_serdes_is_full;
+wire afifo_user_data_address_clk_pll_is_full;
 
 wire [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address_clk_pll;
 
@@ -2753,7 +2754,7 @@ afifo_user_data_address
     // Write
     .write_clk(clk_serdes),
     .write_en(1'b1),
-    .full(afifo_user_data_address_clk_serdes_is_full),
+    .full(afifo_user_data_address_clk_pll_is_full),
     .write_data(i_user_data_address)
 );
 
@@ -2802,6 +2803,7 @@ endgenerate
 `endif
 
 reg [$clog2(NUM_OF_WRITE_DATA/DATA_BURST_LENGTH):0] num_of_data_write_burst_had_finished;
+reg [$clog2(NUM_OF_READ_DATA/DATA_BURST_LENGTH):0] num_of_data_read_burst_had_finished;
 
 
 `ifdef HIGH_SPEED
@@ -2846,6 +2848,7 @@ begin
 		read_is_enabled <= 0;
 		
 		num_of_data_write_burst_had_finished <= 0;
+		num_of_data_read_burst_had_finished <= 0;
 		
 		/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
 		`ifdef HIGH_SPEED
@@ -3657,7 +3660,6 @@ begin
 			STATE_WRITE_AP :
 			begin
 				// https://www.systemverilog.io/understanding-ddr4-timing-parameters#write
-				// will implement multiple consecutive WRITE commands (TIME_TCCD) in later stage of project
 			
 				r_ck_en <= 1;
 
@@ -3735,14 +3737,14 @@ begin
 				begin
 					`ifdef LOOPBACK
 						// still issue NOP command in next 'ck' cycle due to some FF synchronizer chain delay
-						// but transition to RDAP state first
+						// but transition to RD state first
 						r_ck_en <= 1;
 						r_cs_n <= 0;			
 						r_ras_n <= 1;
 						r_cas_n <= 1;
 						r_we_n <= 1;
 						
-						main_state <= STATE_READ_AP;						
+						main_state <= STATE_READ;						
 						wait_count <= 0;				
 					`else
 						main_state <= STATE_IDLE;
@@ -3853,7 +3855,14 @@ begin
 			STATE_READ_ACTUAL :
 			begin
 				r_ck_en <= 1;
-				
+
+                // localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+                // only a single, non-repeating ACT command is executed, and followed by NOP commands
+                r_cs_n <= 0;
+                r_ras_n <= 1;
+                r_cas_n <= 1;
+                r_we_n <= 1;
+									
 				r_address <= 	// column address
 						   	{
 						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
@@ -3865,34 +3874,55 @@ begin
 							};
 				
 				write_is_enabled <= 0;
-				
-				if(wait_count > (TIME_RL-TIME_TRPRE-1))
+								
+				if(wait_count >= TIME_TCCD-1)
 				begin
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					r_cs_n <= 0;
-					r_ras_n <= 1;
-					r_cas_n <= 1;
-					r_we_n <= 1;	
-									
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
 					
-					enqueue_dram_command_bits <= 1;
-				end
-								
-				else begin
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					r_cs_n <= 0;
-					r_ras_n <= 1;
-					r_cas_n <= 1;
-					r_we_n <= 1;	
-									
-					main_state <= STATE_READ_ACTUAL;
+					// minus 1 to avoid one extra data read burst operation					
+					if(num_of_data_read_burst_had_finished == (NUM_OF_READ_DATA/DATA_BURST_LENGTH)-1)
+					begin
+						// finished all intended data read bursts
+						read_is_enabled <= 0;
+						
+						// do not reset the following value here to zero to avoid restarting data read bursts
+						//num_of_data_read_burst_had_finished <= 0;
+					end
 					
-					enqueue_dram_command_bits <= 0;
-				end						
+					else begin
+						// continues data read bursts			
+						//read_is_enabled <= 1;
+						num_of_data_read_burst_had_finished <= num_of_data_read_burst_had_finished + 1;
+										
+						// issues RD command again
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 0;
+						r_we_n <= 1;	
+
+						r_address <= 	// column address
+								   	{
+								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+								   		
+								   		1'b1,  // A12 : no burst-chop
+										i_user_data_address_clk_pll[A10+1], 
+										
+										`ifdef LOOPBACK
+											1'b0,  // A10 : no auto-precharge
+										`else
+											1'b1,  // A10 : use auto-precharge
+										`endif
+										
+										i_user_data_address_clk_pll[A10-1:0]
+									};							
+                    end					
+				end
+				
+				else begin
+					main_state <= STATE_READ_ACTUAL;
+				end																	
 			end
 
 			STATE_READ_AP :

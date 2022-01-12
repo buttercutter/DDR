@@ -199,6 +199,8 @@ localparam STATE_ACTIVATE = 5;
 localparam STATE_WRITE = 6;
 localparam STATE_WRITE_AP = 7;
 localparam STATE_WRITE_DATA = 8;
+localparam STATE_READ_ACTUAL = 2;
+localparam STATE_READ_AP_ACTUAL = 4;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
 wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_clk_serdes;
@@ -490,14 +492,20 @@ reg done_writing, done_reading;
 			done_writing <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // stops writing since readback operation starts
 			done_reading <= 0;
 			
-			if(test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-1))  // finished writing data
+			if(test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH))  // finished writing data
 			begin
 				i_user_data_address <= 0;  // read from the first piece of data written
 				read_enable <= 1;  // prepare to read data
 			end
 		end
 		
-		else if((done_writing) && (main_state_clk_serdes == STATE_READ_DATA))  // read operation
+		else if((done_writing) && (~done_reading) &&
+			`ifdef LOOPBACK
+			 	((main_state_clk_serdes == STATE_READ_ACTUAL) ||
+			`else
+				((main_state_clk_serdes == STATE_READ_AP_ACTUAL) ||
+			`endif
+			 (main_state_clk_serdes == STATE_READ_DATA)))  // starts preparing for DRAM read operation
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -511,7 +519,7 @@ reg done_writing, done_reading;
 			done_writing <= done_writing;
 			
 			if(data_from_ram[0 +: DQ_BITWIDTH] >=
-			  	 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_READ_DATA-1))		
+			  	 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_READ_DATA-DATA_BURST_LENGTH))		
 			begin
 				done_reading <= 1;
 			end
