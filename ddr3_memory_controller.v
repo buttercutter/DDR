@@ -78,7 +78,7 @@ module ddr3_memory_controller
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
-		parameter CLK_PLL_PERIOD = 12,  // 12ns, 83.333MHz
+		parameter CLK_SERDES_PERIOD = 12,  // 12ns, 83.333MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -203,9 +203,9 @@ module ddr3_memory_controller
 	
 	inout [DQ_BITWIDTH-1:0] dq, // Data input/output
 
-	// for synchronizing multi-bits signals from clk_pll domain to clk_serdes domain
-	output [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_clk_serdes,
-	output [$clog2(MAX_WAIT_COUNT):0]wait_count_clk_serdes,
+	// for coordinating with the user application on when to start DRAM write and read operation
+	output reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state,
+	output reg [$clog2(MAX_WAIT_COUNT):0] wait_count,
 	
 // Xilinx ILA could not probe port IO of IOBUF primitive, but could probe rest of the ports (ports I, O, and T)
 `ifdef USE_ILA
@@ -303,13 +303,13 @@ localparam ZQCS = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (~
 
 
 // for the purpose of calculating DDR timing parameters such as tXPR, tRFC, ...
-reg [$clog2(MAX_WAIT_COUNT):0] wait_count;
+//reg [$clog2(MAX_WAIT_COUNT):0] wait_count;
 
-// to synchronize signal in clk_pll domain to ck_180 domain
+// to synchronize signal in clk_serdes domain to ck_180 domain
 wire [$clog2(MAX_WAIT_COUNT):0] wait_count_ck_180;
 wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_ck_180;
 
-reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+//reg [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
 reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state_ck_180;
 
@@ -346,7 +346,7 @@ localparam STATE_READ_AP_ACTUAL = 4;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE
-localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial development stage, will refine the value later
+localparam MAX_TIMING = (500000/CLK_SERDES_PERIOD);  // just for initial development stage, will refine the value later
 
 // just to avoid https://github.com/YosysHQ/yosys/issues/2718
 `ifndef XILINX
@@ -374,39 +374,39 @@ localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial developmen
 
 `else
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_PLL_PERIOD);  // 200us = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_PLL_PERIOD);  // 500us = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_RESET_ACTIVE = (200000/CLK_SERDES_PERIOD);  // 200us = 200000ns, After the power is stable, RESET# must be LOW for at least 200µs to begin the initialization process.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_INITIAL_CK_INACTIVE = (500000/CLK_SERDES_PERIOD);  // 500us = 500000ns, After RESET# transitions HIGH, wait 500µs (minus one clock) with CKE LOW.
 
 	`ifdef RAM_SIZE_1GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CLK_PLL_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CLK_PLL_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (110/CLK_SERDES_PERIOD);  // minimum 110ns, Delay between the REFRESH command and the next valid command, except DES
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+110)/CLK_SERDES_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 120ns, 5 clocks))
 
 	`elsif RAM_SIZE_2GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CLK_PLL_PERIOD);
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CLK_PLL_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (160/CLK_SERDES_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+160)/CLK_SERDES_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 170ns, 5 clocks))
 
 	`elsif RAM_SIZE_4GB
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CLK_PLL_PERIOD);
-		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CLK_PLL_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRFC = (260/CLK_SERDES_PERIOD);
+		localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TXPR = ((10+260)/CLK_SERDES_PERIOD);  // https://i.imgur.com/SAqPZzT.png, min. (greater of(10ns+tRFC = 270ns, 5 clocks))
 	`endif
 
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CLK_PLL_PERIOD);  // 7.8?s = 7800ns, Maximum average periodic refresh
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TREFI = (7800/CLK_SERDES_PERIOD);  // 7.8?s = 7800ns, Maximum average periodic refresh
 	
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CLK_PLL_PERIOD);  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CLK_PLL_PERIOD);  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CLK_PLL_PERIOD);  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CLK_PLL_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CLK_PLL_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CLK_PLL_PERIOD);  // Minimum 195ps, setup time
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRAS = (35/CLK_SERDES_PERIOD);  // minimum 35ns, ACTIVATE-to-PRECHARGE command period
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRP = (13.91/CLK_SERDES_PERIOD);  // minimum 13.91ns, Precharge time. The banks have to be precharged and idle for tRP before a REFRESH command can be applied
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TRCD = (13.91/CLK_SERDES_PERIOD);  // minimum 13.91ns, Time RAS-to-CAS delay, ACT to RD/WR
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TWR = (15/CLK_SERDES_PERIOD);  // Minimum 15ns, Write recovery time is the time interval between the end of a write data burst and the start of a precharge command.  It allows sense amplifiers to restore data to cells.
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TFAW = (50/CLK_SERDES_PERIOD);  // Minimum 50ns, Why Four Activate Window, not Five or Eight Activate Window ?  For limiting high current drain over the period of tFAW time interval
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TIS = (0.195/CLK_SERDES_PERIOD);  // Minimum 195ps, setup time
 		
 		
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TDLLK = (512*CK_PERIOD/CLK_PLL_PERIOD);  // tDLLK = 512 clock cycles, DLL locking time
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TZQINIT = (512*CK_PERIOD/CLK_PLL_PERIOD);  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_RL = (5*CK_PERIOD/CLK_PLL_PERIOD);  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_WL = (5*CK_PERIOD/CLK_PLL_PERIOD);  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TBURST = ((DATA_BURST_LENGTH >> 1)*CK_PERIOD/CLK_PLL_PERIOD);  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMRD = (4*CK_PERIOD/CLK_PLL_PERIOD);  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
-	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMOD = (12*CK_PERIOD/CLK_PLL_PERIOD);  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TDLLK = (512*CK_PERIOD/CLK_SERDES_PERIOD);  // tDLLK = 512 clock cycles, DLL locking time
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TZQINIT = (512*CK_PERIOD/CLK_SERDES_PERIOD);  // tZQINIT = 512 clock cycles, ZQCL command calibration time for POWER-UP and RESET operation
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_RL = (5*CK_PERIOD/CLK_SERDES_PERIOD);  // if DLL is disable, only CL=6 is supported.  Since AL=0 for simplicity and RL=AL+CL , RL=5
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_WL = (5*CK_PERIOD/CLK_SERDES_PERIOD);  // if DLL is disable, only CWL=6 is supported.  Since AL=0 for simplicity and WL=AL+CWL , WL=5
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TBURST = ((DATA_BURST_LENGTH >> 1)*CK_PERIOD/CLK_SERDES_PERIOD);  // each read or write commands will work on 8 different pieces of consecutive data.  In other words, burst length is 8, and tburst = burst_length/2 with double data rate mechanism
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMRD = (4*CK_PERIOD/CLK_SERDES_PERIOD);  // tMRD = 4 clock cycles, Time MRS to MRS command Delay
+	localparam [FIXED_POINT_BITWIDTH-1:0] TIME_TMOD = (12*CK_PERIOD/CLK_SERDES_PERIOD);  // tMOD = 12 clock cycles, Time MRS to non-MRS command Delay
 
 `endif
 
@@ -420,7 +420,7 @@ localparam TIME_TWPST = 1;  // this is for write post-amble. It is the time from
 localparam TIME_TMPRR = 1;  // this is for MPR System Read Calibration.  It is the time between MULTIPURPOSE REGISTER READ burst end until mode register set for multipurpose register exit
 
 localparam TIME_WRITE_COMMAND_TO_DQS_VALID = TIME_WL-TIME_TWPRE;  // time between write command and valid DQS
-localparam TIME_TCCD = (4*CK_PERIOD/CLK_PLL_PERIOD);  // CAS#-to-CAS# command delay, applicable for consecutive DRAM write or read operations
+localparam TIME_TCCD = (4*CK_PERIOD/CLK_SERDES_PERIOD);  // CAS#-to-CAS# command delay, applicable for consecutive DRAM write or read operations
 
 localparam ADDRESS_FOR_MODE_REGISTER_0 = 0;
 localparam ADDRESS_FOR_MODE_REGISTER_1 = 1;
@@ -1116,15 +1116,15 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
-		always @(posedge ck) dq_w_d0_reg <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-		always @(posedge ck) dq_w_d1_reg <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
+		always @(posedge ck) dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
 		// for DQ signal starting position on AL alignment for DRAM write operation
 		// See https://www.edaboard.com/threads/additive-latency-for-dram-read-and-write-commands.400678/
-		always @(posedge ck) dq_w_d0_reg_reg <= dq_w_d0_reg;
-		always @(posedge ck) dq_w_d1_reg_reg <= dq_w_d1_reg;
-		always @(posedge ck) dq_w_d0 <= dq_w_d0_reg_reg;
-		always @(posedge ck) dq_w_d1 <= dq_w_d1_reg_reg;
+		//always @(posedge ck) dq_w_d0_reg_reg <= dq_w_d0_reg;
+		//always @(posedge ck) dq_w_d1_reg_reg <= dq_w_d1_reg;
+		//always @(posedge ck) dq_w_d0 <= dq_w_d0_reg_reg;
+		//always @(posedge ck) dq_w_d1 <= dq_w_d1_reg_reg;
 
 	
 		// why need IOSERDES primitives ?
@@ -2354,7 +2354,7 @@ reg [$clog2(MAX_TIMING/COUNTER_INCREMENT_VALUE):0] num_of_increment_done;
 // This is to get around the STA setup timing violation issues related to commands generation block.
 
 // to generate a signal that only enqueues the 333.333MHz FIFO with 83.333MHz input ONCE
-// 333.333MHz (ck_180) and 83.333MHz (clk_pll) have the same 180 phase shift and are generated from same PLL
+// 333.333MHz (ck_180) and 83.333MHz (clk_serdes) have the same 180 phase shift and are generated from same PLL
 // hence eliminates the need for asynchronous FIFO and its complicated CDC issue
 
 reg enqueue_dram_command_bits;
@@ -2368,35 +2368,35 @@ wire fifo_command_is_empty;
 
 
 // https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
-localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN = 3;
+localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CK_180_DOMAIN = 3;
 
-// to synchronize signal in clk_pll domain to ck_180 domain
-reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1:0] enqueue_dram_command_bits_ck_180;
+// to synchronize signal in clk_serdes domain to ck_180 domain
+reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CK_180_DOMAIN-1:0] enqueue_dram_command_bits_ck_180;
 
-genvar ff_clk_pll_ck_180;
+genvar ff_clk_serdes_ck_180;
 
 generate
-	for(ff_clk_pll_ck_180 = 0; 
-	    ff_clk_pll_ck_180 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN;
-	    ff_clk_pll_ck_180 = ff_clk_pll_ck_180 + 1)
-	begin: clk_pll_to_ck_180
+	for(ff_clk_serdes_ck_180 = 0; 
+	    ff_clk_serdes_ck_180 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CK_180_DOMAIN;
+	    ff_clk_serdes_ck_180 = ff_clk_serdes_ck_180 + 1)
+	begin: clk_serdes_to_ck_180
 	
 		always @(posedge ck_180)
 		begin
 			if(reset) 
 			begin
-				enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <= 0;
+				enqueue_dram_command_bits_ck_180[ff_clk_serdes_ck_180] <= 0;
 			end
 			
 			else begin
-				if(ff_clk_pll_ck_180 == 0) 
+				if(ff_clk_serdes_ck_180 == 0) 
 				begin
-					enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <= enqueue_dram_command_bits;
+					enqueue_dram_command_bits_ck_180[ff_clk_serdes_ck_180] <= enqueue_dram_command_bits;
 				end
 				
 				else begin
-					enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180] <=
-				 		enqueue_dram_command_bits_ck_180[ff_clk_pll_ck_180-1];					 		
+					enqueue_dram_command_bits_ck_180[ff_clk_serdes_ck_180] <=
+				 		enqueue_dram_command_bits_ck_180[ff_clk_serdes_ck_180-1];					 		
 				 end
 			end
 		end
@@ -2430,7 +2430,7 @@ wire [NUM_OF_DRAM_COMMAND_BITS-1:0] NOP_DRAM_COMMAND_BITS =
 		  	 			{r_ck_en, 1'b0, 1'b1, 1'b1, 1'b1, r_reset_n, 1'b0};
 
 
-wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_clk_pll = 
+wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_clk_serdes = 
 						{r_ck_en, r_cs_n, r_ras_n, r_cas_n, r_we_n, r_reset_n, r_odt};
 					
 wire [NUM_OF_DRAM_COMMAND_BITS-1:0] dram_command_bits_ck_180;
@@ -2438,7 +2438,7 @@ wire [ADDRESS_BITWIDTH-1:0] dram_address_bits_ck_180;
 wire [BANK_ADDRESS_BITWIDTH-1:0] dram_bank_address_bits_ck_180;
 
 
-// for synchronizing multi-bits signals from clk_pll domain to ck_180 domain
+// for synchronizing multi-bits signals from clk_serdes domain to ck_180 domain
 wire afifo_main_state_is_empty;
 wire afifo_main_state_is_full;
 wire afifo_dram_command_bits_is_empty;
@@ -2448,8 +2448,8 @@ wire afifo_dram_address_bits_is_full;
 wire afifo_dram_bank_address_bits_is_empty;
 wire afifo_dram_bank_address_bits_is_full;
 
-parameter CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK = CLK_PLL_PERIOD/CK_PERIOD;
-//parameter num_of_afifo_main_state_entries = 1 << $clog2(CLOCK_FACTOR_BETWEEN_CLK_PLL_AND_CK);
+parameter CLOCK_FACTOR_BETWEEN_CLK_SERDES_AND_CK = CLK_SERDES_PERIOD/CK_PERIOD;
+//parameter num_of_afifo_main_state_entries = 1 << $clog2(CLOCK_FACTOR_BETWEEN_CLK_SERDES_AND_CK);
 
 async_fifo 
 #(
@@ -2468,7 +2468,7 @@ afifo_main_state
     .empty(afifo_main_state_is_empty),
 
     // Write
-    .write_clk(clk_pll),
+    .write_clk(clk_serdes),
     .write_en(1'b1),
     .full(afifo_main_state_is_full),
     .write_data(main_state)
@@ -2491,10 +2491,10 @@ afifo_dram_command_bits
     .empty(afifo_dram_command_bits_is_empty),
 
     // Write
-    .write_clk(clk_pll),
+    .write_clk(clk_serdes),
     .write_en(1'b1),
     .full(afifo_dram_command_bits_is_full),
-    .write_data(dram_command_bits_clk_pll)
+    .write_data(dram_command_bits_clk_serdes)
 );
 
 async_fifo 
@@ -2514,7 +2514,7 @@ afifo_dram_address_bits
     .empty(afifo_dram_address_bits_is_empty),
 
     // Write
-    .write_clk(clk_pll),
+    .write_clk(clk_serdes),
     .write_en(1'b1),
     .full(afifo_dram_address_bits_is_full),
     .write_data(r_address)
@@ -2537,7 +2537,7 @@ afifo_dram_bank_address_bits
     .empty(afifo_dram_bank_address_bits_is_empty),
 
     // Write
-    .write_clk(clk_pll),
+    .write_clk(clk_serdes),
     .write_en(1'b1),
     .full(afifo_dram_bank_address_bits_is_full),
     .write_data(r_bank_address)
@@ -2560,7 +2560,7 @@ afifo_wait_count
     .empty(afifo_wait_count_is_empty),
 
     // Write
-    .write_clk(clk_pll),
+    .write_clk(clk_serdes),
     .write_en(1'b1),
     .full(afifo_wait_count_is_full),
     .write_data(wait_count)
@@ -2595,11 +2595,11 @@ reg previous_enqueue_dram_command_bits_ck_180;
 
 always @(posedge ck_180)
 	previous_enqueue_dram_command_bits_ck_180 <=
-	 	enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1];
+	 	enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CK_180_DOMAIN-1];
 
 always @(posedge ck_180)
 	main_state_remains_the_same <=
-	 	//(enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_PLL_DOMAIN_TO_CK_180_DOMAIN-1] &&
+	 	//(enqueue_dram_command_bits_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CK_180_DOMAIN-1] &&
 	 	// ~previous_enqueue_dram_command_bits_ck_180);  // not used due to post P&R STA setup timing violation
 		(previous_main_state_ck_180 == main_state_ck_180);
 	
@@ -2674,131 +2674,6 @@ begin
 	
 	else previous_main_state_ck_180 <= main_state_ck_180;
 end
-
-
-// for synchronizing multi-bits signals from clk_pll domain to clk_serdes domain
-wire afifo_main_state_clk_serdes_is_empty;
-wire afifo_main_state_clk_serdes_is_full;
-wire afifo_wait_count_clk_serdes_is_empty;
-wire afifo_wait_count_clk_serdes_is_full;
-
-async_fifo 
-#(
-	.WIDTH($clog2(NUM_OF_DDR_STATES)),
-	.NUM_ENTRIES()
-) 
-afifo_main_state_serdes
-(
-	.write_reset(reset),
-    .read_reset(reset),
-
-    // Read.
-    .read_clk(clk_serdes),
-    .read_en(1'b1),
-    .read_data(main_state_clk_serdes),
-    .empty(afifo_main_state_clk_serdes_is_empty),
-
-    // Write
-    .write_clk(clk_pll),
-    .write_en(1'b1),
-    .full(afifo_main_state_clk_serdes_is_full),
-    .write_data(main_state)
-);
-
-async_fifo 
-#(
-	.WIDTH($clog2(MAX_WAIT_COUNT)+1),
-	.NUM_ENTRIES()
-) 
-afifo_wait_count_serdes
-(
-	.write_reset(reset),
-    .read_reset(reset),
-
-    // Read.
-    .read_clk(clk_serdes),
-    .read_en(1'b1),
-    .read_data(wait_count_clk_serdes),
-    .empty(afifo_wait_count_clk_serdes_is_empty),
-
-    // Write
-    .write_clk(clk_pll),
-    .write_en(1'b1),
-    .full(afifo_wait_count_clk_serdes_is_full),
-    .write_data(wait_count)
-);
-
-
-// for synchronizing multi-bits signals from clk_serdes domain to clk_pll domain
-wire afifo_user_data_address_clk_pll_is_empty;
-wire afifo_user_data_address_clk_pll_is_full;
-
-wire [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address_clk_pll;
-
-async_fifo 
-#(
-	.WIDTH(BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH),
-	.NUM_ENTRIES()
-) 
-afifo_user_data_address
-(
-	.write_reset(reset),
-    .read_reset(reset),
-
-    // Read.
-    .read_clk(clk_pll),
-    .read_en(1'b1),
-    .read_data(i_user_data_address_clk_pll),
-    .empty(afifo_user_data_address_clk_pll_is_empty),
-
-    // Write
-    .write_clk(clk_serdes),
-    .write_en(1'b1),
-    .full(afifo_user_data_address_clk_pll_is_full),
-    .write_data(i_user_data_address)
-);
-
-
-localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN = 3;
-
-// to synchronize signal in clk_serdes domain to clk_pll domain
-reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1:0] write_enable_clk_pll;
-reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1:0] read_enable_clk_pll;
-
-genvar ff_clk_serdes_clk_pll;
-
-generate
-	for(ff_clk_serdes_clk_pll = 0; 
-	    ff_clk_serdes_clk_pll < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN;
-	    ff_clk_serdes_clk_pll = ff_clk_serdes_clk_pll + 1)
-	begin: clk_serdes_to_clk_pll
-	
-		always @(posedge clk_pll)
-		begin
-			if(reset) 
-			begin
-				write_enable_clk_pll[ff_clk_serdes_clk_pll] <= 0;
-				read_enable_clk_pll[ff_clk_serdes_clk_pll] <= 0;
-			end
-			
-			else begin
-				if(ff_clk_serdes_clk_pll == 0)
-				begin
-					write_enable_clk_pll[ff_clk_serdes_clk_pll] <= write_enable;
-					read_enable_clk_pll[ff_clk_serdes_clk_pll] <= read_enable;					
-				end
-				
-				else begin
-					write_enable_clk_pll[ff_clk_serdes_clk_pll] <=
-					write_enable_clk_pll[ff_clk_serdes_clk_pll-1];
-					
-					read_enable_clk_pll[ff_clk_serdes_clk_pll] <=
-					read_enable_clk_pll[ff_clk_serdes_clk_pll-1];					
-				end
-			end
-		end
-	end		
-endgenerate
 		
 `endif
 
@@ -2807,7 +2682,7 @@ reg [$clog2(NUM_OF_READ_DATA/DATA_BURST_LENGTH):0] num_of_data_read_burst_had_fi
 
 
 `ifdef HIGH_SPEED
-always @(posedge clk_pll)  // 83.333MHz
+always @(posedge clk_serdes)  // 83.333MHz
 `else
 always @(posedge clk)
 `endif
@@ -2879,16 +2754,9 @@ begin
 	else if(clk90_slow_posedge)  // generates new data at 180 degrees before positive edge of clk_slow
 `endif
 	begin
-		`ifdef HIGH_SPEED
-			if(write_enable_clk_pll[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1])
-			 	write_is_enabled <= 1;
-			 	
-			if(read_enable_clk_pll[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_SERDES_DOMAIN_TO_CLK_PLL_DOMAIN-1]) 
-				read_is_enabled <= 1;
-		`else
-			if(write_enable) write_is_enabled <= 1;
-			if(read_enable) read_is_enabled <= 1;
-		`endif			
+	
+		if(write_enable) write_is_enabled <= 1;
+		if(read_enable) read_is_enabled <= 1;		
 	
 		wait_count <= wait_count + 1;
 		previous_main_state <= main_state;
@@ -3453,7 +3321,7 @@ begin
 		        	r_cas_n <= 1;
 		        	r_we_n <= 1;
 		        	
-		        	r_bank_address <= i_user_data_address_clk_pll[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+		        	r_bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 		        		
 		            main_state <= STATE_ACTIVATE;
 		            
@@ -3505,16 +3373,16 @@ begin
 				// will implement multiple consecutive ACT commands (TIME_RRD) in later stage of project
 				// However, tRRD mentioned "Time ACT to ACT, different banks, no PRE between" ?
 				
-				r_bank_address <= i_user_data_address_clk_pll[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
+				r_bank_address <= i_user_data_address[ADDRESS_BITWIDTH +: BANK_ADDRESS_BITWIDTH];
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address_clk_pll[A10+1], 
+								i_user_data_address[A10+1], 
 								1'b1,  // use auto-precharge, but it is don't care in this state
-								i_user_data_address_clk_pll[A10-1:0]
+								i_user_data_address[A10-1:0]
 							};
 
 												
@@ -3539,24 +3407,24 @@ begin
 							
 							r_address <= 	// column address
 									   	{
-									   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+									   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 									   		
 									   		1'b1,  // A12 : no burst-chop
-											i_user_data_address_clk_pll[A10+1], 
+											i_user_data_address[A10+1], 
 											1'b0,  // A10 : no auto-precharge
-											i_user_data_address_clk_pll[A10-1:0]
+											i_user_data_address[A10-1:0]
 										};							
 						`else
 							main_state <= STATE_WRITE_AP;
 							
 							r_address <= 	// column address
 									   	{
-									   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+									   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 									   		
 									   		1'b1,  // A12 : no burst-chop
-											i_user_data_address_clk_pll[A10+1], 
+											i_user_data_address[A10+1], 
 											1'b1,  // A10 : use auto-precharge
-											i_user_data_address_clk_pll[A10-1:0]
+											i_user_data_address[A10-1:0]
 										};							
 						`endif
 						
@@ -3606,6 +3474,16 @@ begin
 				r_ras_n <= 1;
 				r_cas_n <= 1;
 				r_we_n <= 1;
+
+				r_address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								1'b0,  // A10 : no auto-precharge
+								i_user_data_address[A10-1:0]
+							};	
 				
 				if(wait_count >= TIME_TCCD-1)
 				begin
@@ -3632,23 +3510,7 @@ begin
 						r_cs_n <= 0;			
 						r_ras_n <= 1;
 						r_cas_n <= 0;
-						r_we_n <= 0;	
-
-						r_address <= 	// column address
-								   	{
-								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-								   		
-								   		1'b1,  // A12 : no burst-chop
-										i_user_data_address_clk_pll[A10+1], 
-										
-										`ifdef LOOPBACK
-											1'b0,  // A10 : no auto-precharge
-										`else
-											1'b1,  // A10 : use auto-precharge
-										`endif
-										
-										i_user_data_address_clk_pll[A10-1:0]
-									};							
+						r_we_n <= 0;							
                     end					
 				end
 				
@@ -3669,7 +3531,17 @@ begin
 				r_ras_n <= 1;
 				r_cas_n <= 1;
 				r_we_n <= 1;	
-				
+
+				r_address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								1'b1,  // A10 : use auto-precharge
+								i_user_data_address[A10-1:0]
+							};				
+													
 				if(wait_count >= TIME_TCCD-1)
 				begin
 					main_state <= STATE_WRITE_DATA;
@@ -3695,23 +3567,7 @@ begin
 						r_cs_n <= 0;			
 						r_ras_n <= 1;
 						r_cas_n <= 0;
-						r_we_n <= 0;	
-
-						r_address <= 	// column address
-								   	{
-								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-								   		
-								   		1'b1,  // A12 : no burst-chop
-										i_user_data_address_clk_pll[A10+1], 
-										
-										`ifdef LOOPBACK
-											1'b0,  // A10 : no auto-precharge
-										`else
-											1'b1,  // A10 : use auto-precharge
-										`endif
-										
-										i_user_data_address_clk_pll[A10-1:0]
-									};							
+						r_we_n <= 0;						
                     end					
 				end
 				
@@ -3730,6 +3586,22 @@ begin
 				r_ras_n <= 1;
 				r_cas_n <= 1;
 				r_we_n <= 1;				
+
+				r_address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								
+								`ifdef LOOPBACK
+									1'b0,  // A10 : no auto-precharge
+								`else
+									1'b1,  // A10 : use auto-precharge
+								`endif
+								
+								i_user_data_address[A10-1:0]
+							};	
 
 				enqueue_dram_command_bits <= 0;
 							
@@ -3785,23 +3657,7 @@ begin
 						r_cs_n <= 0;			
 						r_ras_n <= 1;
 						r_cas_n <= 0;
-						r_we_n <= 0;	
-
-						r_address <= 	// column address
-								   	{
-								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-								   		
-								   		1'b1,  // A12 : no burst-chop
-										i_user_data_address_clk_pll[A10+1], 
-										
-										`ifdef LOOPBACK
-											1'b0,  // A10 : no auto-precharge
-										`else
-											1'b1,  // A10 : use auto-precharge
-										`endif
-										
-										i_user_data_address_clk_pll[A10-1:0]
-									};							
+						r_we_n <= 0;						
 					end
 				end			
 			end
@@ -3812,12 +3668,12 @@ begin
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address_clk_pll[A10+1], 
+								i_user_data_address[A10+1], 
 								1'b0,  // A10 : no auto-precharge
-								i_user_data_address_clk_pll[A10-1:0]
+								i_user_data_address[A10-1:0]
 							};			
 
                 write_is_enabled <= 0;
@@ -3865,12 +3721,12 @@ begin
 									
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address_clk_pll[A10+1], 
+								i_user_data_address[A10+1], 
 								1'b0,  // A10 : no auto-precharge
-								i_user_data_address_clk_pll[A10-1:0]
+								i_user_data_address[A10-1:0]
 							};
 				
 				write_is_enabled <= 0;
@@ -3900,23 +3756,7 @@ begin
 						r_cs_n <= 0;			
 						r_ras_n <= 1;
 						r_cas_n <= 0;
-						r_we_n <= 1;	
-
-						r_address <= 	// column address
-								   	{
-								   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
-								   		
-								   		1'b1,  // A12 : no burst-chop
-										i_user_data_address_clk_pll[A10+1], 
-										
-										`ifdef LOOPBACK
-											1'b0,  // A10 : no auto-precharge
-										`else
-											1'b1,  // A10 : use auto-precharge
-										`endif
-										
-										i_user_data_address_clk_pll[A10-1:0]
-									};							
+						r_we_n <= 1;						
                     end					
 				end
 				
@@ -3931,12 +3771,12 @@ begin
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address_clk_pll[A10+1], 
+								i_user_data_address[A10+1], 
 								1'b1,  // A10 : use auto-precharge
-								i_user_data_address_clk_pll[A10-1:0]
+								i_user_data_address[A10-1:0]
 							};			
 
                 write_is_enabled <= 0;
@@ -3977,12 +3817,12 @@ begin
 				
 				r_address <= 	// column address
 						   	{
-						   		i_user_data_address_clk_pll[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
 						   		
 						   		1'b1,  // A12 : no burst-chop
-								i_user_data_address_clk_pll[A10+1], 
+								i_user_data_address[A10+1], 
 								1'b1,  // A10 : use auto-precharge
-								i_user_data_address_clk_pll[A10-1:0]
+								i_user_data_address[A10-1:0]
 							};
 
                 write_is_enabled <= 0;

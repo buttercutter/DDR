@@ -71,7 +71,7 @@ module test_ddr3_memory_controller
 		parameter CLK_PERIOD = $itor(MAXIMUM_CK_PERIOD/DIVIDE_RATIO)/$itor(PICO_TO_NANO_CONVERSION_FACTOR),
 	`else
 		parameter CLK_PERIOD = 20,  // 20ns, 50MHz
-		parameter CLK_PLL_PERIOD = 12,  // 12ns, 83.333MHz
+		parameter CLK_SERDES_PERIOD = 12,  // 12ns, 83.333MHz
 	`endif
 		
 	`ifdef TESTBENCH		
@@ -191,7 +191,7 @@ localparam MAX_WAIT_COUNT = 512;
 
 // https://www.systemverilog.io/understanding-ddr4-timing-parameters
 // TIME_INITIAL_CK_INACTIVE
-localparam MAX_TIMING = (500000/CLK_PLL_PERIOD);  // just for initial development stage, will refine the value later
+localparam MAX_TIMING = (500000/CLK_SERDES_PERIOD);  // just for initial development stage, will refine the value later
 
 localparam STATE_WAIT_AFTER_MPR = 20;
 localparam STATE_IDLE = 24;
@@ -203,13 +203,14 @@ localparam STATE_READ_ACTUAL = 2;
 localparam STATE_READ_AP_ACTUAL = 4;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
 
-wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state_clk_serdes;
-reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state_clk_serdes;
+wire [$clog2(NUM_OF_DDR_STATES)-1:0] main_state;
+reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_main_state;
+reg [$clog2(NUM_OF_DDR_STATES)-1:0] previous_previous_main_state;
 
-always @(posedge clk_serdes) previous_main_state_clk_serdes <= main_state_clk_serdes;
+always @(posedge clk_serdes) previous_main_state <= main_state;
+always @(posedge clk_serdes) previous_previous_main_state <= previous_main_state;
 
-
-wire [$clog2(MAX_WAIT_COUNT):0] wait_count_clk_serdes;
+wire [$clog2(MAX_WAIT_COUNT):0] wait_count;
 
 
 // for STATE_IDLE transition into STATE_REFRESH
@@ -345,7 +346,40 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 
 reg write_enable, read_enable;
 reg done_writing, done_reading;
+
+reg time_to_send_out_data_to_dram;
+always @(posedge clk_serdes)
+begin
+	if(reset) time_to_send_out_data_to_dram <= 0;
 	
+	else begin
+		time_to_send_out_data_to_dram <= 
+			`ifdef LOOPBACK
+			 	(previous_previous_main_state == STATE_WRITE) ||
+			`else
+				(previous_previous_main_state == STATE_WRITE_AP) ||
+			`endif
+			 (previous_previous_main_state == STATE_WRITE_DATA);
+	end
+end
+
+reg time_to_send_out_address_to_dram;
+always @(posedge clk_serdes)
+begin
+	if(reset) time_to_send_out_address_to_dram <= 0;
+	
+	else begin
+		time_to_send_out_address_to_dram <= ((main_state == STATE_ACTIVATE) && write_enable) ||
+			`ifdef LOOPBACK
+			 	(main_state == STATE_WRITE) ||
+			`else
+				(main_state == STATE_WRITE_AP) ||
+			`endif
+			 (main_state == STATE_WRITE_DATA);
+	end
+end
+
+					 	
 `ifdef LOOPBACK
 
 	reg [DQ_BITWIDTH-1:0] test_data;
@@ -382,6 +416,8 @@ reg done_writing, done_reading;
 					`else
 						data_to_ram <= 0;
 					`endif
+					
+					test_data <= STARTING_VALUE_OF_TEST_DATA;					
 				end
 				
 				else if(
@@ -394,14 +430,7 @@ reg done_writing, done_reading;
 				`endif
 					(~done_writing) &&
                     // write operation has higher priority in loopback mechanism
-                    (((previous_main_state_clk_serdes == STATE_WAIT_AFTER_MPR) && (main_state_clk_serdes == STATE_IDLE)) ||
-                     (main_state_clk_serdes == STATE_ACTIVATE) ||
-					`ifdef LOOPBACK
-					 	(main_state_clk_serdes == STATE_WRITE) ||
-					`else
-						(main_state_clk_serdes == STATE_WRITE_AP) ||
-					`endif
-					 (main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
+                    (time_to_send_out_data_to_dram))  // starts preparing for DRAM write operation
 				begin					
 					`ifdef USE_SERDES							
 						`ifdef USE_x16
@@ -418,9 +447,15 @@ reg done_writing, done_reading;
 							data_to_ram <= test_data;
 						`endif
 					`endif
+					
+					`ifdef USE_SERDES
+						test_data <= test_data + SERDES_RATIO;
+					`else
+						test_data <= test_data + UNIQUE_DQ_OUTPUT;
+					`endif					
 				end
 				
-				else if((done_writing) && (main_state_clk_serdes == STATE_READ_DATA)) begin  // read operation
+				else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
 
 				end
 			end
@@ -452,7 +487,6 @@ reg done_writing, done_reading;
 		if(reset)
 		begin
 			i_user_data_address <= 0;
-			test_data <= STARTING_VALUE_OF_TEST_DATA;
 
 			write_enable <= 1;  // writes data first
 			read_enable <= 0;
@@ -470,22 +504,9 @@ reg done_writing, done_reading;
 		`endif
 			(~done_writing) &&
 			// write operation has higher priority in loopback mechanism
-			(((previous_main_state_clk_serdes == STATE_WAIT_AFTER_MPR) && (main_state_clk_serdes == STATE_IDLE)) ||
-			 (main_state_clk_serdes == STATE_ACTIVATE) ||
-			`ifdef LOOPBACK
-			 	(main_state_clk_serdes == STATE_WRITE) ||
-			`else
-				(main_state_clk_serdes == STATE_WRITE_AP) ||
-			`endif
-			 (main_state_clk_serdes == STATE_WRITE_DATA)))  // starts preparing for DRAM write operation
+			(time_to_send_out_address_to_dram))  // starts preparing for DRAM write operation
 		begin
 			i_user_data_address <= i_user_data_address + 1;
-			
-			`ifdef USE_SERDES
-				test_data <= test_data + SERDES_RATIO;
-			`else
-				test_data <= test_data + UNIQUE_DQ_OUTPUT;
-			`endif
 			
 			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // writes up to 'NUM_OF_WRITE_DATA' pieces of data
 			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // starts the readback operation
@@ -501,11 +522,11 @@ reg done_writing, done_reading;
 		
 		else if((done_writing) && (~done_reading) &&
 			`ifdef LOOPBACK
-			 	((main_state_clk_serdes == STATE_READ_ACTUAL) ||
+			 	((main_state == STATE_READ_ACTUAL) ||
 			`else
-				((main_state_clk_serdes == STATE_READ_AP_ACTUAL) ||
+				((main_state == STATE_READ_AP_ACTUAL) ||
 			`endif
-			 (main_state_clk_serdes == STATE_READ_DATA)))  // starts preparing for DRAM read operation
+			 (main_state == STATE_READ_DATA)))  // starts preparing for DRAM read operation
 		begin
 			i_user_data_address <= i_user_data_address + 1;
 			
@@ -595,7 +616,7 @@ reg done_writing, done_reading;
 			.CLK(clk), // IN
 			.TRIG0({low_Priority_Refresh_Request, high_Priority_Refresh_Request,
 					write_is_enabled, read_is_enabled, write_enable, read_enable, 
-				   	main_state_clk_serdes, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
+				   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
 		);
 
 		ila_64_bits ila_states_and_wait_count (
@@ -603,7 +624,7 @@ reg done_writing, done_reading;
 			.CLK(clk), // IN
 			.TRIG0({data_to_ram, data_from_ram, low_Priority_Refresh_Request, high_Priority_Refresh_Request,
 			 		write_enable, read_enable, dqs_counter, dqs_rising_edge, dqs_falling_edge, 
-					main_state_clk_serdes, wait_count_clk_serdes, refresh_Queue}) // IN BUS [63:0]
+					main_state, wait_count, refresh_Queue}) // IN BUS [63:0]
 		);
 
 	`else
@@ -689,8 +710,8 @@ ddr3_control
 	
 	.dq(dq), // Data input/output
 
-	.main_state_clk_serdes(main_state_clk_serdes),
-	.wait_count_clk_serdes(wait_count_clk_serdes),
+	.main_state(main_state),
+	.wait_count(wait_count),
 	
 `ifdef USE_ILA
 	.dq_w(dq_w),
