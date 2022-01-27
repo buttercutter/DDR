@@ -3903,10 +3903,38 @@ begin
 					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished		
 				end
 				
-				else if(wait_count > TIME_TBURST-1)
-				begin
-					main_state <= STATE_READ_DATA;
-					read_is_enabled <= 0;
+				else if(wait_count > TIME_TBURST-1) // just finished a single data read burst
+				begin			
+					// minus 1 to avoid one extra data read burst operation					
+					if(num_of_data_read_burst_had_finished == (NUM_OF_READ_DATA/DATA_BURST_LENGTH)-1)
+					begin
+						// finished all intended data write bursts
+						main_state <= STATE_READ_DATA;
+						read_is_enabled <= 0;
+						
+						// do not reset the following value here to zero to avoid restarting data read bursts
+						//num_of_data_read_burst_had_finished <= 0;
+					end
+					
+					else begin
+						// continues data read bursts			
+						//read_is_enabled <= 1;
+						wait_count <= 0;
+						num_of_data_read_burst_had_finished <= num_of_data_read_burst_had_finished + 1;
+						
+						`ifdef LOOPBACK
+							main_state <= STATE_READ_ACTUAL;
+						`else
+							main_state <= STATE_READ_AP_ACTUAL;
+						`endif
+										
+						// issues RD command again
+						r_ck_en <= 1;
+						r_cs_n <= 0;			
+						r_ras_n <= 1;
+						r_cas_n <= 0;
+						r_we_n <= 1;						
+					end
 				end
 				
 				`ifdef HIGH_SPEED

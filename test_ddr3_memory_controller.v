@@ -363,19 +363,38 @@ begin
 	end
 end
 
-reg time_to_send_out_address_to_dram;
+reg time_to_send_out_address_to_dram_during_write;
 always @(posedge clk_serdes)
 begin
-	if(reset) time_to_send_out_address_to_dram <= 0;
+	if(reset) time_to_send_out_address_to_dram_during_write <= 0;
 	
 	else begin
-		time_to_send_out_address_to_dram <= ((main_state == STATE_ACTIVATE) && write_enable) ||
+		time_to_send_out_address_to_dram_during_write <= 
+			((main_state == STATE_ACTIVATE) && (write_enable)) ||
+			
 			`ifdef LOOPBACK
 			 	(main_state == STATE_WRITE) ||
 			`else
 				(main_state == STATE_WRITE_AP) ||
 			`endif
 			 (main_state == STATE_WRITE_DATA);
+	end
+end
+
+reg time_to_send_out_address_to_dram_during_read;
+always @(posedge clk_serdes)
+begin
+	if(reset) time_to_send_out_address_to_dram_during_read <= 0;
+	
+	else begin
+		time_to_send_out_address_to_dram_during_read <= 
+			
+			`ifdef LOOPBACK
+			 	(main_state == STATE_READ_ACTUAL) ||
+			`else
+				(main_state == STATE_READ_AP_ACTUAL) ||
+			`endif
+			 (main_state == STATE_READ_DATA);
 	end
 end
 
@@ -504,9 +523,13 @@ end
 		`endif
 			(~done_writing) &&
 			// write operation has higher priority in loopback mechanism
-			(time_to_send_out_address_to_dram))  // starts preparing for DRAM write operation
+			(time_to_send_out_address_to_dram_during_write))  // starts preparing for DRAM write operation
 		begin
-			i_user_data_address <= i_user_data_address + 1;
+		
+			// According to https://media-www.micron.com/-/media/client/global/documents/products/data-sheet/dram/ddr3/2gb_ddr3_sdram.pdf?rev=4bc67ac3a6f34250a2b73cb9db8c5502#page=139
+			// address[2:0] are designated as starting column address,
+			// So, need to increment DRAM address by an amount of BURST_LENGTH instead of just 1
+			i_user_data_address <= i_user_data_address + DATA_BURST_LENGTH;
 			
 			write_enable <= (test_data < (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // writes up to 'NUM_OF_WRITE_DATA' pieces of data
 			read_enable <= (test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));  // starts the readback operation
@@ -521,14 +544,9 @@ end
 		end
 		
 		else if((done_writing) && (~done_reading) &&
-			`ifdef LOOPBACK
-			 	((main_state == STATE_READ_ACTUAL) ||
-			`else
-				((main_state == STATE_READ_AP_ACTUAL) ||
-			`endif
-			 (main_state == STATE_READ_DATA)))  // starts preparing for DRAM read operation
+				time_to_send_out_address_to_dram_during_read)  // starts preparing for DRAM read operation
 		begin
-			i_user_data_address <= i_user_data_address + 1;
+			i_user_data_address <= i_user_data_address + DATA_BURST_LENGTH;
 			
 			//test_data <= 0;  // not related to DDR read operation, only for DDR write operation
 			write_enable <= 0;
