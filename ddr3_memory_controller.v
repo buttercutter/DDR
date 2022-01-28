@@ -3886,22 +3886,6 @@ begin
 					
 					enqueue_dram_command_bits <= 1;			
 				end
-
-				else if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
-				begin
-					if(MPR_ENABLE == 0)  // MPR System Read Calibration is already done previously
-					begin
-						main_state <= STATE_IDLE;
-						
-						// NOP command in next 'ck' cycle, transition to IDLE command
-						r_cs_n <= 0;
-						r_ras_n <= 1;
-						r_cas_n <= 1;
-						r_we_n <= 1;								
-					end
-					
-					MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished		
-				end
 				
 				else if(wait_count > TIME_TBURST-1) // just finished a single data read burst
 				begin			
@@ -3917,23 +3901,39 @@ begin
 					end
 					
 					else begin
-						// continues data read bursts			
-						//read_is_enabled <= 1;
-						wait_count <= 0;
-						num_of_data_read_burst_had_finished <= num_of_data_read_burst_had_finished + 1;
+
+						MPR_ENABLE <= 1'b0;  // prepares to turn off MPR System Read Calibration mode after READ_DATA command finished	
+					
+						if(MPR_Read_had_finished)  // MPR System Read Calibration is already done previously
+						begin					
+							// continues data read bursts			
+							//read_is_enabled <= 1;
+							wait_count <= 0;
+							num_of_data_read_burst_had_finished <= num_of_data_read_burst_had_finished + 1;
+							
+							`ifdef LOOPBACK
+								main_state <= STATE_READ_ACTUAL;
+							`else
+								main_state <= STATE_READ_AP_ACTUAL;
+							`endif
+											
+							// issues RD command again
+							r_ck_en <= 1;
+							r_cs_n <= 0;			
+							r_ras_n <= 1;
+							r_cas_n <= 0;
+							r_we_n <= 1;	
+						end
 						
-						`ifdef LOOPBACK
-							main_state <= STATE_READ_ACTUAL;
-						`else
-							main_state <= STATE_READ_AP_ACTUAL;
-						`endif
-										
-						// issues RD command again
-						r_ck_en <= 1;
-						r_cs_n <= 0;			
-						r_ras_n <= 1;
-						r_cas_n <= 0;
-						r_we_n <= 1;						
+						else begin
+							main_state <= STATE_READ_DATA;
+							
+							// NOP command in next 'ck' cycle
+							r_cs_n <= 0;
+							r_ras_n <= 1;
+							r_cas_n <= 1;
+							r_we_n <= 1;								
+						end
 					end
 				end
 				
