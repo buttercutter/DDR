@@ -586,7 +586,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	// for dynamic phase shift
 	reg psen;
 	wire psdone;
-	wire ck_dynamic, ck_dynamic_180;
+	wire ck_dynamic_90, ck_dynamic_270;
 	wire locked_dynamic;
 		
 	`ifdef XILINX							
@@ -654,8 +654,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.ck_dynamic(ck_dynamic),  // OUT 333.333MHz, 0 phase shift
-			.ck_dynamic_180(ck_dynamic_180),  // OUT 333.333MHz, 180 phase shift
+			.ck_dynamic_90(ck_dynamic_90),  // OUT 333.333MHz, 90 phase shift, incoming DQ bit is not phase shifted
+			.ck_dynamic_270(ck_dynamic_270),  // OUT 333.333MHz, 270 phase shift
 								
 			// Dynamic phase shift ports
 			.psclk(udqs_r),  // IN
@@ -879,8 +879,8 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.phasestep(psen),  // IN
 			.phaseupdown(1'b1),  // IN
 			.scanclk(clk),  // IN
-			.c0(ck_dynamic),  // OUT 333.333MHz, 0 phase shift
-			.c1(ck_dynamic_180),  // OUT 333.333MHz, 180 phase shift
+			.c0(ck_dynamic_90),  // OUT 333.333MHz, 90 phase shift, incoming DQ bit is not phase shifted
+			.c1(ck_dynamic_270),  // OUT 333.333MHz, 270 phase shift
 			.locked(locked_dynamic),  // OUT
 			.phasedone(psdone)  // OUT
 		);
@@ -1092,12 +1092,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 
 	// See https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3678799/#msg3678799
-	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_DYNAMIC_DOMAIN_TO_CK_DOMAIN= 3;
+	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN= 3;
 	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN = 3;
 	localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN = 3;
 
 	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1:0] need_to_assert_reset_ck;
-	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1:0] need_to_assert_reset_ck_180;
+	reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1:0] need_to_assert_reset_ck_dynamic_90;
 	
 	// combines the interleaving 'dq_r_q0', 'dq_r_q1' DDR signals into a single SDR signal
 	reg [DQ_BITWIDTH-1:0] dq_r_q0;
@@ -1156,7 +1156,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
 		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
 
-		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic;
+		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic_90;
 
 		
 		genvar data_index_iserdes;
@@ -1167,20 +1167,20 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 				
 				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_iserdes'
 				// since 'data_out_iserdes_0' and 'data_out_iserdes_1' are half the size of 
-				// 'data_from_ram_ck_dynamic'
+				// 'data_from_ram_ck_dynamic_90'
 				
 				always @(*)
 				begin				
 					if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
 					begin
-						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_from_ram_ck_dynamic_90[data_index_iserdes +: DQ_BITWIDTH] <=
 						data_out_iserdes_0[DQ_BITWIDTH * 
 										   $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
 										   +: DQ_BITWIDTH];
 					end
 				
 					else begin
-						data_from_ram_ck_dynamic[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_from_ram_ck_dynamic_90[data_index_iserdes +: DQ_BITWIDTH] <=
 						data_out_iserdes_1[DQ_BITWIDTH * 
 										   $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
 										   +: DQ_BITWIDTH];
@@ -1193,10 +1193,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_iserdes_0
 		(
-			.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
+			.reset(need_to_assert_reset_ck_dynamic_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1]),		
 		
 			// fast clock domain
-			.high_speed_clock(ck_dynamic),
+			.high_speed_clock(ck_dynamic_90),  // for DQ centering, incoming DQ bit is not phase shifted
 			.data_in(dq_r_q0),
 			
 			// slow clock domain
@@ -1206,10 +1206,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
 		dq_iserdes_1
 		(
-			.reset(need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1]),		
+			.reset(need_to_assert_reset_ck_dynamic_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1]),		
 		
 			// fast clock domain
-			.high_speed_clock(ck_dynamic),
+			.high_speed_clock(ck_dynamic_90),  // for DQ centering, incoming DQ bit is not phase shifted
 			.data_in(dq_r_q1),
 			
 			// slow clock domain
@@ -1380,22 +1380,22 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 		*/
 
-		// to synchronize signal in ck_dynamic domain to ck domain
+		// to synchronize signal in ck_dynamic_90 domain to ck domain
 		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck;
 
 	`else
 		wire [DQ_BITWIDTH-1:0] dq_w_d0 = data_to_ram[0 +: DQ_BITWIDTH];
 		wire [DQ_BITWIDTH-1:0] dq_w_d1 = data_to_ram[DQ_BITWIDTH +: DQ_BITWIDTH];	
 		
-		// to synchronize signal in ck_dynamic domain to ck domain
+		// to synchronize signal in ck_dynamic_90 domain to ck domain
 		reg [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck;
 
-		wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck_dynamic = 
+		wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck_dynamic_90 = 
 					{dq_r_q1, dq_r_q0};	
 				
 	`endif
 
-// for synchronizing multi-bits signals from ck_dynamic domain to clk_serdes domain
+// for synchronizing multi-bits signals from ck_dynamic_90 domain to clk_serdes domain
 wire afifo_data_from_ram_clk_serdes_is_empty;
 wire afifo_data_from_ram_clk_serdes_is_full;
 
@@ -1418,10 +1418,10 @@ afifo_data_from_ram_serdes
     .empty(afifo_data_from_ram_clk_serdes_is_empty),
 
     // Write
-    .write_clk(ck_dynamic),
+    .write_clk(ck_dynamic_90),
     .write_en(1'b1),
     .full(afifo_data_from_ram_clk_serdes_is_full),
-    .write_data(data_from_ram_ck_dynamic)
+    .write_data(data_from_ram_ck_dynamic_90)
 );
 
 assign data_from_ram = data_from_ram_clk_serdes;
@@ -1557,7 +1557,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID) &&
 	`ifndef USE_x16
 
 		IOBUF BB_dqs (
-			.inclock(ck_dynamic),
+			.inclock(ck_dynamic_90),
 			.outclock(ck_90),
 			.pad_io(dqs),
 			.pad_io_b(dqs_n),
@@ -1569,7 +1569,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID) &&
 	`else  // DQS strobes, the following IOBUF instantiations just use all available x16 bandwidth
 
 		IOBUF BB_ldqs (
-			.inclock(ck_dynamic),
+			.inclock(ck_dynamic_90),
 			.outclock(ck_90),
 			.pad_io(ldqs),
 			.pad_io_b(ldqs_n),
@@ -1579,7 +1579,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID) &&
 		);
 
 		IOBUF BB_udqs (
-			.inclock(ck_dynamic),
+			.inclock(ck_dynamic_90),
 			.outclock(ck_90),
 			.pad_io(udqs),
 			.pad_io_b(udqs_n),
@@ -1597,7 +1597,7 @@ wire data_write_is_ongoing = ((wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID) &&
 	begin : dq_tristate_io
 
 		IOBUF_DQ BB_dq (
-			.inclock(ck_dynamic),
+			.inclock(ck_dynamic_90),
 			.outclock(ck),
 			.pad_io(dq[dq_index]),
 			//.pad_io_b(),  // DQ signal is not differential type
@@ -1887,8 +1887,8 @@ endgenerate
 		IDDR2_dq_r(
 			.Q0(dq_r_q0[dq_index]),  // 1-bit output captured with C0 clock
 			.Q1(dq_r_q1[dq_index]),  // 1-bit output captured with C1 clock
-			.C0(ck_dynamic),  // 1-bit clock input
-			.C1(ck_dynamic_180),  // 1-bit clock input
+			.C0(ck_dynamic_90),  // 1-bit clock input
+			.C1(ck_dynamic_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
 			.D(dq_r[dq_index]),    // 1-bit DDR data input
 			.R(reset),    // 1-bit reset input
@@ -1899,14 +1899,14 @@ endgenerate
 
 		// https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=51
 		// IDDR2 is re-coded in verilog fabric due to same clock restriction of IODDR which leads to routing issue
-		always @(posedge ck_dynamic)
+		always @(posedge ck_dynamic_90)
 		begin
 			if(reset) dq_r_q0[dq_index] <= 0;
 			
 			else dq_r_q0[dq_index] <= dq_r[dq_index];
 		end
 		
-		always @(negedge ck_dynamic)
+		always @(negedge ck_dynamic_90)
 		begin
 			if(reset) dq_r_q1[dq_index] <= 0;
 			
@@ -2309,35 +2309,35 @@ generate
 endgenerate
 
 
-// localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN = 3;
+// localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN = 3;
 
-// to synchronize signal in clk domain to ck_180 domain
-// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1:0] need_to_assert_reset_ck_180;
+// to synchronize signal in clk domain to ck_dynamic_90 domain
+// reg [NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1:0] need_to_assert_reset_ck_dynamic_90;
 
-genvar ff_clk_ck_180;
+genvar ff_clk_ck_dynamic_90;
 
 generate
-	for(ff_clk_ck_180 = 0; ff_clk_ck_180 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN;
-	    ff_clk_ck_180 = ff_clk_ck_180 + 1)
-	begin: clk_to_ck_180
+	for(ff_clk_ck_dynamic_90 = 0; ff_clk_ck_dynamic_90 < NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN;
+	    ff_clk_ck_dynamic_90 = ff_clk_ck_dynamic_90 + 1)
+	begin: clk_to_ck_dynamic_90
 	
-		always @(posedge ck_180)
+		always @(posedge ck_dynamic_90)
 		begin
-			if(reset) need_to_assert_reset_ck_180[ff_clk_ck_180] <= 0;
+			if(reset) need_to_assert_reset_ck_dynamic_90[ff_clk_ck_dynamic_90] <= 0;
 			
 			else begin
-				if(ff_clk_ck_180 == 0)
-					need_to_assert_reset_ck_180[ff_clk_ck_180] <= need_to_assert_reset_clk;
+				if(ff_clk_ck_dynamic_90 == 0)
+					need_to_assert_reset_ck_dynamic_90[ff_clk_ck_dynamic_90] <= need_to_assert_reset_clk;
 				
-				else need_to_assert_reset_ck_180[ff_clk_ck_180] <=
-					 need_to_assert_reset_ck_180[ff_clk_ck_180-1];
+				else need_to_assert_reset_ck_dynamic_90[ff_clk_ck_dynamic_90] <=
+					 need_to_assert_reset_ck_dynamic_90[ff_clk_ck_dynamic_90-1];
 			end
 		end
 	end		
 endgenerate
 
-assign need_to_assert_reset =
-	   need_to_assert_reset_ck_180[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_180_DOMAIN-1];
+assign need_to_assert_reset = 
+need_to_assert_reset_ck_dynamic_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1];
 
 
 // to solve STA setup timing violation due to 'wait_count'
@@ -3865,6 +3865,22 @@ begin
 				enqueue_dram_command_bits <= 0;
 
                 write_is_enabled <= 0;
+                
+				r_address <= 	// column address
+						   	{
+						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
+						   		
+						   		1'b1,  // A12 : no burst-chop
+								i_user_data_address[A10+1], 
+								
+								`ifdef LOOPBACK
+									1'b0,  // A10 : no auto-precharge
+								`else
+									1'b1,  // A10 : use auto-precharge
+								`endif
+								
+								i_user_data_address[A10-1:0]
+							};	                
 			
 				if(wait_count > (TIME_TBURST + TIME_TRPST + TIME_TMPRR)-1)
 				begin

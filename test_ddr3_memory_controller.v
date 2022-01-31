@@ -543,7 +543,7 @@ end
 			end
 		end
 		
-		else if((done_writing) && (~done_reading) &&
+		else if((done_writing) && // (~done_reading) &&  // no need extra logic
 				time_to_send_out_address_to_dram_during_read)  // starts preparing for DRAM read operation
 		begin
 			i_user_data_address <= i_user_data_address + DATA_BURST_LENGTH;
@@ -557,11 +557,15 @@ end
 			
 			done_writing <= done_writing;
 			
+			/*  the following logic is wrong given that data_from_ram is derived from the
+			    external DQ bits PCBA trace which is susceptible to PVT deviation
+			    
 			if(data_from_ram[0 +: DQ_BITWIDTH] >=
 			  	 (STARTING_VALUE_OF_TEST_DATA+NUM_OF_READ_DATA-DATA_BURST_LENGTH))		
 			begin
 				done_reading <= 1;
 			end
+			*/
 		end
 	end
 	
