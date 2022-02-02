@@ -1460,7 +1460,7 @@ begin
 	else begin
 		data_read_is_ongoing_temp_3 <= (main_state_ck_180 == STATE_READ_ACTUAL);
 		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state_ck_180 == STATE_READ_AP_ACTUAL);
-		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2 && can_proceed_to_read_data_state;
+		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2;  // && can_proceed_to_read_data_state;  // unnecessary logic
 		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state_ck_180 == STATE_READ_DATA);
 	end
 end
@@ -3678,7 +3678,7 @@ begin
 
                 write_is_enabled <= 0;
 			
-				if(wait_count >=  
+				if(wait_count >  
 						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
@@ -3781,7 +3781,7 @@ begin
 
                 write_is_enabled <= 0;
 			
-				if(wait_count >=  
+				if(wait_count >  
 						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
 				begin
@@ -3905,7 +3905,7 @@ begin
 					end		
 				end
 				
-				else if(wait_count > TIME_TBURST-1) // just finished a single data read burst
+				else if(wait_count >= TIME_TBURST-1) // just finished a single data read burst
 				begin			
 					// minus 1 to avoid one extra data read burst operation					
 					if(num_of_data_read_burst_had_finished == (NUM_OF_READ_DATA/DATA_BURST_LENGTH)-1)
@@ -3958,6 +3958,13 @@ begin
 				`ifdef HIGH_SPEED
 				else begin
 					main_state <= STATE_READ_DATA;
+
+                    // no change in DRAM command
+                    r_ck_en <= r_ck_en;
+                    r_cs_n <= r_cs_n;			
+                    r_ras_n <= r_ras_n;
+                    r_cas_n <= r_cas_n;
+                    r_we_n <= r_we_n;	
 
 					/*
 					Your DQS IO logic is clocked by a clock. You need to align DQS to this clock. 
