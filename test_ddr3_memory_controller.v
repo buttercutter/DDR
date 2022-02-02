@@ -199,6 +199,8 @@ localparam STATE_ACTIVATE = 5;
 localparam STATE_WRITE = 6;
 localparam STATE_WRITE_AP = 7;
 localparam STATE_WRITE_DATA = 8;
+localparam STATE_READ = 9;
+localparam STATE_READ_AP = 10;
 localparam STATE_READ_ACTUAL = 2;
 localparam STATE_READ_AP_ACTUAL = 4;
 localparam STATE_READ_DATA = 3;  // smaller value to solve setup timing issue due to lesser comparison hardware
@@ -381,6 +383,14 @@ begin
 	end
 end
 
+
+// for pipelining in order to solve STA setup timing violation issue
+localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 4;  // see 'data_read_is_ongoing' long logic level
+
+// https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
+localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN = 3;
+
+
 reg time_to_send_out_address_to_dram_during_read;
 always @(posedge clk_serdes)
 begin
@@ -390,9 +400,15 @@ begin
 		time_to_send_out_address_to_dram_during_read <= 
 			
 			`ifdef LOOPBACK
-			 	(main_state == STATE_READ_ACTUAL) ||
+			 	(main_state == STATE_READ_ACTUAL) || 
+			   	((main_state == STATE_READ) && 
+			   	 (wait_count >= (NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)) ||
 			`else
-				(main_state == STATE_READ_AP_ACTUAL) ||
+				(main_state == STATE_READ_AP_ACTUAL) || 
+			   	((main_state == STATE_READ_AP) && 
+			   	 (wait_count >= (NUM_OF_READ_PIPELINE_REGISTER_ADDED+
+						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)) ||
 			`endif
 			 (main_state == STATE_READ_DATA);
 	end

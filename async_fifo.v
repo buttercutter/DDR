@@ -21,10 +21,11 @@
 // Asynchronous FIFO, with two clock domains
 // reset is asynchronous and is synchronized to each clock domain
 // internally.
-// NUM_ENTRIES must be a power of two and >= 2
+// NUM_ENTRIES must be >= 2
 //
 
 //`default_nettype none
+
 
 // for writing and reading 2 different values into 2 different FIFO entry locations
 `define ENABLE_TWIN_WRITE_TEST 1
@@ -32,15 +33,37 @@
 // to simplify 'full' logic when the condition within read clock domain allows
 `define READ_CLOCK_IS_FASTER_AND_READ_EN_IS_ASSERTED_FOREVER 1
 
+// enables this setting if the asynchronous FIFO has non-power-of-two of location entries
+// However, this settings might cause STA setup issue in write clock domain
+// given the extra tcomb for manual rollover logic and gray2bin logic for 'full' detection
+//`define NUM_ENTRIES_IS_NON_POWER_OF_TWO 1
+
+// enables this setting if it improves STA setup timing violations in read clock domain
+// the performance may vary across different user design and different EDA STA engines
+`define REGISTER_RETIMING_FOR_READ_DATA 1
+
+
 module async_fifo
     #(
     	`ifdef FORMAL
-			parameter WIDTH = 4,
+    				
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				parameter NUM_ENTRIES = 10,  // for checking using non-power-of-two values
+			`else
+				parameter NUM_ENTRIES = 8,
+			`endif
+			
+			parameter WIDTH = $clog2(NUM_ENTRIES << 1)  // index as data for loop testing
 		`else
-			parameter WIDTH = 32,		
-		`endif
 		
-		parameter NUM_ENTRIES = 4
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				parameter NUM_ENTRIES = 10,  // for checking using non-power-of-two values
+			`else
+				parameter NUM_ENTRIES = 4,
+			`endif
+			
+			parameter WIDTH = 32
+		`endif
     )
 
     (input                  write_reset,
@@ -58,40 +81,149 @@ module async_fifo
     output		            full,
     input [WIDTH - 1:0]     write_data);
 
+
     parameter ADDR_WIDTH = $clog2(NUM_ENTRIES);
 
-    wire [ADDR_WIDTH:0] write_ptr_sync;
-    reg  [ADDR_WIDTH:0] read_ptr;
-    reg  [ADDR_WIDTH:0] read_ptr_gray;
-    wire [ADDR_WIDTH:0] read_ptr_nxt;
-    wire [ADDR_WIDTH:0] read_ptr_gray_nxt;
-    wire reset_rsync;
-    wire [ADDR_WIDTH:0] read_ptr_sync;
-    reg  [ADDR_WIDTH:0] write_ptr;
-    reg  [ADDR_WIDTH:0] write_ptr_gray;
-    wire [ADDR_WIDTH:0] write_ptr_nxt;
-    wire [ADDR_WIDTH:0] write_ptr_gray_nxt;
-    wire reset_wsync;
-    reg [WIDTH - 1:0] fifo_data[0:NUM_ENTRIES - 1];
-
-	`ifdef FORMAL
-	initial read_ptr = 0;
-	initial write_ptr = 0;
-	initial read_ptr_gray = 0;
-	initial write_ptr_gray = 0;
-	initial assume(read_en == 0);
-	initial assume(write_en == 0);	
+	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+	
+		parameter POINTER_WIDTH = ADDR_WIDTH-1;  // no need for MSB flipping to signal rollover 
+	`else
+		parameter POINTER_WIDTH = ADDR_WIDTH;
 	`endif
 
-    assign read_ptr_nxt = read_ptr + 1;
+
+    wire [POINTER_WIDTH:0] write_ptr_sync;
+    reg  [POINTER_WIDTH:0] read_ptr;
+    reg  [POINTER_WIDTH:0] read_ptr_gray;
+    reg  [POINTER_WIDTH:0] read_ptr_nxt;
+    wire [POINTER_WIDTH:0] read_ptr_gray_nxt;
+    wire reset_rsync;
+    
+    wire [POINTER_WIDTH:0] read_ptr_sync;
+    reg  [POINTER_WIDTH:0] write_ptr;
+    reg  [POINTER_WIDTH:0] write_ptr_gray;
+    reg  [POINTER_WIDTH:0] write_ptr_nxt;
+    wire [POINTER_WIDTH:0] write_ptr_gray_nxt;
+    wire reset_wsync;
+    
+    reg [WIDTH - 1:0] fifo_data[0:NUM_ENTRIES - 1];
+
+
+	`ifdef FORMAL
+		// just for easier debugging
+	
+		initial read_ptr = 0;
+		initial write_ptr = 0;
+		initial read_ptr_gray = 0;
+		initial write_ptr_gray = 0;
+		initial assume(read_en == 0);
+		initial assume(write_en == 0);	
+	
+		genvar fifo_entry_index;
+		generate
+			for (fifo_entry_index=0; fifo_entry_index<NUM_ENTRIES; fifo_entry_index++)
+			begin
+				initial fifo_data[fifo_entry_index] <= {WIDTH{1'b0}};
+			end 
+		endgenerate
+	`endif
+
+
+	// Gray code encoding
+	// Decimal	|	Gray Code	|	Binary
+	// 0		|	0000		|	0000
+	// 1		|	0001		|	0001	
+	// 2		|	0011		|	0010
+	// 3		|	0010		|	0011
+	// 4		|	0110		|	0100
+	// 5		|	0111		|	0101	
+	// 6		|	0101		|	0110
+	// 7		|	0100		|	0111
+	// 8		|	1100		|	1000
+	// 9		|	1101		|	1001	
+	// 10		|	1111		|	1010
+	// 11		|	1110		|	1011
+	// 12		|	1010		|	1100
+	// 13		|	1011		|	1101	
+	// 14		|	1001		|	1110
+	// 15		|	1000		|	1111	
+		
+	// Due to strict CDC synchronization rule with multi-bits gray-coded signal,
+	// the 'read_ptr_gray' and 'write_ptr_gray' signals must have proper rollover.
+	// This phenomenon becomes evident whenever 'NUM_ENTRIES' is not of power of two. 
+	// For example when 'NUM_ENTRIES' = 10 , we cannot use 'b0000 and 'b1001 as start and end
+	// pointer positions respectively, and we need to do address pointers rollover (wrap around)
+	// from end position back to the start position for the gray-coded pointers.
+	
+	// The issue is that there are 2 bits changes between 'b0000 and 'b1001 during rollover
+	// which violates the multi-bits CDC synchronization rule.
+	// The solution to above mentioned CDC issue is to ensure that there is only one bit
+	// changing when wrapping around.
+	
+	// If we want 10 entries, we need to remove (or subtract) 6 from 16. 
+	// Remove codes in pairs, one from top and one from bottom. 
+	// If we do that, we will end up with codes that wraparound with only a single bit changing.
+	// And therefore we cannot get an afifo design with an odd number of entries.
+	
+	// 10 is 6 short of 16. Divide it as 3 on top and 3 below.
+	// So for 10, we run it from 3 to 12
+	
+	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+		`ifdef FORMAL
+			// for easier waveform debugging
+			(* keep *)
+		`endif
+		localparam [POINTER_WIDTH:0] UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER = 
+					{ADDR_WIDTH{1'b1}} - (({ADDR_WIDTH{1'b1}} + 1'b1 - NUM_ENTRIES[POINTER_WIDTH:0]) >> 1);
+
+		`ifdef FORMAL
+			// for easier waveform debugging
+			(* keep *)
+		`endif						
+		localparam [POINTER_WIDTH:0] LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER =
+					UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER - NUM_ENTRIES[POINTER_WIDTH:0] + 1;
+	`endif
+	
+
+    always @(*) 
+    begin
+    	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+    	
+			if(read_ptr == UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER)
+			begin 
+				read_ptr_nxt = LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;  // needs manual rollover
+			end
+
+			else read_ptr_nxt = read_ptr + 1;  // no need manual rollover
+			
+		`else	
+			read_ptr_nxt = read_ptr + 1;  // no need manual rollover
+		`endif
+    end
+        
+    always @(*) 
+    begin
+    	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+    	
+			if(write_ptr == UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER)
+			begin 
+				write_ptr_nxt = LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;  // needs manual rollover
+			end
+			
+			else write_ptr_nxt = write_ptr + 1;  // no need manual rollover
+			
+		`else	
+			write_ptr_nxt = write_ptr + 1;  // no need manual rollover
+		`endif
+    end
+    
     assign read_ptr_gray_nxt = read_ptr_nxt ^ (read_ptr_nxt >> 1);
-    assign write_ptr_nxt = write_ptr + 1;
     assign write_ptr_gray_nxt = write_ptr_nxt ^ (write_ptr_nxt >> 1);
 
     //
     // Read clock domain
     //
-    synchronizer #(.WIDTH(ADDR_WIDTH+1)) write_ptr_synchronizer(
+    synchronizer #(.WIDTH(POINTER_WIDTH+1)) write_ptr_synchronizer(
         .clk(read_clk),
         .reset(reset_rsync),
         .data_o(write_ptr_sync),
@@ -113,7 +245,13 @@ module async_fifo
     begin
         if (reset_rsync)
         begin
-            read_ptr <= 0;
+        	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+        	
+	            read_ptr <= LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;
+	        `else
+	        	read_ptr <= 0;
+	        `endif
+	        
             read_ptr_gray <= 0;
         end
         
@@ -124,48 +262,173 @@ module async_fifo
         end
     end
 
-    //assign read_data = fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
-	// See https://www.edaboard.com/threads/asychronous-fifo-read_data-is-not-entirely-in-phase-with-read_ptr.400461/
-	always @(posedge read_clk)
-	begin
-		`ifdef FORMAL
-		if(reset_rsync) read_data <= 0;
-	
-		else 
-		`endif
-		
-		if(!empty) read_data <= fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
-	end
 
+	`ifdef REGISTER_RETIMING_FOR_READ_DATA
+	
+		reg [WIDTH - 1:0] previous_read_data;
+		always @(posedge read_clk) read_data <= previous_read_data;  // register retiming technique for STA setup
+	
+		//assign read_data = fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
+		// See https://www.edaboard.com/threads/asychronous-fifo-read_data-is-not-entirely-in-phase-with-read_ptr.400461/
+		always @(posedge read_clk)
+		begin
+			`ifdef FORMAL
+			if(reset_rsync) previous_read_data <= 0;
+		
+			else 
+			`endif
+			
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+			
+				if(read_en && !empty) 
+				begin
+					previous_read_data <= fifo_data[read_ptr - LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER];
+				end
+			
+			`else
+			
+				if(read_en && !empty) 
+				begin
+					previous_read_data <= fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
+				end			
+			
+			`endif
+		end
+		
+	`else
+	
+		//assign read_data = fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
+		// See https://www.edaboard.com/threads/asychronous-fifo-read_data-is-not-entirely-in-phase-with-read_ptr.400461/
+		always @(posedge read_clk)
+		begin
+			`ifdef FORMAL
+			if(reset_rsync) read_data <= 0;
+		
+			else 
+			`endif
+			
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+			
+				if(read_en && !empty) 
+				begin
+					read_data <= fifo_data[read_ptr - LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER];
+				end
+			
+			`else
+			
+				if(read_en && !empty) 
+				begin
+					read_data <= fifo_data[read_ptr[ADDR_WIDTH-1:0]];  // passed verilator Warning-WIDTH
+				end			
+			
+			`endif
+		end
+			
+	`endif
+
+
+`ifdef FORMAL
+
+    always @(posedge read_clk)
+    begin
+    	if(first_read_clock_had_passed)
+    	begin
+		    if ($past(reset_rsync))
+		    begin
+		    	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+		    	
+			        assert(read_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);
+			    `else
+			    	assert(read_ptr == 0);
+			    `endif
+			    
+		        assert(read_ptr_gray == 0);
+		    end
+		    
+		    else if ($past(read_en) && !$past(empty))
+		    begin
+		        assert(read_ptr == $past(read_ptr_nxt));
+		        assert(read_ptr_gray == $past(read_ptr_gray_nxt));
+		        
+				`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+
+					`ifdef REGISTER_RETIMING_FOR_READ_DATA					
+						assert(previous_read_data == 
+					`else
+						assert(read_data ==
+					`endif
+							fifo_data[$past(read_ptr) -
+							 			LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER]);
+				
+					if($past(read_ptr) == UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER)
+					begin 
+						assert(read_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);  // needs manual rollover
+					end
+
+					else assert(read_ptr == $past(read_ptr) + 1);  // no need manual rollover
+					
+				`else
+					`ifdef REGISTER_RETIMING_FOR_READ_DATA					
+						assert(previous_read_data == 
+					`else
+						assert(read_data ==
+					`endif
+							fifo_data[$past(read_ptr[ADDR_WIDTH-1:0]]));  // passed verilator Warning-WIDTH					
+					assert(read_ptr == $past(read_ptr) + 1);  // no need manual rollover
+				`endif
+									        
+		    end
+		end
+    end
+
+`endif
+
+	
     //
     // Write clock domain
     //
-    synchronizer #(.WIDTH(ADDR_WIDTH+1)) read_ptr_synchronizer(
+    synchronizer #(.WIDTH(POINTER_WIDTH+1)) read_ptr_synchronizer(
         .clk(write_clk),
         .reset(reset_wsync),
         .data_o(read_ptr_sync),
         .data_i(read_ptr_gray));
 
 
-	// As for why this is needed at all, see https://math.stackexchange.com/a/4314823/625099 and
-	// https://www.reddit.com/r/askmath/comments/r0hp2o/simple_gray_code_question/
-	reg [ADDR_WIDTH:0] full_check;
-	
-    always @(posedge write_clk) 
-    begin
-    	if(full) full_check <= write_ptr_gray ^ read_ptr_sync;
-    	
-    	else full_check <= write_ptr_gray_nxt ^ read_ptr_sync;
-    end
-
 	`ifdef READ_CLOCK_IS_FASTER_AND_READ_EN_IS_ASSERTED_FOREVER
 		// compensates for the delay in synchronizer chain which results in false-positive full detection
-		// However, careful selection of NUM_ENTRIES is necessary for proper operation
+		// STA setup issue in read clock domain is solved by choosing not to increase NUM_ENTRIES when full logic
+		// is now correctly implemented for certain corner simulation coverage case, 
+		// taking into account the cycles delay brought by the 'read_ptr_synchronizer' synchronizer chain.
 		assign full = 0;
 	`else
-		// See https://electronics.stackexchange.com/questions/596233/address-rollover-for-asynchronous-fifo    	
-    	assign full = (full_check[ADDR_WIDTH] & full_check[ADDR_WIDTH-1]) && 
-    			  	  (full_check[0 +: (ADDR_WIDTH-1)] == 0);
+		`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+
+			// compares pointers in binary because no simple logic to do arithmetic with gray codes
+			wire [POINTER_WIDTH:0] read_ptr_sync_in_binary;
+
+			generate genvar bin_i;
+				for (bin_i=0; bin_i<=POINTER_WIDTH; bin_i=bin_i+1) begin : gray_to_binary
+				
+					assign read_ptr_sync_in_binary[bin_i] = 
+									^read_ptr_sync[POINTER_WIDTH:bin_i];
+				end
+			endgenerate
+		
+			// We cannot use MSB. We have to check whether the pointers are in different halves.
+			// Run the pointers to 2x depth like before. 
+			// And full when wr ptr = rd ptr + depth. Adjust for wrap around etc.
+			
+			assign full = (write_ptr == read_ptr_sync_in_binary + NUM_ENTRIES[POINTER_WIDTH:0] - 1);
+			
+		`else
+			// See https://electronics.stackexchange.com/questions/596233/address-rollover-for-asynchronous-fifo
+			// and http://www.sunburst-design.com/papers/CummingsSNUG2002SJ_FIFO1.pdf#page=19
+			// if observed carefully, the following 'full' logic managed to get around the
+			// under-utilization of 1 fifo entry experienced by the sunburst document.
+		
+			assign full = (write_ptr_gray == {~read_ptr_sync[ADDR_WIDTH:ADDR_WIDTH-1], 
+											   read_ptr_sync[0 +: (ADDR_WIDTH-1)]});			
+		`endif
     `endif
 
     synchronizer #(.RESET_STATE(1)) write_reset_synchronizer(
@@ -189,17 +452,82 @@ module async_fifo
 				end    
             `endif
 
-            write_ptr <= 0;
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+			
+				write_ptr <= LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;
+			`else
+            	write_ptr <= 0;
+            `endif
+            
             write_ptr_gray <= 0;
         end
         
         else if (write_en && !full)
         begin
-            fifo_data[write_ptr[ADDR_WIDTH-1:0]] <= write_data;  // passed verilator Warning-WIDTH
+        	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+        	
+	            fifo_data[write_ptr - LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER] <= write_data;
+	            
+	        `else
+	        	fifo_data[write_ptr[ADDR_WIDTH-1:0]] <= write_data;  // passed verilator Warning-WIDTH
+	        `endif
+	        
             write_ptr <= write_ptr_nxt;
             write_ptr_gray <= write_ptr_gray_nxt;
         end
     end
+
+`ifdef FORMAL
+
+    always @(posedge write_clk)
+    begin
+    	if(first_write_clock_had_passed)
+    	begin
+		    if ($past(reset_wsync))
+		    begin
+				`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				
+					assert(write_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);
+				`else
+		        	assert(write_ptr == 0);
+		        `endif
+		        
+		        assert(write_ptr_gray == 0);
+		    end
+		    
+		    else if ($past(write_en) && !$past(full))
+		    begin
+		    	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+		    	
+			        assert(fifo_data[$past(write_ptr) -
+			         	   LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER] == $past(write_data));
+			        
+			    `else
+			    	assert(fifo_data[$past(write_ptr[ADDR_WIDTH-1:0])] ==
+			    	 	   $past(write_data));  // passed verilator Warning-WIDTH
+			    `endif
+			    
+		        assert(write_ptr == $past(write_ptr_nxt));
+		        assert(write_ptr_gray == $past(write_ptr_gray_nxt));
+		        
+				`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				
+					if($past(write_ptr) == UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER)
+					begin 
+						assert(write_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);  // needs manual rollover
+					end
+					
+					else assert(write_ptr == $past(write_ptr) + 1);  // no need manual rollover
+					
+				`else	
+					assert(write_ptr == $past(write_ptr) + 1);  // no need manual rollover
+				`endif		        
+		    end
+		end
+    end
+
+`endif
+
 
 /*See https://zipcpu.com/blog/2018/07/06/afifo.html for a formal proof of afifo in general*/
 
@@ -226,6 +554,23 @@ module async_fifo
 	always @(posedge read_clk)
 		first_read_clock_had_passed <= first_clock_had_passed;
 
+	always @($global_clock)
+	begin
+		if(first_clock_had_passed)
+		begin
+			if($rose(write_clk))
+				assert(first_write_clock_had_passed == $past(first_clock_had_passed));
+
+			if($rose(read_clk))
+				assert(first_read_clock_had_passed == $past(first_clock_had_passed));
+		end
+		
+		else begin
+			assert(first_write_clock_had_passed == 0);
+			assert(first_read_clock_had_passed == 0);
+		end
+	end
+	
 	//always @($global_clock)
 		//assert($rose(reset_wsync)==$rose(reset_rsync));  // comment this out for experiment
 /*
@@ -254,6 +599,22 @@ module async_fifo
         else if (reset_rsync) reset_rsync_is_done <= 1;
     end
 
+	always @($global_clock) if(~first_read_clock_had_passed) assert(~reset_rsync_is_done);
+
+    always @(posedge read_clk)
+    begin
+    	if(first_read_clock_had_passed)
+    	begin
+			if ($past(read_reset)) assert(reset_rsync_is_done == 0);
+		
+		    else if ($past(reset_rsync)) assert(reset_rsync_is_done == 1);
+		    
+		    else assert(reset_rsync_is_done == $past(reset_rsync_is_done));
+		end
+		
+		else assert(reset_rsync_is_done == 0);
+    end
+
 	reg reset_wsync_is_done;
 	initial reset_wsync_is_done = 0;	
 	initial assert(reset_wsync == 0);	
@@ -264,6 +625,20 @@ module async_fifo
     
         else if (reset_wsync) reset_wsync_is_done <= 1;
     end
+
+	always @($global_clock) if(~first_write_clock_had_passed) assert(~reset_wsync_is_done);
+	
+    always @(posedge write_clk)
+    begin
+    	if(first_write_clock_had_passed)
+    	begin
+			if ($past(write_reset)) assert(reset_wsync_is_done == 0);
+		
+		    else if ($past(reset_wsync)) assert(reset_wsync_is_done == 1);
+		end
+		
+		else assert(reset_wsync_is_done == 0);
+    end	
     
 	always @($global_clock)
 	begin
@@ -271,7 +646,7 @@ module async_fifo
 		begin
 			if($past(reset_wsync) && ($rose(write_clk)))
 			begin
-				assert(write_ptr == 0);
+				assert(write_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);
 				assert(write_ptr_gray == 0);
 			end
 
@@ -284,7 +659,7 @@ module async_fifo
 			
 			if($past(reset_rsync) && ($rose(read_clk)))
 			begin
-				assert(read_ptr == 0);
+				assert(read_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);
 				assert(read_ptr_gray == 0);
 				assert(read_data == 0);
 				assert(empty);
@@ -389,61 +764,137 @@ module async_fifo
 	initial first_data_is_written = 0;
 	initial second_data_is_written = 0;
 	
-	always @(*) assume(first_data > NUM_ENTRIES);
-	always @(*) assume(second_data > NUM_ENTRIES);
+	// just for easier tracking and debugging
+	always @(*) assume(first_data > (NUM_ENTRIES << 1));
+	always @(*) assume(second_data > (NUM_ENTRIES << 1));
 	always @(*) assume(first_data != second_data);
 
-	reg [ADDR_WIDTH:0] first_address;
-	reg [ADDR_WIDTH:0] second_address;
+	reg [POINTER_WIDTH:0] first_address;
+	reg [POINTER_WIDTH:0] second_address;
 	
+	initial first_address = 0;
+	initial second_address = 1;
+	
+	always @(posedge write_clk) assume(first_address < NUM_ENTRIES);
+	always @(posedge write_clk) assume(second_address < NUM_ENTRIES);
 	always @(posedge write_clk) assume(first_address != second_address);
 	
+		
 	always @(posedge write_clk)
 	begin
-		if(reset_wsync)
+		if(reset_wsync || ~reset_wsync_is_done)
 		begin
 			first_data_is_written <= 0;
 			second_data_is_written <= 0;
 		end
 	
-		else if(write_en && !full && !first_data_is_written)
+		else if(write_en && !full && !first_data_is_written && !second_data_is_written)
 		begin
 			assume(write_data == first_data);
-			first_data_is_written <= 1;	
-			first_address <= write_ptr;
+			first_data_is_written <= 1;
+			
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				
+				first_address <= write_ptr - LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;
+			`else
+				first_address <= write_ptr;
+			`endif
 		end
 		
-		else if(write_en && !full && !second_data_is_written)
+		else if(write_en && !full && first_data_is_written && !second_data_is_written)
 		begin
 			assume(write_data == second_data);
 			second_data_is_written <= 1;
-			second_address <= write_ptr;	
+			
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+			
+				second_address <= write_ptr - LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;	
+			`else
+				second_address <= write_ptr;
+			`endif
 		end
 	end
 
-	always @($global_clock)
+	always @(*)
 	begin
-		if(first_clock_had_passed && ($rose(write_clk)))
+		if(~first_write_clock_had_passed)
 		begin
-			if($past(reset_wsync))
+			assert(first_data_is_written == 0);
+			assert(second_data_is_written == 0);
+		end
+		
+		if(~first_read_clock_had_passed)
+		begin
+			assert(first_data_is_read == 0);
+			assert(second_data_is_read == 0);		
+		end		
+	end
+
+	always @(posedge write_clk)
+	begin
+		if(first_write_clock_had_passed)
+		begin
+			if($past(reset_wsync) || ~$past(reset_wsync_is_done))
 			begin
 				assert(first_data_is_written == 0);
 				assert(second_data_is_written == 0);
 			end
-		
-			else if($past(write_en) && !$past(full) && !$past(first_data_is_written))
-			begin
-				assert(first_data_is_written == 1);	
-				assert(first_address == $past(write_ptr));
-				assert($past(first_data) == fifo_data[first_address]);
-			end
 			
-			else if($past(write_en) && !$past(full) && !$past(second_data_is_written))
-			begin
-				assert(second_data_is_written == 1);
-				assert(second_address == $past(write_ptr));	
-				assert($past(second_data) == fifo_data[second_address]);
+			else begin
+			
+				if($past(write_en) && !$past(full) && !$past(first_data_is_written) && !$past(second_data_is_written))
+				begin
+					assert(first_data_is_written == 1);
+					assert(second_data_is_written == 0);
+					assert(first_data_is_read == 0);	
+					assert(second_data_is_read == 0);
+					
+					`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+					
+						assert(first_address == $past(write_ptr) - LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);
+					`else
+						assert(first_address == $past(write_ptr));
+					`endif
+					
+					assert($past(first_data) == fifo_data[first_address]);
+				end
+				
+				else if($past(write_en) && !$past(full) && $past(first_data_is_written) && !$past(second_data_is_written))
+				begin
+					assert(first_data_is_written == 1);
+					assert(second_data_is_written == 1);
+					
+					`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+					
+						assert(second_address == $past(write_ptr)- LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER);	
+					`else
+						assert(second_address == $past(write_ptr));
+					`endif
+					
+					assert($past(second_data) == fifo_data[second_address]);
+				end
+				
+				else begin
+					if(second_data_is_written) assert(first_data_is_written);
+					
+					else begin
+						assert(~second_data_is_written);
+						assert(first_data_is_written == $past(first_data_is_written));
+					end
+					
+					if(~first_data_is_written) assert(~second_data_is_written);
+					
+					else begin
+						assert(first_data_is_written);
+						assert(second_data_is_written == $past(second_data_is_written));
+					end
+				end
 			end
+		end
+		
+		else begin
+			assert(first_data_is_written == 0);
+			assert(second_data_is_written == 0);
 		end
 	end
 	
@@ -456,7 +907,7 @@ module async_fifo
 
 	always @(posedge read_clk)
 	begin
-		if(reset_rsync)
+		if(reset_rsync || ~reset_rsync_is_done)
 		begin  
 			first_data_read_out <= 0;
 			second_data_read_out <= 0;
@@ -472,7 +923,7 @@ module async_fifo
 				first_data_is_read <= 1;	
 			end
 			
-			else if(read_en && !empty && second_data_is_written && !second_data_is_read)
+			else if(read_en && !empty && first_data_is_written && first_data_is_read && second_data_is_written && !second_data_is_read)
 			begin
 				second_data_read_out <= read_data;
 				second_data_is_read <= 1;	
@@ -488,11 +939,11 @@ module async_fifo
 		`endif
 	end
 
-	always @($global_clock)
+	always @(posedge read_clk)
 	begin
-		if(first_clock_had_passed && ($rose(read_clk)))
+		if(first_read_clock_had_passed)
 		begin
-			if($past(reset_rsync))
+			if($past(reset_rsync) || ~$past(reset_rsync_is_done))
 			begin
 				assert(first_data_is_read == 0);
 				assert(second_data_is_read == 0);
@@ -503,23 +954,54 @@ module async_fifo
 				else if($past(read_en) && !$past(empty) && $past(first_data_is_written) && !$past(first_data_is_read) && !$past(second_data_is_read))
 				begin
 					assert(first_data_read_out == $past(read_data));				
-					assert(first_data_is_read == 1);	
+					assert(first_data_is_read == 1);
+					assert(second_data_is_read == 0);	
 				end
 				
-				else if($past(read_en) && !$past(empty) && $past(second_data_is_written) && !$past(second_data_is_read))
+				else if($past(read_en) && !$past(empty) && $past(first_data_is_written) && $past(first_data_is_read) && $past(second_data_is_written) && !$past(second_data_is_read))
 				begin
 					assert(second_data_read_out == $past(read_data));
 					assert(second_data_is_read == 1);
+					assert(first_data_is_read == 1);
 				end
+				
+				else begin
+					assert($stable(first_data_read_out));				
+					assert($stable(first_data_is_read));	
+					assert($stable(second_data_read_out));
+					assert($stable(second_data_is_read));
+					
+					if(second_data_is_read) assert(first_data_is_read);
+					
+					else begin
+						assert(~second_data_is_read);
+						assert(first_data_is_read == $past(first_data_is_read));
+					end
+					
+					if(~first_data_is_read) assert(~second_data_is_read);
+					
+					else begin
+						assert(first_data_is_read);
+						assert(second_data_is_read == $past(second_data_is_read));
+					end
+				end				
 				
 			`else
 				else begin
 					assert(first_data_read_out == $past(read_data));				
 					assert(first_data_is_read == 1);	
 					assert(second_data_read_out == $past(read_data));
-					assert(second_data_is_read == 1);									
+					assert(second_data_is_read == 1);	
+													
+					assert($stable(second_data_read_out));
+					assert($stable(second_data_is_read));					
 				end
 			`endif
+		end
+		
+		else begin
+			assert(first_data_is_read == 0);
+			assert(second_data_is_read == 0);
 		end
 	end
 
@@ -544,13 +1026,13 @@ module async_fifo
 	
 	always @(posedge write_clk)
 	begin
-		if(reset_wsync_is_done)
+		if(reset_wsync_is_done) 
 			previous_write_counter_loop_around_fifo <= write_ptr;
 	end
 
 	always @(posedge read_clk)
 	begin
-		if(reset_rsync_is_done)
+		if(reset_rsync_is_done) 
 			previous_read_counter_loop_around_fifo <= read_ptr;
 	end
 
@@ -575,14 +1057,26 @@ module async_fifo
 	end
 		
 	assign finished_loop_writing = (~finished_loop_writing_previously) &&  // to make this a single clock pulse
-					// every FIFO entries had been visited at least once
-					(&previous_write_counter_loop_around_fifo);
+				`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				
+					// every FIFO entries had been visited once in each loop iteration
+					((previous_write_counter_loop_around_fifo == UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER) && 
+					 (write_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER));
+					 
+				`else
+				
+					// every FIFO entries had been visited once in each loop iteration
+					((previous_write_counter_loop_around_fifo == (NUM_ENTRIES-1)) && 
+					 (write_ptr == 0));				
+					 
+				`endif
+
 
 	wire test_write_enable = $anyseq;  // for synchronizing both 'test_write_en' and 'test_write_data' signals
 	
 	always @(posedge write_clk)
 	begin
-		if(reset_wsync || finished_loop_writing)
+		if(reset_wsync || (num_of_loop_tests_done == TOTAL_NUM_OF_LOOP_TESTS))
 		begin
 			test_write_en <= 0;
 			test_write_data <= 0;
@@ -611,8 +1105,19 @@ module async_fifo
 	end
 
 	assign finished_loop_reading = (~finished_loop_reading_previously) &&  // to make this a single clock pulse
-					// every FIFO entries had been visited at least once
-					(&previous_read_counter_loop_around_fifo);
+				`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				
+					// every FIFO entries had been visited once in each loop iteration
+					((previous_read_counter_loop_around_fifo == UPPER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER) && 
+					 (read_ptr == LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER));
+					 
+				`else
+				
+					// every FIFO entries had been visited once in each loop iteration
+					((previous_read_counter_loop_around_fifo == (NUM_ENTRIES-1)) && 
+					 (read_ptr == 0));				
+					 
+				`endif
 
 	always @(posedge read_clk)
 	begin
@@ -632,7 +1137,7 @@ module async_fifo
 	reg finished_one_loop_test;
 	initial finished_one_loop_test = 0;
 	
-	always @($global_clock)
+	always @(posedge read_clk)
 	begin
 		if(finished_one_loop_test) finished_one_loop_test <= 0;
 		
@@ -643,7 +1148,7 @@ module async_fifo
 	reg [$clog2(TOTAL_NUM_OF_LOOP_TESTS):0] num_of_loop_tests_done;
 	initial num_of_loop_tests_done = 0;
 	
-	always @($global_clock)
+	always @(posedge read_clk)
 	begin
 		num_of_loop_tests_done <= num_of_loop_tests_done + (finished_one_loop_test);
 	end
@@ -676,7 +1181,65 @@ module async_fifo
 			assume(!read_reset);
 		end
 	end
+
+
+	// checks for fifo data integrity across all different scenarios during the loop testing
+
+	generate
+		genvar fifo_check_index;
+	
+		for(fifo_check_index = 0; fifo_check_index < NUM_ENTRIES;
+			fifo_check_index = fifo_check_index + 1)
+		begin : check_fifo_data_state
+			
+			always @(posedge write_clk)
+			begin
+				if(first_write_clock_had_passed) 
+				begin					
+					if($past(reset_wsync)) 
+						// none other than unknown 'X' state
+						assert(fifo_data[fifo_check_index] == {WIDTH{1'b0}});
+					
+					else assert(fifo_data[fifo_check_index] <= {WIDTH{1'b1}});  // don't care
+				end
+			end			
+		end
+	endgenerate
+
+	localparam NUM_OF_SYNC_FF = 3;
+
+	always @(posedge read_clk)
+	begin
+		if(first_read_clock_had_passed)
+		begin
+			if($past(second_data_is_read))
+			begin			
+				if(~$past(empty) && ~$past(empty, NUM_OF_SYNC_FF-1) && $past(read_en)) 
+				begin
+					if(read_data == 1) assert($past(read_data) == second_data);
+						
+					else assert(read_data == $past(read_data) + 1);
+				end
+				
+				else assert(read_data <= {WIDTH{1'b1}});  // don't care 
+			end
 		
+			else begin
+				if(~$past(empty) && $past(read_en)) 
+				begin
+					if(~$past(first_data_is_read) && $past(first_data_is_read)) 
+						assert(read_data > (NUM_ENTRIES << 1));
+						
+					else assert(read_data <= {WIDTH{1'b1}});  // don't care
+				end
+				
+				else begin
+					assert(read_data <= {WIDTH{1'b1}});  // don't care 
+				end
+			end
+		end
+	end
+
 `endif
 
 

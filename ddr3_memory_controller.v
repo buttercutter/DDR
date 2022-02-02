@@ -3022,7 +3022,7 @@ begin
 					main_state <= STATE_IDLE;							
 					wait_count <= 0;
 					
-					MPR_Read_had_finished <= 0;
+					MPR_Read_had_finished <= 1;
 					
 					enqueue_dram_command_bits <= 1;
 				end
@@ -3884,23 +3884,25 @@ begin
 			
 				if(wait_count > (TIME_TBURST + TIME_TRPST + TIME_TMPRR)-1)
 				begin
-
-					main_state <= STATE_INIT_MRS_3;
-					
-					// MPR_ENABLE is already set to ZERO in the next-IF block
-					// MPR Read function disabled					
-					r_address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
-								MPR_ENABLE, MPR_READ_FUNCTION};	
-														
-					// no more NOP command in next 'ck' cycle, transition to MR3 command
-					r_cs_n <= 0;
-					r_ras_n <= 0;
-					r_cas_n <= 0;
-					r_we_n <= 0;				
-					
-					wait_count <= 0;	
-					
-					enqueue_dram_command_bits <= 1;			
+					if(~MPR_Read_had_finished)  // MPR System Read Calibration is not done previously
+					begin
+						main_state <= STATE_INIT_MRS_3;
+						
+						// MPR_ENABLE is already set to ZERO in the next-IF block
+						// MPR Read function disabled					
+						r_address <= {{(ADDRESS_BITWIDTH-MPR_BITWIDTH_COMBINED){1'b0}}, 
+									MPR_ENABLE, MPR_READ_FUNCTION};	
+															
+						// no more NOP command in next 'ck' cycle, transition to MR3 command
+						r_cs_n <= 0;
+						r_ras_n <= 0;
+						r_cas_n <= 0;
+						r_we_n <= 0;				
+						
+						wait_count <= 0;	
+						
+						enqueue_dram_command_bits <= 1;	
+					end		
 				end
 				
 				else if(wait_count > TIME_TBURST-1) // just finished a single data read burst
