@@ -384,8 +384,8 @@ begin
 end
 
 
-// for pipelining in order to solve STA setup timing violation issue
-localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 4;  // see 'data_read_is_ongoing' long logic level
+// for pipelining in order to feed valid non-X incoming DQ bits into deserializer module
+localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 15;  // for 'dq_iobuf_en' and 'dqs_iobuf_en'
 
 // https://www.eevblog.com/forum/fpga/ddr3-initialization-sequence-issue/msg3668329/#msg3668329
 localparam NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN = 3;

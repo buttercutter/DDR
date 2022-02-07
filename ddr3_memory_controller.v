@@ -1431,39 +1431,12 @@ assign data_from_ram = data_from_ram_clk_serdes;
 //							 ((main_state == STATE_READ) || (main_state == STATE_READ_AP))) || 
 //					  		 (main_state == STATE_READ_DATA);
 
-// for pipelining in order to solve STA setup timing violation issue
-localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 4;  // see 'data_read_is_ongoing' long logic level
+// for pipelining in order to feed valid non-X incoming DQ bits into deserializer module
+localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 15;  // for 'dq_iobuf_en' and 'dqs_iobuf_en'
+
 `ifndef TESTBENCH
 reg data_read_is_ongoing;
 `endif
-reg data_read_is_ongoing_temp_1, data_read_is_ongoing_temp_2, data_read_is_ongoing_temp_3;
-
-// to solve STA setup timing violation issue due to large tcomb for 'data_read_is_ongoing_temp_1'
-reg can_proceed_to_read_data_state;
-always @(posedge ck_180)
-	can_proceed_to_read_data_state <= (wait_count_ck_180[0 +: (TIME_RL-TIME_TRPRE+1)] >= TIME_RL-TIME_TRPRE);
-
-
-// 'data_read_is_ongoing' signal needs to be used inside ck_90 and ck_270 clock domains 
-// The logic immediately below is not for clock domain synchronization, 
-// it is just to split a single long combinational logic path into multiple shorter logic paths
-always @(posedge ck_180)
-begin
-	if(reset)
-	begin
-		data_read_is_ongoing_temp_3 <= 0;
-		data_read_is_ongoing_temp_2 <= 0;
-		data_read_is_ongoing_temp_1 <= 0;
-		data_read_is_ongoing <= 0;
-	end
-	
-	else begin
-		data_read_is_ongoing_temp_3 <= (main_state_ck_180 == STATE_READ_ACTUAL);
-		data_read_is_ongoing_temp_2 <= data_read_is_ongoing_temp_3 || (main_state_ck_180 == STATE_READ_AP_ACTUAL);
-		data_read_is_ongoing_temp_1 <= data_read_is_ongoing_temp_2;  // && can_proceed_to_read_data_state;  // unnecessary logic
-		data_read_is_ongoing <= data_read_is_ongoing_temp_1 || (main_state_ck_180 == STATE_READ_DATA);
-	end
-end
 
 wire data_write_is_ongoing = ((wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID) && 
 		    				  ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP))) || 
@@ -1722,9 +1695,37 @@ endgenerate
 					if(reset) data_read_is_ongoing_ck[ff_ck_180_ck] <= 0;
 					
 					else begin
-						if(ff_ck_180_ck == 0) data_read_is_ongoing_ck[ff_ck_180_ck] <= data_read_is_ongoing;
+						if(ff_ck_180_ck == 0) 
+						// for tRPRE , needed for the incoming read preamble bits
+						// dqs tri-state buffer enable signal is connected to 'data_read_is_ongoing_ck'
+						data_read_is_ongoing_ck[ff_ck_180_ck] <= data_read_is_ongoing;
 						
 						else data_read_is_ongoing_ck[ff_ck_180_ck] <= data_read_is_ongoing_ck[ff_ck_180_ck-1];
+					end
+				end
+			end		
+		endgenerate
+
+		reg [NUM_OF_READ_PIPELINE_REGISTER_ADDED-1:0] dqs_iobuf_en;
+		
+		genvar ff_dqs_iobuf_en;
+		
+		generate
+			for(ff_dqs_iobuf_en = 0; 
+			    ff_dqs_iobuf_en < NUM_OF_READ_PIPELINE_REGISTER_ADDED;
+			    ff_dqs_iobuf_en = ff_dqs_iobuf_en + 1)
+			begin: dqs_iobuf_en_pipeline
+			
+				always @(posedge ck)
+				begin
+					if(reset) dqs_iobuf_en[ff_dqs_iobuf_en] <= 0;
+					
+					else begin
+						if(ff_dqs_iobuf_en == 0) 
+							dqs_iobuf_en[ff_dqs_iobuf_en] <=
+		data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1];
+						
+						else dqs_iobuf_en[ff_dqs_iobuf_en] <= dqs_iobuf_en[ff_dqs_iobuf_en-1];
 					end
 				end
 			end		
@@ -1756,6 +1757,33 @@ endgenerate
 				end
 			end		
 		endgenerate
+
+
+		reg [NUM_OF_READ_PIPELINE_REGISTER_ADDED:0] dq_iobuf_en;
+		
+		genvar ff_dq_iobuf_en;
+		
+		generate
+			for(ff_dq_iobuf_en = 0; 
+			    ff_dq_iobuf_en <= NUM_OF_READ_PIPELINE_REGISTER_ADDED;
+			    ff_dq_iobuf_en = ff_dq_iobuf_en + 1)
+			begin: dq_iobuf_en_pipeline
+			
+				always @(posedge ck_270)
+				begin
+					if(reset) dq_iobuf_en[ff_dq_iobuf_en] <= 0;
+					
+					else begin
+						if(ff_dq_iobuf_en == 0) 
+							dq_iobuf_en[ff_dq_iobuf_en] <=
+		data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1];
+						
+						else dq_iobuf_en[ff_dq_iobuf_en] <= dq_iobuf_en[ff_dq_iobuf_en-1];
+					end
+				end
+			end		
+		endgenerate
+		
 		
         // see https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=61
         // 'data_read_is_ongoing' signal is not of double-data-rate signals,
@@ -1772,8 +1800,8 @@ endgenerate
             .C0(ck),  // 1-bit clock input
             .C1(ck_180),  // 1-bit clock input
             .CE(1'b1),  // 1-bit clock enable input
-            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .D0(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C1)			
             .R(1'b0),    // 1-bit reset input
             .S(1'b0)     // 1-bit set input
         );	
@@ -1788,8 +1816,8 @@ endgenerate
             .C0(ck),  // 1-bit clock input
             .C1(ck_180),  // 1-bit clock input
             .CE(1'b1),  // 1-bit clock enable input
-            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .D0(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C1)			
             .R(1'b0),    // 1-bit reset input
             .S(1'b0)     // 1-bit set input
         );
@@ -1804,8 +1832,8 @@ endgenerate
             .C0(ck),  // 1-bit clock input
             .C1(ck_180),  // 1-bit clock input
             .CE(1'b1),  // 1-bit clock enable input
-            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .D0(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C1)			
             .R(1'b0),    // 1-bit reset input
             .S(1'b0)     // 1-bit set input
         );	
@@ -1820,8 +1848,8 @@ endgenerate
             .C0(ck),  // 1-bit clock input
             .C1(ck_180),  // 1-bit clock input
             .CE(1'b1),  // 1-bit clock enable input
-            .D0(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-            .D1(data_read_is_ongoing_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+            .D0(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C0)
+            .D1(dqs_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED-1]),    // 1-bit DDR data input (associated with C1)			
             .R(1'b0),    // 1-bit reset input
             .S(1'b0)     // 1-bit set input
         );
@@ -1863,8 +1891,8 @@ endgenerate
 			.C0(ck_90),  // 1-bit clock input
 			.C1(ck_270),  // 1-bit clock input
 			.CE(1'b1),  // 1-bit clock enable input
-			.D0(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C0)
-			.D1(data_read_is_ongoing_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_270_DOMAIN-1]),    // 1-bit DDR data input (associated with C1)			
+			.D0(dq_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED]),    // 1-bit DDR data input (associated with C0)
+			.D1(dq_iobuf_en[NUM_OF_READ_PIPELINE_REGISTER_ADDED]),    // 1-bit DDR data input (associated with C1)			
 			.R(reset),    // 1-bit reset input
 			.S(1'b0)     // 1-bit set input
 		);	
@@ -2724,6 +2752,8 @@ begin
 		
 		num_of_data_write_burst_had_finished <= 0;
 		num_of_data_read_burst_had_finished <= 0;
+
+		data_read_is_ongoing <= 0;
 		
 		/* PLL dynamic phase shift is used in lieu of IODELAY2 primitive
 		`ifdef HIGH_SPEED
@@ -2757,6 +2787,8 @@ begin
 	
 		if(write_enable) write_is_enabled <= 1;
 		if(read_enable) read_is_enabled <= 1;		
+
+		data_read_is_ongoing <= 0;
 	
 		wait_count <= wait_count + 1;
 		previous_main_state <= main_state;
@@ -3666,6 +3698,13 @@ begin
 			begin
 				r_ck_en <= 1;
 				
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;					
+				
 				r_address <= 	// column address
 						   	{
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
@@ -3678,30 +3717,17 @@ begin
 
                 write_is_enabled <= 0;
 			
-				if(wait_count >  
+				if(wait_count ==  
 						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
-				begin
-					// no more NOP command in next 'ck' cycle, issue the actual RD command
-					r_cs_n <= 0;			
-					r_ras_n <= 1;
-					r_cas_n <= 0;
-					r_we_n <= 1;
-									
+				begin							
 					main_state <= STATE_READ_ACTUAL;
-					wait_count <= 0;
-					
-					enqueue_dram_command_bits <= 1;
+
+					// for tRPRE , needed for the incoming read preamble bits
+					data_read_is_ongoing <= 1;
 				end	
 				
-				else begin
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					r_cs_n <= 0;
-					r_ras_n <= 1;
-					r_cas_n <= 1;
-					r_we_n <= 1;	
-									
+				else begin									
 					main_state <= STATE_READ;
 					
 					enqueue_dram_command_bits <= 0;
@@ -3735,9 +3761,9 @@ begin
 				begin
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
-					
-					// minus 1 to avoid one extra data read burst operation					
-					if(num_of_data_read_burst_had_finished == (NUM_OF_READ_DATA/DATA_BURST_LENGTH)-1)
+				
+					if(num_of_data_read_burst_had_finished == 
+						(NUM_OF_READ_DATA/DATA_BURST_LENGTH))
 					begin
 						// finished all intended data read bursts
 						read_is_enabled <= 0;
@@ -3750,6 +3776,8 @@ begin
 						// continues data read bursts			
 						//read_is_enabled <= 1;
 						num_of_data_read_burst_had_finished <= num_of_data_read_burst_had_finished + 1;
+						
+						data_read_is_ongoing <= 1;
 										
 						// issues RD command again
 						r_ck_en <= 1;
@@ -3768,7 +3796,14 @@ begin
 			STATE_READ_AP :
 			begin
 				r_ck_en <= 1;
-				
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
+								
 				r_address <= 	// column address
 						   	{
 						   		i_user_data_address[(A12+1) +: (ADDRESS_BITWIDTH-A12-1)],
@@ -3780,31 +3815,18 @@ begin
 							};			
 
                 write_is_enabled <= 0;
-			
-				if(wait_count >  
+
+				if(wait_count ==  
 						(NUM_OF_READ_PIPELINE_REGISTER_ADDED+
 						 NUM_OF_FF_SYNCHRONIZERS_FOR_CK_180_DOMAIN_TO_CK_90_DOMAIN)-1)
-				begin
-					// no more NOP command in next 'ck' cycle, issue the actual RDAP command
-					r_cs_n <= 0;			
-					r_ras_n <= 1;
-					r_cas_n <= 0;
-					r_we_n <= 1;
-									
+				begin							
 					main_state <= STATE_READ_AP_ACTUAL;
-					wait_count <= 0;
 					
-					enqueue_dram_command_bits <= 1;
-				end	
+					// for tRPRE , needed for the incoming read preamble bits
+					data_read_is_ongoing <= 1;
+				end
 				
-				else begin
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					r_cs_n <= 0;
-					r_ras_n <= 1;
-					r_cas_n <= 1;
-					r_we_n <= 1;	
-									
+				else begin									
 					main_state <= STATE_READ_AP;
 					
 					enqueue_dram_command_bits <= 0;
@@ -3814,6 +3836,13 @@ begin
 			STATE_READ_AP_ACTUAL :
 			begin
 				r_ck_en <= 1;
+
+				// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
+				// only a single, non-repeating ACT command is executed, and followed by NOP commands
+				r_cs_n <= 0;
+				r_ras_n <= 1;
+				r_cas_n <= 1;
+				r_we_n <= 1;	
 				
 				r_address <= 	// column address
 						   	{
@@ -3829,27 +3858,22 @@ begin
 				
 				if(wait_count >= (TIME_RL-TIME_TRPRE))
 				begin
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					r_cs_n <= 0;
+					// issues RD command again
+					r_ck_en <= 1;
+					r_cs_n <= 0;			
 					r_ras_n <= 1;
-					r_cas_n <= 1;
-					r_we_n <= 1;	
+					r_cas_n <= 0;
+					r_we_n <= 1;					
 									
 					main_state <= STATE_READ_DATA;
 					wait_count <= 0;
+
+					data_read_is_ongoing <= 1;
 					
 					enqueue_dram_command_bits <= 1;
 				end
 								
-				else begin
-					// localparam NOP = (previous_clk_en) & (ck_en) & (~cs_n) & (ras_n) & (cas_n) & (we_n);
-					// only a single, non-repeating ACT command is executed, and followed by NOP commands
-					r_cs_n <= 0;
-					r_ras_n <= 1;
-					r_cas_n <= 1;
-					r_we_n <= 1;	
-									
+				else begin								
 					main_state <= STATE_READ_AP_ACTUAL;
 					
 					enqueue_dram_command_bits <= 0;
@@ -3906,9 +3930,9 @@ begin
 				end
 				
 				else if(wait_count >= TIME_TBURST-1) // just finished a single data read burst
-				begin			
-					// minus 1 to avoid one extra data read burst operation					
-					if(num_of_data_read_burst_had_finished == (NUM_OF_READ_DATA/DATA_BURST_LENGTH)-1)
+				begin						
+					if(num_of_data_read_burst_had_finished == 
+						(NUM_OF_READ_DATA/DATA_BURST_LENGTH))
 					begin
 						// finished all intended data write bursts
 						main_state <= STATE_READ_DATA;
@@ -3934,6 +3958,8 @@ begin
 							`else
 								main_state <= STATE_READ_AP_ACTUAL;
 							`endif
+
+							data_read_is_ongoing <= 1;
 											
 							// issues RD command again
 							r_ck_en <= 1;
