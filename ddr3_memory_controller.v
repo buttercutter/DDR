@@ -1190,7 +1190,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 		
 
-		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)-1))
 		dq_iserdes_0
 		(
 			.reset(need_to_assert_reset_ck_dynamic_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1]),		
@@ -1203,7 +1203,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_out(data_out_iserdes_0)
 		);
 
-		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1))
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)-1))
 		dq_iserdes_1
 		(
 			.reset(need_to_assert_reset_ck_dynamic_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1]),		
