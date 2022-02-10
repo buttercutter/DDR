@@ -187,6 +187,7 @@ module ddr3_memory_controller
 	`endif
 	
 	`ifdef HIGH_SPEED
+		output clk_serdes_0_phase,  // 83.333MHz with 0 phase shift
 		output clk_serdes,  // 83.333MHz with 225 phase shift
 		output ck_180,  // 333.333MHz with 180 phase shift
 		output reg locked_previous,
@@ -571,7 +572,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 `else
 
-	wire clk_pll;
+	// wire clk_serdes_0_phase;
 	// wire clk_serdes;
 	wire ck, ck_out;
 	
@@ -596,10 +597,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.clk(clk),  // IN 50MHz
 			
 			// Clock out ports
-			.clk_pll(clk_pll),  // OUT 83.333MHz, 45 phase shift, for solving STA issues
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
+			.clk_serdes_0_phase(clk_serdes_0_phase),  // OUT 83.333MHz, 0 phase shift			
 			.clk_serdes(clk_serdes),  // OUT 83.333MHz, 225 phase shift, for SERDES use
 			
 			.ck(ck),  // OUT 333.333MHz, 0 phase shift
@@ -1116,15 +1117,15 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
 		
-		always @(posedge ck) dq_w_d0 <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
-		always @(posedge ck) dq_w_d1 <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
+		always @(posedge ck) dq_w_d0_reg <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
+		always @(posedge ck) dq_w_d1_reg <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
 		// for DQ signal starting position on AL alignment for DRAM write operation
 		// See https://www.edaboard.com/threads/additive-latency-for-dram-read-and-write-commands.400678/
-		//always @(posedge ck) dq_w_d0_reg_reg <= dq_w_d0_reg;
-		//always @(posedge ck) dq_w_d1_reg_reg <= dq_w_d1_reg;
-		//always @(posedge ck) dq_w_d0 <= dq_w_d0_reg_reg;
-		//always @(posedge ck) dq_w_d1 <= dq_w_d1_reg_reg;
+		always @(posedge ck) dq_w_d0_reg_reg <= dq_w_d0_reg;
+		always @(posedge ck) dq_w_d1_reg_reg <= dq_w_d1_reg;
+		always @(posedge ck) dq_w_d0 <= dq_w_d0_reg_reg;
+		always @(posedge ck) dq_w_d1 <= dq_w_d1_reg_reg;
 
 	
 		// why need IOSERDES primitives ?
@@ -1156,7 +1157,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_0;
 		wire [(DQ_BITWIDTH*(SERDES_RATIO >> 1))-1:0] data_out_iserdes_1;
 
-		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck_dynamic_90;
+		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_clk_serdes_0_phase;
 
 		
 		genvar data_index_iserdes;
@@ -1167,20 +1168,20 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 				
 				// the use of $rtoi and $floor functions are to limit the bit range of 'data_index_iserdes'
 				// since 'data_out_iserdes_0' and 'data_out_iserdes_1' are half the size of 
-				// 'data_from_ram_ck_dynamic_90'
+				// 'data_from_ram_clk_serdes_0_phase'
 				
 				always @(*)
 				begin				
 					if(((data_index_iserdes/DQ_BITWIDTH) % EVEN_RATIO) == 0)
 					begin
-						data_from_ram_ck_dynamic_90[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_from_ram_clk_serdes_0_phase[data_index_iserdes +: DQ_BITWIDTH] <=
 						data_out_iserdes_0[DQ_BITWIDTH * 
 										   $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
 										   +: DQ_BITWIDTH];
 					end
 				
 					else begin
-						data_from_ram_ck_dynamic_90[data_index_iserdes +: DQ_BITWIDTH] <=
+						data_from_ram_clk_serdes_0_phase[data_index_iserdes +: DQ_BITWIDTH] <=
 						data_out_iserdes_1[DQ_BITWIDTH * 
 										   $rtoi($floor(data_index_iserdes/(DQ_BITWIDTH << 1))) 
 										   +: DQ_BITWIDTH];
@@ -1193,10 +1194,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)-1))
 		dq_iserdes_0
 		(
-			.reset(need_to_assert_reset_ck_dynamic_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1]),		
+			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),		
 		
 			// fast clock domain
-			.high_speed_clock(ck_dynamic_90),  // for DQ centering, incoming DQ bit is not phase shifted
+			.high_speed_clock(ck),
 			.data_in(dq_r_q0),
 			
 			// slow clock domain
@@ -1206,10 +1207,10 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)-1))
 		dq_iserdes_1
 		(
-			.reset(need_to_assert_reset_ck_dynamic_90[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DYNAMIC_90_DOMAIN-1]),		
+			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),		
 		
 			// fast clock domain
-			.high_speed_clock(ck_dynamic_90),  // for DQ centering, incoming DQ bit is not phase shifted
+			.high_speed_clock(ck),
 			.data_in(dq_r_q1),
 			
 			// slow clock domain
@@ -1273,7 +1274,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 
 		
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1) >> 1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
 		dq_oserdes_0
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -1286,7 +1287,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_out(dq_w_oserdes_0)
 		);
 
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1) >> 1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
 		dq_oserdes_1
 		(
 			.reset(need_to_assert_reset_ck[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_DOMAIN-1]),
@@ -1380,51 +1381,22 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		);
 		*/
 
-		// to synchronize signal in ck_dynamic_90 domain to ck domain
+		// to synchronize signal in clk_serdes_0_phase domain to ck domain
 		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_ck;
 
 	`else
 		wire [DQ_BITWIDTH-1:0] dq_w_d0 = data_to_ram[0 +: DQ_BITWIDTH];
 		wire [DQ_BITWIDTH-1:0] dq_w_d1 = data_to_ram[DQ_BITWIDTH +: DQ_BITWIDTH];	
 		
-		// to synchronize signal in ck_dynamic_90 domain to ck domain
+		// to synchronize signal in clk_serdes_0_phase domain to ck domain
 		reg [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck;
 
-		wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram_ck_dynamic_90 = 
+		wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram_clk_serdes_0_phase = 
 					{dq_r_q1, dq_r_q0};	
 				
 	`endif
 
-// for synchronizing multi-bits signals from ck_dynamic_90 domain to clk_serdes domain
-wire afifo_data_from_ram_clk_serdes_is_empty;
-wire afifo_data_from_ram_clk_serdes_is_full;
-
-wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_clk_serdes;
-
-async_fifo 
-#(
-	.WIDTH(DQ_BITWIDTH*SERDES_RATIO),
-	.NUM_ENTRIES()
-) 
-afifo_data_from_ram_serdes
-(
-	.write_reset(reset),
-    .read_reset(reset),
-
-    // Read.
-    .read_clk(clk_serdes),
-    .read_en(1'b1),
-    .read_data(data_from_ram_clk_serdes),
-    .empty(afifo_data_from_ram_clk_serdes_is_empty),
-
-    // Write
-    .write_clk(ck_dynamic_90),
-    .write_en(1'b1),
-    .full(afifo_data_from_ram_clk_serdes_is_full),
-    .write_data(data_from_ram_ck_dynamic_90)
-);
-
-assign data_from_ram = data_from_ram_clk_serdes;
+assign data_from_ram = data_from_ram_clk_serdes_0_phase;
 	 		
 
 // wire data_read_is_ongoing = ((wait_count > TIME_RL-TIME_TRPRE) && 
@@ -1855,7 +1827,38 @@ endgenerate
         );
 				
 	`endif
-		
+
+	
+	// for synchronizing multi-bits signals from ck_dynamic_90 domain to ck domain
+	wire afifo_dq_r_synced_is_empty;
+	wire afifo_dq_r_synced_is_full;
+
+	wire [DQ_BITWIDTH-1:0] dq_r_synced;
+
+	async_fifo 
+	#(
+		.WIDTH(DQ_BITWIDTH),
+		.NUM_ENTRIES(),
+		.TO_SIMPLIFY_FULL_LOGIC(1),
+		.TO_SIMPLIFY_EMPTY_LOGIC(0)
+	) 
+	afifo_dq_r_synced
+	(
+		.write_reset(reset),
+		.read_reset(reset),
+
+		// Read.
+		.read_clk(ck),
+		.read_en(1'b1),
+		.read_data(dq_r_synced),
+		.empty(afifo_dq_r_synced_is_empty),
+
+		// Write
+		.write_clk(ck_dynamic_90),  // for DQ centering, incoming DQ bits have 0 phase shift with respect to incoming DQS strobe
+		.write_en(1'b1),
+		.full(afifo_dq_r_synced_is_full),
+		.write_data(dq_r)
+	);			
 
 	generate
 	genvar dq_index;  // to indicate the bit position of DQ signal
@@ -1927,18 +1930,18 @@ endgenerate
 
 		// https://www.xilinx.com/support/documentation/user_guides/ug381.pdf#page=51
 		// IDDR2 is re-coded in verilog fabric due to same clock restriction of IODDR which leads to routing issue
-		always @(posedge ck_dynamic_90)
+		always @(posedge ck)
 		begin
 			if(reset) dq_r_q0[dq_index] <= 0;
 			
-			else dq_r_q0[dq_index] <= dq_r[dq_index];
+			else dq_r_q0[dq_index] <= dq_r_synced[dq_index];
 		end
 		
-		always @(negedge ck_dynamic_90)
+		always @(negedge ck)
 		begin
 			if(reset) dq_r_q1[dq_index] <= 0;
 			
-			else dq_r_q1[dq_index] <= dq_r[dq_index];
+			else dq_r_q1[dq_index] <= dq_r_synced[dq_index];
 		end
 
 		// ODDR2: Input Double Data Rate Output Register with Set, Reset and Clock Enable.
@@ -2482,7 +2485,9 @@ parameter CLOCK_FACTOR_BETWEEN_CLK_SERDES_AND_CK = CLK_SERDES_PERIOD/CK_PERIOD;
 async_fifo 
 #(
 	.WIDTH($clog2(NUM_OF_DDR_STATES)),
-	.NUM_ENTRIES()
+	.NUM_ENTRIES(),
+	.TO_SIMPLIFY_FULL_LOGIC(1),
+	.TO_SIMPLIFY_EMPTY_LOGIC(0)
 ) 
 afifo_main_state
 (
@@ -2505,7 +2510,9 @@ afifo_main_state
 async_fifo 
 #(
 	.WIDTH(NUM_OF_DRAM_COMMAND_BITS),
-	.NUM_ENTRIES()
+	.NUM_ENTRIES(),
+	.TO_SIMPLIFY_FULL_LOGIC(1),
+	.TO_SIMPLIFY_EMPTY_LOGIC(0)
 ) 
 afifo_dram_command_bits
 (
@@ -2528,7 +2535,9 @@ afifo_dram_command_bits
 async_fifo 
 #(
 	.WIDTH(ADDRESS_BITWIDTH),
-	.NUM_ENTRIES()
+	.NUM_ENTRIES(),
+	.TO_SIMPLIFY_FULL_LOGIC(1),
+	.TO_SIMPLIFY_EMPTY_LOGIC(0)
 ) 
 afifo_dram_address_bits
 (
@@ -2551,7 +2560,9 @@ afifo_dram_address_bits
 async_fifo 
 #(
 	.WIDTH(BANK_ADDRESS_BITWIDTH),
-	.NUM_ENTRIES()
+	.NUM_ENTRIES(),
+	.TO_SIMPLIFY_FULL_LOGIC(1),
+	.TO_SIMPLIFY_EMPTY_LOGIC(0)
 ) 
 afifo_dram_bank_address_bits
 (
@@ -2574,7 +2585,9 @@ afifo_dram_bank_address_bits
 async_fifo 
 #(
 	.WIDTH($clog2(MAX_WAIT_COUNT)+1),
-	.NUM_ENTRIES()
+	.NUM_ENTRIES(),
+	.TO_SIMPLIFY_FULL_LOGIC(1),
+	.TO_SIMPLIFY_EMPTY_LOGIC(0)
 ) 
 afifo_wait_count
 (

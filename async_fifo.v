@@ -27,11 +27,11 @@
 //`default_nettype none
 
 
-// for writing and reading 2 different values into 2 different FIFO entry locations
-`define ENABLE_TWIN_WRITE_TEST 1
+`ifdef FORMAL
+	// for writing and reading 2 different values into 2 different FIFO entry locations
+	`define ENABLE_TWIN_WRITE_TEST 1
+`endif
 
-// to simplify 'full' logic when the condition within read clock domain allows
-`define READ_CLOCK_IS_FASTER_AND_READ_EN_IS_ASSERTED_FOREVER 1
 
 // enables this setting if the asynchronous FIFO has non-power-of-two of location entries
 // However, this settings might cause STA setup issue in write clock domain
@@ -53,7 +53,7 @@ module async_fifo
 				parameter NUM_ENTRIES = 8,
 			`endif
 			
-			parameter WIDTH = $clog2(NUM_ENTRIES << 1)  // index as data for loop testing
+			parameter WIDTH = $clog2(NUM_ENTRIES << 1),  // index as data for loop testing
 		`else
 		
 			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
@@ -62,8 +62,23 @@ module async_fifo
 				parameter NUM_ENTRIES = 4,
 			`endif
 			
-			parameter WIDTH = 32
+			parameter WIDTH = 32,
 		`endif
+
+		// The following 2 simplification tricks are devised such that we do not need the
+		// extra few clock cycles delay arising from the use of FF synchronizers for
+		// write_ptr_sync and read_ptr_sync signals which are used in the computation
+		// logic for 'empty' and 'full' respectively.
+		// This will help to speed up the read and write pipeline.
+
+		// to simplify 'full' logic when the conditions within read clock domain allow.
+		// read clock is same speed or faster than write clock, with read_en asserted forever
+		parameter TO_SIMPLIFY_FULL_LOGIC = 0,
+		
+		// to simplify 'empty' logic when the conditions allow.
+		// read clock and write clock have same speed but different phase shift, 
+		// with read_en and write_en asserted forever
+		parameter TO_SIMPLIFY_EMPTY_LOGIC = 0		
     )
 
     (input                  write_reset,
@@ -229,8 +244,13 @@ module async_fifo
         .data_o(write_ptr_sync),
         .data_i(write_ptr_gray));
 
-    assign empty = write_ptr_sync == read_ptr_gray;
-
+	generate
+		if(TO_SIMPLIFY_EMPTY_LOGIC)
+			assign empty = 0;
+		
+		else assign empty = write_ptr_sync == read_ptr_gray;
+	endgenerate
+	
 	// For further info on reset synchronizer, see 
 	// https://www.youtube.com/watch?v=mYSEVdUPvD8 and
 	// http://zipcpu.com/formal/2018/04/12/areset.html
@@ -241,27 +261,31 @@ module async_fifo
         .data_i(1'b0),
         .data_o(reset_rsync));
 
-    always @(posedge read_clk)
-    begin
-        if (reset_rsync)
-        begin
-        	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
-        	
-	            read_ptr <= LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;
-	        `else
-	        	read_ptr <= 0;
-	        `endif
-	        
-            read_ptr_gray <= 0;
-        end
-        
-        else if (read_en && !empty)
-        begin
-            read_ptr <= read_ptr_nxt;
-            read_ptr_gray <= read_ptr_gray_nxt;
-        end
-    end
-
+	generate
+		always @(posedge read_clk)
+		begin
+		    if (reset_rsync)
+		    begin
+		    	`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+		    	
+			        read_ptr <= LOWER_BINARY_LIMIT_FOR_GRAY_POINTER_ROLLOVER;
+			    `else
+			    	read_ptr <= 0;
+			    `endif
+			    
+		        read_ptr_gray <= 0;
+		    end
+		    
+		    else if (read_en && !empty)
+		    begin        	
+		        if(TO_SIMPLIFY_EMPTY_LOGIC) read_ptr <= write_ptr;
+		        
+		        else read_ptr <= read_ptr_nxt;        
+		        
+		        read_ptr_gray <= read_ptr_gray_nxt;
+		    end
+		end
+	endgenerate
 
 	`ifdef REGISTER_RETIMING_FOR_READ_DATA
 	
@@ -393,43 +417,45 @@ module async_fifo
         .data_o(read_ptr_sync),
         .data_i(read_ptr_gray));
 
+	generate
+		if(TO_SIMPLIFY_FULL_LOGIC)
+			// compensates for the delay in synchronizer chain which results in false-positive full detection
+			// STA setup issue in read clock domain is solved by choosing not to increase NUM_ENTRIES when full logic
+			// is now correctly implemented for certain corner simulation coverage case, 
+			// taking into account the cycles delay brought by the 'read_ptr_synchronizer' synchronizer chain.
+			assign full = 0;
+		
+		else begin
+			`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
 
-	`ifdef READ_CLOCK_IS_FASTER_AND_READ_EN_IS_ASSERTED_FOREVER
-		// compensates for the delay in synchronizer chain which results in false-positive full detection
-		// STA setup issue in read clock domain is solved by choosing not to increase NUM_ENTRIES when full logic
-		// is now correctly implemented for certain corner simulation coverage case, 
-		// taking into account the cycles delay brought by the 'read_ptr_synchronizer' synchronizer chain.
-		assign full = 0;
-	`else
-		`ifdef NUM_ENTRIES_IS_NON_POWER_OF_TWO
+				// compares pointers in binary because no simple logic to do arithmetic with gray codes
+				wire [POINTER_WIDTH:0] read_ptr_sync_in_binary;
 
-			// compares pointers in binary because no simple logic to do arithmetic with gray codes
-			wire [POINTER_WIDTH:0] read_ptr_sync_in_binary;
-
-			generate genvar bin_i;
-				for (bin_i=0; bin_i<=POINTER_WIDTH; bin_i=bin_i+1) begin : gray_to_binary
+				generate genvar bin_i;
+					for (bin_i=0; bin_i<=POINTER_WIDTH; bin_i=bin_i+1) begin : gray_to_binary
+					
+						assign read_ptr_sync_in_binary[bin_i] = 
+										^read_ptr_sync[POINTER_WIDTH:bin_i];
+					end
+				endgenerate
+			
+				// We cannot use MSB. We have to check whether the pointers are in different halves.
+				// Run the pointers to 2x depth like before. 
+				// And full when wr ptr = rd ptr + depth. Adjust for wrap around etc.
 				
-					assign read_ptr_sync_in_binary[bin_i] = 
-									^read_ptr_sync[POINTER_WIDTH:bin_i];
-				end
-			endgenerate
-		
-			// We cannot use MSB. We have to check whether the pointers are in different halves.
-			// Run the pointers to 2x depth like before. 
-			// And full when wr ptr = rd ptr + depth. Adjust for wrap around etc.
+				assign full = (write_ptr == read_ptr_sync_in_binary + NUM_ENTRIES[POINTER_WIDTH:0] - 1);
+				
+			`else
+				// See https://electronics.stackexchange.com/questions/596233/address-rollover-for-asynchronous-fifo
+				// and http://www.sunburst-design.com/papers/CummingsSNUG2002SJ_FIFO1.pdf#page=19
+				// if observed carefully, the following 'full' logic managed to get around the
+				// under-utilization of 1 fifo entry experienced by the sunburst document.
 			
-			assign full = (write_ptr == read_ptr_sync_in_binary + NUM_ENTRIES[POINTER_WIDTH:0] - 1);
-			
-		`else
-			// See https://electronics.stackexchange.com/questions/596233/address-rollover-for-asynchronous-fifo
-			// and http://www.sunburst-design.com/papers/CummingsSNUG2002SJ_FIFO1.pdf#page=19
-			// if observed carefully, the following 'full' logic managed to get around the
-			// under-utilization of 1 fifo entry experienced by the sunburst document.
-		
-			assign full = (write_ptr_gray == {~read_ptr_sync[ADDR_WIDTH:ADDR_WIDTH-1], 
-											   read_ptr_sync[0 +: (ADDR_WIDTH-1)]});			
-		`endif
-    `endif
+				assign full = (write_ptr_gray == {~read_ptr_sync[ADDR_WIDTH:ADDR_WIDTH-1], 
+												   read_ptr_sync[0 +: (ADDR_WIDTH-1)]});			
+			`endif
+		end
+    endgenerate
 
     synchronizer #(.RESET_STATE(1)) write_reset_synchronizer(
         .clk(write_clk),

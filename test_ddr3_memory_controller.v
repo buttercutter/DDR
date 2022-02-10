@@ -174,6 +174,7 @@ module test_ddr3_memory_controller
 
 `ifdef HIGH_SPEED
 // for clk_serdes clock domain
+wire clk_serdes_0_phase;  // 83.333MHz with 0 phase shift
 wire clk_serdes;  // 83.333MHz with 225 phase shift
 wire ck_180;  // 333.333MHz with 180 phase shift
 wire locked_previous;
@@ -335,37 +336,116 @@ wire data_read_is_ongoing;
 `endif
 
 
+reg write_enable, read_enable;
+reg previous_write_enable, previous_previous_write_enable;
+
+always @(posedge clk_serdes)
+begin
+	previous_write_enable <= write_enable;
+	previous_previous_write_enable <= previous_write_enable;
+end
+
+reg done_writing, done_reading;
+
+reg time_to_send_out_data_to_dram;
+reg time_to_send_out_address_to_dram_during_write;
+
 reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DDR memory address for which the user wants to write/read the data
 
+
 `ifdef USE_SERDES
-	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
+	wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram;  // data for which the user wants to write/read to/from DDR
 	wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram;  // the requested data from DDR RAM after read operation
+	
+	reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_to_ram_clk_serdes;
+	wire [DQ_BITWIDTH*SERDES_RATIO-1:0] data_from_ram_clk_serdes;
 `else 
 	// TWO pieces of data bundled together due to double-data-rate requirement of DQ signal
 	reg  [(DQ_BITWIDTH << 1)-1:0] data_to_ram;  // data to be written to DDR RAM
 	wire [(DQ_BITWIDTH << 1)-1:0] data_from_ram;  // the requested data being read from DDR RAM
 `endif
 
-reg write_enable, read_enable;
-reg done_writing, done_reading;
 
-reg time_to_send_out_data_to_dram;
+`ifdef USE_SERDES
+	// for synchronizing multi-bits signals from clk_serdes domain to clk_serdes_0_phase domain
+	wire afifo_data_to_ram_clk_serdes_is_empty;
+	wire afifo_data_to_ram_clk_serdes_is_full;
+
+	async_fifo 
+	#(
+		.WIDTH(DQ_BITWIDTH*SERDES_RATIO),
+		.NUM_ENTRIES(),
+		.TO_SIMPLIFY_FULL_LOGIC(1),
+		.TO_SIMPLIFY_EMPTY_LOGIC(1)
+	) 
+	afifo_data_to_ram_serdes
+	(
+		.write_reset(reset),
+		.read_reset(reset),
+
+		// Read.
+		.read_clk(clk_serdes_0_phase),
+		.read_en(1'b1),
+		.read_data(data_to_ram),
+		.empty(afifo_data_to_ram_clk_serdes_is_empty),
+
+		// Write
+		.write_clk(clk_serdes),
+		.write_en(1'b1),
+		.full(afifo_data_to_ram_clk_serdes_is_full),
+		.write_data(data_to_ram_clk_serdes)
+	);
+
+
+	// for synchronizing multi-bits signals from clk_serdes_0_phase domain to clk_serdes domain
+	wire afifo_data_from_ram_clk_serdes_is_empty;
+	wire afifo_data_from_ram_clk_serdes_is_full;
+
+	async_fifo 
+	#(
+		.WIDTH(DQ_BITWIDTH*SERDES_RATIO),
+		.NUM_ENTRIES(),
+		.TO_SIMPLIFY_FULL_LOGIC(1),
+		.TO_SIMPLIFY_EMPTY_LOGIC(1)		
+	) 
+	afifo_data_from_ram_serdes
+	(
+		.write_reset(reset),
+		.read_reset(reset),
+
+		// Read.
+		.read_clk(clk_serdes),
+		.read_en(1'b1),
+		.read_data(data_from_ram_clk_serdes),
+		.empty(afifo_data_from_ram_clk_serdes_is_empty),
+
+		// Write
+		.write_clk(clk_serdes_0_phase),
+		.write_en(1'b1),
+		.full(afifo_data_from_ram_clk_serdes_is_full),
+		.write_data(data_from_ram)  // data_from_ram_clk_serdes_0_phase
+	);
+`endif
+
+
 always @(posedge clk_serdes)
 begin
 	if(reset) time_to_send_out_data_to_dram <= 0;
 	
 	else begin
 		time_to_send_out_data_to_dram <= 
+			((previous_main_state == STATE_ACTIVATE) && (write_enable)) ||
+					
 			`ifdef LOOPBACK
-			 	(previous_previous_main_state == STATE_WRITE) ||
+			 	(previous_main_state == STATE_WRITE) ||
 			`else
-				(previous_previous_main_state == STATE_WRITE_AP) ||
+				(previous_main_state == STATE_WRITE_AP) ||
 			`endif
-			 (previous_previous_main_state == STATE_WRITE_DATA);
+			 (previous_main_state == STATE_WRITE_DATA);
 	end
 end
 
-reg time_to_send_out_address_to_dram_during_write;
+
 always @(posedge clk_serdes)
 begin
 	if(reset) time_to_send_out_address_to_dram_during_write <= 0;
@@ -447,7 +527,7 @@ end
 				if(reset)
 				begin
 					`ifdef USE_SERDES
-						data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
+						data_to_ram_clk_serdes[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
 					`else
 						data_to_ram <= 0;
 					`endif
@@ -469,10 +549,10 @@ end
 				begin					
 					`ifdef USE_SERDES							
 						`ifdef USE_x16
-							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
+							data_to_ram_clk_serdes[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
 										{test_data + data_write_index + 1, test_data + data_write_index};
 						`else
-							data_to_ram[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
+							data_to_ram_clk_serdes[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
 										test_data + data_write_index;
 						`endif											
 					`else
@@ -732,6 +812,7 @@ ddr3_control
 	`endif
 	
 	`ifdef HIGH_SPEED
+		.clk_serdes_0_phase(clk_serdes_0_phase),  // 83.333MHz with 0 phase shift
 		.clk_serdes(clk_serdes),  // 83.333MHz with 225 phase shift
 		.ck_180(ck_180),  // 333.333MHz with 180 phase shift
 		.locked_previous(locked_previous),
