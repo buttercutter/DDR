@@ -174,7 +174,7 @@ module test_ddr3_memory_controller
 
 `ifdef HIGH_SPEED
 // for clk_serdes clock domain
-wire clk_serdes_0_phase;  // 83.333MHz with 0 phase shift
+wire clk_serdes_data;  // 83.333MHz with 270 phase shift
 wire clk_serdes;  // 83.333MHz with 225 phase shift
 wire ck_180;  // 333.333MHz with 180 phase shift
 wire locked_previous;
@@ -367,7 +367,7 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 
 
 `ifdef USE_SERDES
-	// for synchronizing multi-bits signals from clk_serdes domain to clk_serdes_0_phase domain
+	// for synchronizing multi-bits signals from clk_serdes domain to clk_serdes_data domain
 	wire afifo_data_to_ram_clk_serdes_is_empty;
 	wire afifo_data_to_ram_clk_serdes_is_full;
 
@@ -384,7 +384,7 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 		.read_reset(reset),
 
 		// Read.
-		.read_clk(clk_serdes_0_phase),
+		.read_clk(clk_serdes_data),
 		.read_en(1'b1),
 		.read_data(data_to_ram),
 		.empty(afifo_data_to_ram_clk_serdes_is_empty),
@@ -397,7 +397,7 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 	);
 
 
-	// for synchronizing multi-bits signals from clk_serdes_0_phase domain to clk_serdes domain
+	// for synchronizing multi-bits signals from clk_serdes_data domain to clk_serdes domain
 	wire afifo_data_from_ram_clk_serdes_is_empty;
 	wire afifo_data_from_ram_clk_serdes_is_full;
 
@@ -420,10 +420,10 @@ reg [BANK_ADDRESS_BITWIDTH+ADDRESS_BITWIDTH-1:0] i_user_data_address;  // the DD
 		.empty(afifo_data_from_ram_clk_serdes_is_empty),
 
 		// Write
-		.write_clk(clk_serdes_0_phase),
+		.write_clk(clk_serdes_data),
 		.write_en(1'b1),
 		.full(afifo_data_from_ram_clk_serdes_is_full),
-		.write_data(data_from_ram)  // data_from_ram_clk_serdes_0_phase
+		.write_data(data_from_ram)  // data_from_ram_clk_serdes_data
 	);
 `endif
 
@@ -434,14 +434,14 @@ begin
 	
 	else begin
 		time_to_send_out_data_to_dram <= 
-			((previous_main_state == STATE_ACTIVATE) && (write_enable)) ||
+			((previous_previous_main_state == STATE_ACTIVATE) && (previous_previous_write_enable)) ||
 					
 			`ifdef LOOPBACK
-			 	(previous_main_state == STATE_WRITE) ||
+			 	(previous_previous_main_state == STATE_WRITE) ||
 			`else
-				(previous_main_state == STATE_WRITE_AP) ||
+				(previous_previous_main_state == STATE_WRITE_AP) ||
 			`endif
-			 (previous_main_state == STATE_WRITE_DATA);
+			 (previous_previous_main_state == STATE_WRITE_DATA);
 	end
 end
 
@@ -812,7 +812,7 @@ ddr3_control
 	`endif
 	
 	`ifdef HIGH_SPEED
-		.clk_serdes_0_phase(clk_serdes_0_phase),  // 83.333MHz with 0 phase shift
+		.clk_serdes_data(clk_serdes_data),  // 83.333MHz with 270 phase shift
 		.clk_serdes(clk_serdes),  // 83.333MHz with 225 phase shift
 		.ck_180(ck_180),  // 333.333MHz with 180 phase shift
 		.locked_previous(locked_previous),
