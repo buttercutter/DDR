@@ -1,7 +1,11 @@
+`define SYNTHESIS 1
+//`define VIVADO 1  // for 7-series and above
 `define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
-`define MICRON_SIM 1  // micron simulation model
-`define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
-`define VIVADO 1  // for 7-series and above
+
+`ifndef SYNTHESIS
+	`define MICRON_SIM 1  // micron simulation model
+	`define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
+`endif
 
 `define USE_x16 1
 `define USE_SERDES 1
@@ -175,7 +179,7 @@ module test_ddr3_memory_controller
 `ifdef HIGH_SPEED
 // for clk_serdes clock domain
 wire clk_serdes_data;  // 83.333MHz with 270 phase shift
-wire clk_serdes;  // 83.333MHz with 225 phase shift
+wire clk_serdes;  // 83.333MHz with 45 phase shift
 wire ck_180;  // 333.333MHz with 180 phase shift
 wire locked_previous;
 wire need_to_assert_reset;
@@ -434,14 +438,14 @@ begin
 	
 	else begin
 		time_to_send_out_data_to_dram <= 
-			((previous_previous_main_state == STATE_ACTIVATE) && (previous_previous_write_enable)) ||
+			((previous_main_state == STATE_ACTIVATE) && (previous_write_enable)) ||
 					
 			`ifdef LOOPBACK
-			 	(previous_previous_main_state == STATE_WRITE) ||
+			 	(previous_main_state == STATE_WRITE) ||
 			`else
-				(previous_previous_main_state == STATE_WRITE_AP) ||
+				(previous_main_state == STATE_WRITE_AP) ||
 			`endif
-			 (previous_previous_main_state == STATE_WRITE_DATA);
+			 (previous_main_state == STATE_WRITE_DATA);
 	end
 end
 
@@ -813,7 +817,7 @@ ddr3_control
 	
 	`ifdef HIGH_SPEED
 		.clk_serdes_data(clk_serdes_data),  // 83.333MHz with 270 phase shift
-		.clk_serdes(clk_serdes),  // 83.333MHz with 225 phase shift
+		.clk_serdes(clk_serdes),  // 83.333MHz with 45 phase shift
 		.ck_180(ck_180),  // 333.333MHz with 180 phase shift
 		.locked_previous(locked_previous),
 		.need_to_assert_reset(need_to_assert_reset),

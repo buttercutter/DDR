@@ -7,10 +7,14 @@
 // Later, formal verification will proceed with using Micron simulation model
 
 
+`define SYNTHESIS 1
+//`define VIVADO 1  // for 7-series and above
 `define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
-`define MICRON_SIM 1  // micron simulation model
-`define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
-`define VIVADO 1  // for 7-series and above
+
+`ifndef SYNTHESIS
+	`define MICRON_SIM 1  // micron simulation model
+	`define TESTBENCH 1  // for both micron simulation model and Xilinx ISIM simulator
+`endif
 
 `define USE_x16 1
 `define USE_SERDES 1
@@ -188,7 +192,7 @@ module ddr3_memory_controller
 	
 	`ifdef HIGH_SPEED
 		output clk_serdes_data,  // 83.333MHz with 270 phase shift
-		output clk_serdes,  // 83.333MHz with 225 phase shift
+		output clk_serdes,  // 83.333MHz with 45 phase shift
 		output ck_180,  // 333.333MHz with 180 phase shift
 		output reg locked_previous,
 		output need_to_assert_reset,
@@ -601,7 +605,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
 			.clk_serdes_data(clk_serdes_data),  // OUT 83.333MHz, 270 phase shift, for DRAM data
-			.clk_serdes(clk_serdes),  // OUT 83.333MHz, 225 phase shift, for DRAM command
+			.clk_serdes(clk_serdes),  // OUT 83.333MHz, 45 phase shift, for DRAM command
 			
 			.ck(ck),  // OUT 333.333MHz, 0 phase shift
 			.ck_90(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
@@ -858,7 +862,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			
 			// SERDES_RATIO = 8, but 2 separate serdes are used due to double-data-rate restriction
 			// So, 333.333MHz divided by (SERDES_RATIO >> 1) equals 83.333MHz
-			.c4(clk_serdes),  // OUT 83.333MHz, 225 phase shift, for SERDES use
+			.c4(clk_serdes),  // OUT 83.333MHz, 45 phase shift, for SERDES use
 			
 			.c0(ck),  // OUT 333.333MHz, 0 phase shift
 			.c1(ck_90),  // OUT 333.333MHz, 90 phase shift, for dq phase shifting purpose
@@ -1120,7 +1124,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		.WIDTH(DQ_BITWIDTH),
 		.NUM_ENTRIES(),
 		.TO_SIMPLIFY_FULL_LOGIC(1),
-		.TO_SIMPLIFY_EMPTY_LOGIC(0)
+		.TO_SIMPLIFY_EMPTY_LOGIC(1)
 	) 
 	afifo_dq_r_q0
 	(
@@ -1151,7 +1155,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		.WIDTH(DQ_BITWIDTH),
 		.NUM_ENTRIES(),
 		.TO_SIMPLIFY_FULL_LOGIC(1),
-		.TO_SIMPLIFY_EMPTY_LOGIC(0)
+		.TO_SIMPLIFY_EMPTY_LOGIC(1)
 	) 
 	afifo_dq_r_q1
 	(
@@ -1184,7 +1188,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		reg [DQ_BITWIDTH-1:0] dq_w_d1_reg_reg;				
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_0;  // associated with dqs_w
 		wire [DQ_BITWIDTH-1:0] dq_w_oserdes_1;  // associated with dq_n_w
-/*		
+		
 		always @(posedge ck_270) dq_w_d0_reg <= dq_w_oserdes_0;  // for C0, D0 of ODDR2 primitive
 		always @(posedge ck_270) dq_w_d1_reg <= dq_w_oserdes_1;  // for C1, D1 of ODDR2 primitive
 		
@@ -1194,9 +1198,9 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		always @(posedge ck_270) dq_w_d1_reg_reg <= dq_w_d1_reg;
 		always @(posedge ck_270) dq_w_d0 <= dq_w_d0_reg_reg;
 		always @(posedge ck_270) dq_w_d1 <= dq_w_d1_reg_reg;
-*/
-		always @(*) dq_w_d0 <= dq_w_oserdes_0;
-		always @(*) dq_w_d1 <= dq_w_oserdes_1;		
+
+		// always @(*) dq_w_d0 <= dq_w_oserdes_0;
+		// always @(*) dq_w_d1 <= dq_w_oserdes_1;		
 	
 		// why need IOSERDES primitives ?
 		// because you want a memory transaction rate much higher than the main clock frequency 
@@ -1261,7 +1265,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 		
 
-		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)))
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1) - 1))
 		dq_iserdes_0
 		(
 			.reset(need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1]),		
@@ -1274,7 +1278,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_out(data_out_iserdes_0)
 		);
 
-		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1)))
+		deserializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S((SERDES_RATIO >> 1) - 1))
 		dq_iserdes_1
 		(
 			.reset(need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1]),		
@@ -1344,7 +1348,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 		endgenerate
 
 		
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
 		dq_oserdes_0
 		(
 			.reset(need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1]),
@@ -1357,7 +1361,7 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 			.data_out(dq_w_oserdes_0)
 		);
 
-		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(1))
+		serializer #(.D(DQ_BITWIDTH), .S(SERDES_RATIO >> 1), .INITIAL_S(0))
 		dq_oserdes_1
 		(
 			.reset(need_to_assert_reset_ck_270[NUM_OF_FF_SYNCHRONIZERS_FOR_CLK_DOMAIN_TO_CK_270_DOMAIN-1]),
