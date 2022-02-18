@@ -71,13 +71,18 @@ module async_fifo
 		// logic for 'empty' and 'full' respectively.
 		// This will help to speed up the read and write pipeline.
 
-		// to simplify 'full' logic when the conditions within read clock domain allow.
-		// read clock is same speed or faster than write clock, with read_en asserted forever
+		// To simplify 'full' logic with all the following criteria fulfilled:
+		// 1. read clock has the same or higher frequency than write clock
+		// 2. read_en is asserted forever
 		parameter TO_SIMPLIFY_FULL_LOGIC = 0,
 		
-		// to simplify 'empty' logic when the conditions allow.
-		// read clock and write clock have same speed but different phase shift, 
-		// with read_en and write_en asserted forever
+		// To simplify 'empty' logic with all the following criteria fulfilled:
+		// 1. read clock and write clock have same frequency, OR 
+		//    frequency ratio between read clock and write clock is an integer (freq_ratio), 
+		//    with NUM_ENTRIES = freq_ratio
+		// 2. read clock and write clock with different phase shift must pass STA timing check 
+		//    after this option is enabled.
+		// 3. read_en and write_en are asserted forever
 		parameter TO_SIMPLIFY_EMPTY_LOGIC = 0		
     )
 
