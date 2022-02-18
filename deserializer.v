@@ -34,7 +34,7 @@ end
 always @(posedge high_speed_clock)
 begin
 	// time to switch to new set of data
-	if(deserialization_ratio == S-1) data_out <= {data_in, data_temp};  	 
+	if(deserialization_ratio == INITIAL_S) data_out <= {data_in, data_temp};  	 
 end
 
 endmodule
