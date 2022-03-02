@@ -4015,7 +4015,21 @@ begin
 						enqueue_dram_command_bits <= 1;	
 					end		
 				end
-				
+
+				else if(wait_count > (TIME_TBURST + TIME_TRPST)-1)
+				begin
+					if(MPR_Read_had_finished)
+					begin
+						main_state <= STATE_IDLE;
+						wait_count <= 0;
+						
+						read_is_enabled <= 0;
+						num_of_data_read_burst_had_finished <= 0;	
+					end
+					
+					else main_state <= STATE_READ_DATA;			
+				end
+								
 				else if(wait_count >= TIME_TBURST-1) // just finished a single data read burst
 				begin						
 					if(num_of_data_read_burst_had_finished == 

@@ -643,7 +643,7 @@ end
 			end
 		end
 		
-		else if((done_writing) && // (~done_reading) &&  // no need extra logic
+		else if((done_writing) && (~done_reading) &&  // no need extra logic
 				time_to_send_out_address_to_dram_during_read)  // starts preparing for DRAM read operation
 		begin
 			i_user_data_address <= i_user_data_address + DATA_BURST_LENGTH;
@@ -666,6 +666,13 @@ end
 				done_reading <= 1;
 			end
 			*/
+			
+			// finished all the data read bursts
+			if((main_state == STATE_READ_DATA) && (previous_main_state == STATE_READ_DATA))
+			begin
+				done_reading <= 1;
+				read_enable <= 0;
+			end			
 		end
 	end
 	
