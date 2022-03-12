@@ -134,7 +134,7 @@ module test_ddr3_memory_controller
 	input clk,
 	input resetn,  // negation polarity due to pull-down tact switch
 	output done,  // finished DDR write and read operations in loopback mechaism
-	output led_test,  // just to test whether bitstream works or not
+	output led_test,  // a simple way to debug without using JTAG and ILA
 
 	// these are to be fed into external DDR3 memory
 	output [ADDRESS_BITWIDTH-1:0] address,
@@ -223,9 +223,7 @@ wire [$clog2(MAX_WAIT_COUNT):0] wait_count;
 // for STATE_IDLE transition into STATE_REFRESH
 parameter MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED = 8;  // 9 commands. one executed immediately, 8 more enqueued.
 
-`ifndef MICRON_SIM
-	assign led_test = resetn;  // because of light LED polarity, '1' will turn off LED, '0' will turn on LED
-`else
+`ifdef MICRON_SIM
 
 	wire done;  // finished DDR write and read operations in loopback mechaism
 
@@ -335,10 +333,9 @@ wire ck_270;
 wire [DQ_BITWIDTH-1:0] dq_iobuf_enable;
 wire udqs_iobuf_enable;
 wire ldqs_iobuf_enable;
-
-wire data_read_is_ongoing;
 `endif
 
+wire data_read_is_ongoing;
 
 reg write_enable, read_enable;
 reg previous_write_enable, previous_previous_write_enable;
@@ -506,6 +503,71 @@ end
 	assign done = (done_writing & done_reading);  // finish a data loopback transaction
 
 	localparam STARTING_VALUE_OF_TEST_DATA = 5;  // starts from 5
+	
+	`ifdef USE_SERDES
+		reg [DQ_BITWIDTH*SERDES_RATIO-1:0] data_for_checking_loopback_integrity;
+	`else
+		// TWO pieces of data bundled together due to double-data-rate requirement of DQ signal
+		reg [(DQ_BITWIDTH << 1)-1:0] data_for_checking_loopback_integrity;
+	`endif
+	
+	
+	localparam TOTAL_DELAY_CYCLES_FOR_DATA_READ_IS_ONGOING = 9;
+	reg[TOTAL_DELAY_CYCLES_FOR_DATA_READ_IS_ONGOING-1:0] data_read_is_ongoing_delayed;
+	
+	wire time_to_read_data_from_ram_clk_serdes = 
+	
+				// reusing the signal (created during actual READ DATA stage) but at a later stage when 
+				// read data needs to be verified for data loopack integrity check
+				data_read_is_ongoing_delayed[TOTAL_DELAY_CYCLES_FOR_DATA_READ_IS_ONGOING-1] &&
+				
+				// for stopping data loopack integrity check due to the reason that the original 
+				// 'data_read_is_ongoing' signal is created with a compromise of creating margin 
+				// near the start and end of the incoming DQ burst.  
+				// The compromise is an artifact of the clocking phase relationship difference between 
+				// 'clk_serdes' (that creates the 'data_read_is_ongoing' signal) and 
+				// 'ck_dynamic_90' (that samples the incoming DQ bits which could have off-chip PVT deviation)
+				// See the two vertical markers in https://i.imgur.com/yjkLRNH.png for a graphical explanation
+				(test_data <= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH));
+
+	reg time_to_read_data_from_ram_clk_serdes_previously;
+	always @(posedge clk_serdes) 
+		time_to_read_data_from_ram_clk_serdes_previously <= time_to_read_data_from_ram_clk_serdes;
+	
+
+	// a method to check the robustness of this DRAM controller	
+	wire loopback_data_is_wrong = (data_from_ram_clk_serdes != data_for_checking_loopback_integrity) &&
+								  (time_to_read_data_from_ram_clk_serdes_previously) &&
+								  (done_writing) && (done_reading);
+									
+`ifndef MICRON_SIM
+	// because of light LED polarity, '1' will turn off LED, '0' will turn on LED
+	assign led_test = resetn;  // just to test whether bitstream works or not 
+	// assign led_test = ~loopback_data_is_wrong;  // to signal that the loopback operation is not successful
+`endif
+
+				
+	generate
+		genvar delay_cycles_for_read_is_ongoing;
+		
+		for(delay_cycles_for_read_is_ongoing = 0; 
+			delay_cycles_for_read_is_ongoing < TOTAL_DELAY_CYCLES_FOR_DATA_READ_IS_ONGOING;
+			delay_cycles_for_read_is_ongoing = delay_cycles_for_read_is_ongoing +1)
+		begin: data_read_is_ongoing_delayed_loop
+		
+			always @(posedge clk_serdes)
+			begin
+				if(delay_cycles_for_read_is_ongoing == 0) 
+					data_read_is_ongoing_delayed[0] <= data_read_is_ongoing;
+					
+				else begin
+					data_read_is_ongoing_delayed[delay_cycles_for_read_is_ongoing] <= 
+					data_read_is_ongoing_delayed[delay_cycles_for_read_is_ongoing-1];
+				end
+			end
+		end
+	endgenerate
+	
 
 	`ifdef USE_SERDES
 	genvar data_write_index;
@@ -532,11 +594,13 @@ end
 				begin
 					`ifdef USE_SERDES
 						data_to_ram_clk_serdes[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
+						data_for_checking_loopback_integrity[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 0;
 					`else
 						data_to_ram <= 0;
+						data_for_checking_loopback_integrity <= 0;
 					`endif
 					
-					test_data <= STARTING_VALUE_OF_TEST_DATA;					
+					test_data <= STARTING_VALUE_OF_TEST_DATA;			
 				end
 				
 				else if(
@@ -566,16 +630,46 @@ end
 							data_to_ram <= test_data;
 						`endif
 					`endif
+
+					if(test_data >= (STARTING_VALUE_OF_TEST_DATA+NUM_OF_WRITE_DATA-DATA_BURST_LENGTH))  
+						// finished writing data, resetting for preparation of read data loopback integrity check
+						test_data <= STARTING_VALUE_OF_TEST_DATA;
 					
+					else begin
 					`ifdef USE_SERDES
 						test_data <= test_data + SERDES_RATIO;
 					`else
 						test_data <= test_data + UNIQUE_DQ_OUTPUT;
-					`endif					
+					`endif
+					end
 				end
 				
-				else if((done_writing) && (main_state == STATE_READ_DATA)) begin  // read operation
+				// data integrity for loopback testing
+				else if((done_writing) && (done_reading) &&
+						time_to_read_data_from_ram_clk_serdes)  // starts preparing for DRAM read operation
+				begin
+				
+					`ifdef USE_SERDES							
+						`ifdef USE_x16
+							data_for_checking_loopback_integrity[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
+										{test_data + data_write_index + 1, test_data + data_write_index};
+						`else
+							data_for_checking_loopback_integrity[DQ_BITWIDTH*data_write_index +: DQ_BITWIDTH] <= 
+										test_data + data_write_index;
+						`endif											
+					`else
+						`ifdef USE_x16
+							data_for_checking_loopback_integrity <= {test_data+1, test_data};
+						`else
+							data_for_checking_loopback_integrity <= test_data;
+						`endif
+					`endif
 
+					`ifdef USE_SERDES
+						test_data <= test_data + SERDES_RATIO;
+					`else
+						test_data <= test_data + UNIQUE_DQ_OUTPUT;
+					`endif	
 				end
 			end
 			
@@ -818,9 +912,9 @@ ddr3_control
 		.dq_iobuf_enable(dq_iobuf_enable),
 		.udqs_iobuf_enable(udqs_iobuf_enable),
 		.ldqs_iobuf_enable(ldqs_iobuf_enable),
-		
-		.data_read_is_ongoing(data_read_is_ongoing),
 	`endif
+	
+	.data_read_is_ongoing(data_read_is_ongoing),	
 	
 	`ifdef HIGH_SPEED
 		.clk_serdes_data(clk_serdes_data),  // 83.333MHz with 270 phase shift

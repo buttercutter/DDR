@@ -186,9 +186,9 @@ module ddr3_memory_controller
 		output [DQ_BITWIDTH-1:0] dq_iobuf_enable,
 		output ldqs_iobuf_enable,
 		output udqs_iobuf_enable,
-		
-		output reg data_read_is_ongoing,
 	`endif
+	
+	output reg data_read_is_ongoing,	
 	
 	`ifdef HIGH_SPEED
 		output clk_serdes_data,  // 83.333MHz with 270 phase shift
@@ -1479,10 +1479,6 @@ assign data_from_ram = data_from_ram_clk_serdes_data;
 
 // for pipelining in order to feed valid non-X incoming DQ bits into deserializer module
 localparam NUM_OF_READ_PIPELINE_REGISTER_ADDED = 15;  // for 'dq_iobuf_en' and 'dqs_iobuf_en'
-
-`ifndef TESTBENCH
-reg data_read_is_ongoing;
-`endif
 
 wire data_write_is_ongoing = ((wait_count > TIME_WRITE_COMMAND_TO_DQS_VALID) && 
 		    				  ((main_state == STATE_WRITE) || (main_state == STATE_WRITE_AP))) || 
