@@ -19,9 +19,6 @@
 `ifndef FORMAL
 	`ifdef HIGH_SPEED
 		
-		// for internal logic analyzer
-		//`define USE_ILA 1
-		
 		// for lattice ECP5 FPGA
 		//`define LATTICE 1
 
@@ -44,7 +41,7 @@
 `ifdef LOOPBACK
 	`ifndef FORMAL
 		`ifndef MICRON_SIM	
-			// data loopback requires ILA capability to check data integrity
+			// data loopback requires internal logic analyzer (ILA) capability to check data integrity
 			//`define USE_ILA 1
 		`endif
 	`endif
@@ -69,6 +66,7 @@ module test_ddr3_memory_controller
 		parameter PERIOD_MARGIN = 10,  // 10ps margin
 		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model	
 		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+		parameter DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1),		
 		
 		// host clock period in ns
 		// clock period of 'clk' = 0.8225ns , clock period of 'ck' = 3.3ns
@@ -789,7 +787,10 @@ end
 	wire dqs_falling_edge;
 
     wire [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue;
-    wire [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
+    
+    `ifndef HIGH_SPEED
+	    wire [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter;
+    `endif
 		
 	`ifdef XILINX
 	
@@ -821,18 +822,6 @@ end
 			.CLK(clk), // IN
 			.TRIG0(done) // IN BUS [0:0]
 		);
-		
-		ila_1_bit ila_ck_n (
-			.CONTROL(CONTROL2), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(ck_n) // IN BUS [0:0]
-		);
-
-		ila_16_bits ila_dq_w (
-			.CONTROL(CONTROL3), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(dq_w) // IN BUS [15:0]
-		);
 
 		ila_16_bits ila_states_and_commands (
 			.CONTROL(CONTROL4), // INOUT BUS [35:0]
@@ -846,15 +835,17 @@ end
 			.CONTROL(CONTROL5), // INOUT BUS [35:0]
 			.CLK(clk), // IN
 			.TRIG0({data_to_ram, data_from_ram, low_Priority_Refresh_Request, high_Priority_Refresh_Request,
-			 		write_enable, read_enable, dqs_counter, dqs_rising_edge, dqs_falling_edge, 
+			 		write_enable, read_enable, 
+			 		`ifndef HIGH_SPEED
+			 		dqs_counter, 
+			 		`endif
+			 		dqs_rising_edge, dqs_falling_edge, 
 					main_state, wait_count, refresh_Queue}) // IN BUS [63:0]
 		);
 
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
-		
-		localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 		
 	`endif
 `endif
@@ -944,8 +935,10 @@ ddr3_control
 	.high_Priority_Refresh_Request(high_Priority_Refresh_Request),
 	.write_is_enabled(write_is_enabled),
 	.read_is_enabled(read_is_enabled),
-	.refresh_Queue(refresh_Queue),
-	.dqs_counter(dqs_counter),
+	.refresh_Queue(refresh_Queue),	
+	`ifndef HIGH_SPEED
+		.dqs_counter(dqs_counter),
+	`endif	
 	.dqs_rising_edge(dqs_rising_edge),
 	.dqs_falling_edge(dqs_falling_edge),
 `endif

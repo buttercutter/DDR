@@ -27,9 +27,6 @@
 
 `ifndef FORMAL
 	`ifdef HIGH_SPEED
-	
-		// for internal logic analyzer
-		//`define USE_ILA 1
 		
 		// for lattice ECP5 FPGA
 		//`define LATTICE 1
@@ -55,6 +52,14 @@ localparam MAX_WAIT_COUNT = 512;
 
 // write data to RAM and then read them back from RAM
 `define LOOPBACK 1
+`ifdef LOOPBACK
+	`ifndef FORMAL
+		`ifndef MICRON_SIM	
+			// data loopback requires internal logic analyzer (ILA) capability to check data integrity
+			//`define USE_ILA 1
+		`endif
+	`endif
+`endif
 
 
 // https://www.systemverilog.io/ddr4-basics
@@ -76,6 +81,7 @@ module ddr3_memory_controller
 		parameter PERIOD_MARGIN = 10,  // 10ps margin
 		parameter MAXIMUM_CK_PERIOD = 3300-PERIOD_MARGIN,  // 3300ps which is defined by Micron simulation model	
 		parameter DIVIDE_RATIO = 4,  // master 'clk' signal is divided by 4 for DDR outgoing 'ck' signal, it is for 90 degree phase shift purpose.
+		parameter DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1),
 		
 		// host clock period in ns
 		// clock period of 'clk' = 0.8225ns , clock period of 'ck' = 3.3ns
@@ -225,7 +231,10 @@ module ddr3_memory_controller
 	output reg read_is_enabled,
 	
 	output reg [$clog2(MAX_NUM_OF_REFRESH_COMMANDS_POSTPONED):0] refresh_Queue,
+	
+	`ifndef HIGH_SPEED
 	output reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] dqs_counter,
+	`endif
 	
 	output dqs_rising_edge,
 	output dqs_falling_edge,
@@ -519,7 +528,6 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 
 	// See https://www.edaplayground.com/x/gXC for waveform simulation of the clock divider
 	reg clk_slow;
-	localparam DIVIDE_RATIO_HALVED = (DIVIDE_RATIO >> 1);
 
 	reg [($clog2(DIVIDE_RATIO_HALVED)-1):0] counter;
 
