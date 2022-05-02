@@ -8,7 +8,7 @@
 
 
 `define SYNTHESIS 1
-//`define VIVADO 1  // for 7-series and above
+`define VIVADO 1  // for 7-series and above
 `define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
 
 `ifndef SYNTHESIS
@@ -56,7 +56,7 @@ localparam MAX_WAIT_COUNT = 512;
 	`ifndef FORMAL
 		`ifndef MICRON_SIM	
 			// data loopback requires internal logic analyzer (ILA) capability to check data integrity
-			//`define USE_ILA 1
+			`define USE_ILA 1
 		`endif
 	`endif
 `endif
@@ -603,10 +603,12 @@ reg MPR_ENABLE, MPR_Read_had_finished;  // for use within MR3 finite state machi
 	wire locked_dynamic;
 		
 	`ifdef XILINX							
-	
+
+		// For Artix-7, see https://www.reddit.com/r/FPGA/comments/u8kno6/place_30574_poor_placement_for_routing_between_an/
+		
 		pll_ddr pll_static_clocks
 		(	// Clock in ports
-			.clk(clk),  // IN 50MHz
+			.clk(clk),  // IN 50MHz(Spartan-6 board), 100MHz(Artix-7 board)
 			
 			// Clock out ports
 			

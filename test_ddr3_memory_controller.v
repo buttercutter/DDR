@@ -1,5 +1,5 @@
 `define SYNTHESIS 1
-//`define VIVADO 1  // for 7-series and above
+`define VIVADO 1  // for 7-series and above
 `define HIGH_SPEED 1  // Minimum DDR3-1600 operating frequency >= 303MHz
 
 `ifndef SYNTHESIS
@@ -42,7 +42,7 @@
 	`ifndef FORMAL
 		`ifndef MICRON_SIM	
 			// data loopback requires internal logic analyzer (ILA) capability to check data integrity
-			//`define USE_ILA 1
+			`define USE_ILA 1
 		`endif
 	`endif
 `endif
@@ -793,56 +793,85 @@ end
     `endif
 		
 	`ifdef XILINX
-	
-		// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
-		wire [35:0] CONTROL0;
-		wire [35:0] CONTROL1;
-		wire [35:0] CONTROL2;
-		wire [35:0] CONTROL3;
-		wire [35:0] CONTROL4;
-		wire [35:0] CONTROL5;
-									
-		icon icon_inst (
-			.CONTROL0(CONTROL0), // INOUT BUS [35:0]
-			.CONTROL1(CONTROL1), // INOUT BUS [35:0]
-			.CONTROL2(CONTROL2), // INOUT BUS [35:0]
-			.CONTROL3(CONTROL3), // INOUT BUS [35:0]
-			.CONTROL4(CONTROL4), // INOUT BUS [35:0]
-			.CONTROL5(CONTROL5)  // INOUT BUS [35:0]	
-		);
+
+		`ifndef VIVADO									
+			// Added to solve https://forums.xilinx.com/t5/Vivado-Debug-and-Power/Chipscope-ILA-Please-ensure-that-all-the-pins-used-in-the/m-p/1237451
+			wire [35:0] CONTROL0;
+			wire [35:0] CONTROL1;
+			wire [35:0] CONTROL2;
+			wire [35:0] CONTROL3;
+			wire [35:0] CONTROL4;
+			wire [35:0] CONTROL5;		
+		
+			icon icon_inst (
+				.CONTROL0(CONTROL0), // INOUT BUS [35:0]
+				.CONTROL1(CONTROL1), // INOUT BUS [35:0]
+				.CONTROL2(CONTROL2), // INOUT BUS [35:0]
+				.CONTROL3(CONTROL3), // INOUT BUS [35:0]
+				.CONTROL4(CONTROL4), // INOUT BUS [35:0]
+				.CONTROL5(CONTROL5)  // INOUT BUS [35:0]	
+			);
+		`endif
 		
 		ila_1_bit ila_write_enable (
-			.CONTROL(CONTROL0), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(write_enable) // IN BUS [0:0]
+			`ifdef VIVADO
+				.clk(clk), // IN
+				.probe0(write_enable) // IN BUS [0:0]
+			`else
+				.CLK(clk), // IN			
+				.CONTROL(CONTROL0), // INOUT BUS [35:0]			
+				.TRIG0(write_enable) // IN BUS [0:0]
+			`endif
 		);
 
 		ila_1_bit ila_done (
-			.CONTROL(CONTROL1), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0(done) // IN BUS [0:0]
+			`ifdef VIVADO
+				.clk(clk), // IN
+				.probe0(done) // IN BUS [0:0]
+			`else
+				.CLK(clk), // IN			
+				.CONTROL(CONTROL1), // INOUT BUS [35:0]			
+				.TRIG0(done) // IN BUS [0:0]
+			`endif
 		);
 
 		ila_16_bits ila_states_and_commands (
-			.CONTROL(CONTROL4), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0({low_Priority_Refresh_Request, high_Priority_Refresh_Request,
-					write_is_enabled, read_is_enabled, write_enable, read_enable, 
-				   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
+			`ifdef VIVADO	
+				.clk(clk), // IN		
+				.probe0({low_Priority_Refresh_Request, high_Priority_Refresh_Request,
+						write_is_enabled, read_is_enabled, write_enable, read_enable, 
+					   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]
+			`else
+				.CLK(clk), // IN			
+				.CONTROL(CONTROL2), // INOUT BUS [35:0]			
+				.TRIG0({low_Priority_Refresh_Request, high_Priority_Refresh_Request,
+						write_is_enabled, read_is_enabled, write_enable, read_enable, 
+					   	main_state, ck_en, cs_n, ras_n, cas_n, we_n}) // IN BUS [15:0]			
+			`endif
 		);
 
-		ila_64_bits ila_states_and_wait_count (
-			.CONTROL(CONTROL5), // INOUT BUS [35:0]
-			.CLK(clk), // IN
-			.TRIG0({data_to_ram, data_from_ram, low_Priority_Refresh_Request, high_Priority_Refresh_Request,
-			 		write_enable, read_enable, 
-			 		`ifndef HIGH_SPEED
-			 		dqs_counter, 
-			 		`endif
-			 		dqs_rising_edge, dqs_falling_edge, 
-					main_state, wait_count, refresh_Queue}) // IN BUS [63:0]
+		ila_128_bits ila_data_to_ram (
+			`ifdef VIVADO
+				.clk(clk), // IN
+				.probe0(data_to_ram) // IN BUS [0:0]
+			`else
+				.CLK(clk), // IN			
+				.CONTROL(CONTROL3), // INOUT BUS [35:0]
+				.TRIG0(data_to_ram) // IN BUS [0:0]
+			`endif
 		);
 
+		ila_128_bits ila_data_from_ram (
+			`ifdef VIVADO
+				.clk(clk), // IN
+				.probe0(data_from_ram) // IN BUS [0:0]
+			`else
+				.CLK(clk), // IN			
+				.CONTROL(CONTROL4), // INOUT BUS [35:0]
+				.TRIG0(data_from_ram) // IN BUS [0:0]
+			`endif
+		);
+				
 	`else
 	
 		// https://github.com/promach/internal_logic_analyzer
@@ -1103,5 +1132,4 @@ ddr3 mem(
 `endif
 
 endmodule
-
 
