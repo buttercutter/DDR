@@ -1,6 +1,11 @@
 # DDR
 A simple DDR3 memory controller for [Micron DDR3 RAM](https://www.micron.com/products/dram/ddr3-sdram/part-catalog/mt41j128m16jt-125)
 
+Note:
+1. This softcore IP had been verified (both functional and timing analysis) only inside Xilinx IDE.
+2. It can reach an optimum fmax of 333.333MHz without STA timing violations, without the need of any external SDC.
+3. I would only test this on actual development board once I got hold of it, so ignore any external SDC files I put in this repository for now.
+
 TODO:
 1. Implement more functionalities since the current verilog code does not yet support Additive Latency (AL), write-leveling mode, self-refresh mode, inserting other DRAM commands within write or read bursts data operation for a smarter DRAM controller
 2. Implement [Type-III digital PLL described in Floyd Gardner book: Phaselock Techniques, 3rd Edition](https://www.reddit.com/r/AskElectronics/comments/9i7g9j/loop_stability_of_type_3_digital_pll/) for high-speed application and `DQS` phase-shift purpose
